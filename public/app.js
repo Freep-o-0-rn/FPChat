@@ -1,7 +1,10 @@
 const STORAGE = {
   roomState(roomId) { return `fpchat:room:${roomId}`; },
+  activeChatsKey: 'fpchat:active-chats',
   set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
-  get(k) { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; }
+  get(k) { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; },
+  setActiveChats(items) { this.set(this.activeChatsKey, items); },
+  getActiveChats() { return this.get(this.activeChatsKey) || []; }
 };
 
 const els = {
@@ -10,10 +13,13 @@ const els = {
   createdResult: document.getElementById('createdResult'),
   inviteLink: document.getElementById('inviteLink'),
   recoveryCode: document.getElementById('recoveryCode'),
+  goToChatBtn: document.getElementById('goToChatBtn'),
+  activeChatsList: document.getElementById('activeChatsList'),
   joinView: document.getElementById('joinView'),
   roomLabel: document.getElementById('roomLabel'),
   displayNameInput: document.getElementById('displayNameInput'),
   joinBtn: document.getElementById('joinBtn'),
+  joinGoToChatBtn: document.getElementById('joinGoToChatBtn'),
   chatView: document.getElementById('chatView'),
   chatRoomId: document.getElementById('chatRoomId'),
   messages: document.getElementById('messages'),
@@ -22,6 +28,43 @@ const els = {
 };
 
 let state = { roomId: null, secret: null, ws: null, me: null, key: null };
+
+function upsertActiveChat(roomId, patch = {}) {
+  const chats = STORAGE.getActiveChats();
+  const now = new Date().toISOString();
+  const index = chats.findIndex(item => item.roomId === roomId);
+  const existing = index >= 0 ? chats[index] : { roomId, createdAt: now };
+  const next = { ...existing, ...patch, roomId, lastOpenedAt: patch.lastOpenedAt || now };
+  if (index >= 0) chats[index] = next; else chats.unshift(next);
+  STORAGE.setActiveChats(chats.slice(0, 100));
+}
+
+function renderActiveChats() {
+  const chats = STORAGE.getActiveChats();
+  if (!chats.length) {
+    els.activeChatsList.textContent = 'На этом устройстве пока нет активных чатов';
+    return;
+  }
+  els.activeChatsList.innerHTML = '';
+  chats
+    .slice()
+    .sort((a, b) => new Date(b.lastOpenedAt || 0) - new Date(a.lastOpenedAt || 0))
+    .forEach(chat => {
+      const row = document.createElement('div');
+      row.className = 'chat-row';
+      const title = chat.nickname ? `${chat.nickname} (${chat.roomId.slice(0, 8)}...)` : chat.roomId;
+      const lastOpen = chat.lastOpenedAt ? new Date(chat.lastOpenedAt).toLocaleString() : '—';
+      const lastMessage = chat.lastMessage || '—';
+      row.innerHTML = `<div><div><strong>${title}</strong></div><div class="chat-meta">Последнее открытие: ${lastOpen}</div><div class="chat-meta">Последнее сообщение: ${lastMessage}</div></div>`;
+      const btn = document.createElement('button');
+      btn.textContent = 'Открыть чат';
+      btn.addEventListener('click', () => {
+        window.location.href = `/chat/${chat.roomId}`;
+      });
+      row.appendChild(btn);
+      els.activeChatsList.appendChild(row);
+    });
+}
 
 const b64 = {
   encode: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))),
@@ -84,12 +127,20 @@ function parseInvite() {
   return { roomId, secret };
 }
 
+function parseChatPath() {
+  const m = location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/);
+  if (!m) return null;
+  return { roomId: m[1] };
+}
+
 async function initFromInvite() {
   const invite = parseInvite();
-  if (!invite) return;
-  state.roomId = invite.roomId;
+  const directChat = parseChatPath();
+  if (!invite && !directChat) return;
+
+  state.roomId = invite?.roomId || directChat.roomId;
   const stored = STORAGE.get(STORAGE.roomState(state.roomId));
-  state.secret = invite.secret || stored?.secret;
+  state.secret = invite?.secret || stored?.secret;
   if (!state.secret) return alert('Нет секрета для расшифровки invite-ссылки');
   STORAGE.set(STORAGE.roomState(state.roomId), { ...stored, secret: state.secret, deviceId: stored?.deviceId || randomDeviceId() });
   state.key = await deriveKey(state.secret);
@@ -106,13 +157,19 @@ async function createRoom() {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recoverySalt, recoveryVerifier })
   });
   const data = await res.json();
-  const invite = `${location.origin}/i/${data.publicId}#${secret}`;
+  const invite = `${data.inviteLink}#${secret}`;
 
   els.createdResult.classList.remove('hidden');
   els.inviteLink.value = invite;
   els.recoveryCode.textContent = recoveryCode;
 
   STORAGE.set(STORAGE.roomState(data.publicId), { secret, deviceId: randomDeviceId() });
+  upsertActiveChat(data.publicId);
+  renderActiveChats();
+
+  els.goToChatBtn.onclick = () => {
+    window.location.href = `/chat/${data.publicId}`;
+  };
 }
 
 async function joinRoom() {
@@ -128,6 +185,10 @@ async function joinRoom() {
   });
   const data = await res.json();
   state.me = data.participant;
+  upsertActiveChat(state.roomId, { nickname: displayName });
+  renderActiveChats();
+  els.joinGoToChatBtn.classList.remove('hidden');
+  els.joinGoToChatBtn.onclick = () => { window.location.href = `/chat/${state.roomId}`; };
 
   els.joinView.classList.add('hidden');
   els.chatView.classList.remove('hidden');
@@ -146,6 +207,8 @@ async function joinRoom() {
     if (payload.type === 'message:new') {
       const txt = await decryptText(payload.message.iv, payload.message.ciphertext).catch(() => '[cannot decrypt]');
       renderMessage(payload.message, txt, payload.message.sender_device_id === deviceId);
+      upsertActiveChat(state.roomId, { lastMessage: txt, nickname: state.me?.displayName || displayName });
+      renderActiveChats();
       if (payload.message.sender_device_id !== deviceId) {
         state.ws.send(JSON.stringify({ type: 'message:read', messageId: payload.message.id }));
       }
@@ -157,6 +220,7 @@ async function joinRoom() {
   };
 }
 
+renderActiveChats();
 els.createRoomBtn.addEventListener('click', createRoom);
 els.joinBtn.addEventListener('click', joinRoom);
 els.sendForm.addEventListener('submit', async (e) => {

@@ -18,7 +18,13 @@
         <textarea id="inviteLink" readonly></textarea>
         <p class="warn">Сохраните recovery-код. Он показывается один раз.</p>
         <div id="recoveryCode" class="recovery"></div>
+        <button id="goToChatBtn" class="mt8">Перейти в чат</button>
       </div>
+    </section>
+
+    <section id="activeChatsView" class="card">
+      <h2>Активные чаты</h2>
+      <div id="activeChatsList"></div>
     </section>
 
     <section id="joinView" class="card hidden">
@@ -27,6 +33,7 @@
       <label>Ваше имя</label>
       <input id="displayNameInput" maxlength="48" />
       <button id="joinBtn">Войти</button>
+      <button id="joinGoToChatBtn" class="hidden mt8">Перейти в чат</button>
     </section>
 
     <section id="chatView" class="card hidden">

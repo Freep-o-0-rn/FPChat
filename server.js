@@ -11,6 +11,7 @@ dotenv.config();
 const APP_HOST = process.env.APP_HOST || '127.0.0.1';
 const APP_PORT = Number(process.env.APP_PORT || 3010);
 const DATABASE_PATH = process.env.DATABASE_PATH || './data/chat.sqlite';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || '';
 
 const db = createDb(DATABASE_PATH);
 const app = express();
@@ -60,6 +61,19 @@ function roomSockets(publicId) {
   return socketsByRoom.get(publicId);
 }
 
+function getBaseUrl(req) {
+  if (PUBLIC_BASE_URL) {
+    return PUBLIC_BASE_URL.replace(/\/+$/, '');
+  }
+
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const protocol = forwardedProto ? String(forwardedProto).split(',')[0].trim() : req.protocol;
+  const host = forwardedHost ? String(forwardedHost).split(',')[0].trim() : req.headers.host;
+
+  return `${protocol}://${host}`;
+}
+
 app.post('/api/rooms', (req, res) => {
   const publicId = randomToken(16);
   const { recoverySalt, recoveryVerifier } = req.body || {};
@@ -74,11 +88,15 @@ app.post('/api/rooms', (req, res) => {
   });
   tx();
 
-  return res.json({ publicId });
+  const inviteLink = `${getBaseUrl(req)}/i/${publicId}`;
+  return res.json({ publicId, inviteLink });
 });
 
 
 app.get('/i/:publicId', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+app.get('/chat/:publicId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
