@@ -46,10 +46,18 @@ function createDb(databasePath) {
       room_id INTEGER NOT NULL UNIQUE,
       recovery_salt TEXT NOT NULL,
       recovery_verifier TEXT NOT NULL,
+      recovery_secret_iv TEXT,
+      recovery_secret_ciphertext TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY(room_id) REFERENCES rooms(id)
     );
   `);
+  const recoveryColumns = db.prepare(`PRAGMA table_info(recovery)`).all();
+  const hasSecretIv = recoveryColumns.some((column) => column.name === 'recovery_secret_iv');
+  const hasSecretCiphertext = recoveryColumns.some((column) => column.name === 'recovery_secret_ciphertext');
+  if (!hasSecretIv) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_iv TEXT');
+  if (!hasSecretCiphertext) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_ciphertext TEXT');
+
 
   return db;
 }

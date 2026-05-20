@@ -20,6 +20,9 @@ const els = {
   displayNameInput: document.getElementById('displayNameInput'),
   joinBtn: document.getElementById('joinBtn'),
   joinGoToChatBtn: document.getElementById('joinGoToChatBtn'),
+  restoreRoomIdInput: document.getElementById('restoreRoomIdInput'),
+  restoreCodeInput: document.getElementById('restoreCodeInput'),
+  restoreChatBtn: document.getElementById('restoreChatBtn'),
   chatView: document.getElementById('chatView'),
   chatRoomId: document.getElementById('chatRoomId'),
   messages: document.getElementById('messages'),
@@ -39,6 +42,12 @@ function upsertActiveChat(roomId, patch = {}) {
   STORAGE.setActiveChats(chats.slice(0, 100));
 }
 
+function removeActiveChat(roomId) {
+  const chats = STORAGE.getActiveChats().filter(item => item.roomId !== roomId);
+  STORAGE.setActiveChats(chats);
+  localStorage.removeItem(STORAGE.roomState(roomId));
+}
+
 function renderActiveChats() {
   const chats = STORAGE.getActiveChats();
   if (!chats.length) {
@@ -56,12 +65,25 @@ function renderActiveChats() {
       const lastOpen = chat.lastOpenedAt ? new Date(chat.lastOpenedAt).toLocaleString() : '—';
       const lastMessage = chat.lastMessage || '—';
       row.innerHTML = `<div><div><strong>${title}</strong></div><div class="chat-meta">Последнее открытие: ${lastOpen}</div><div class="chat-meta">Последнее сообщение: ${lastMessage}</div></div>`;
-      const btn = document.createElement('button');
-      btn.textContent = 'Открыть чат';
-      btn.addEventListener('click', () => {
+      const actions = document.createElement('div');
+      actions.className = 'chat-actions';
+
+      const openBtn = document.createElement('button');
+      openBtn.textContent = 'Открыть чат';
+      openBtn.addEventListener('click', () => {
         window.location.href = `/chat/${chat.roomId}`;
       });
-      row.appendChild(btn);
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'danger';
+      deleteBtn.textContent = 'Удалить';
+      deleteBtn.addEventListener('click', () => {
+        removeActiveChat(chat.roomId);
+        renderActiveChats();
+      });
+
+      actions.appendChild(openBtn);
+      actions.appendChild(deleteBtn);
+      row.appendChild(actions);
       els.activeChatsList.appendChild(row);
     });
 }
@@ -95,6 +117,17 @@ async function hashRecovery(recoveryCode) {
   const input = new TextEncoder().encode(recoveryCode + ':' + b64.encode(salt));
   const digest = await crypto.subtle.digest('SHA-256', input);
   return { recoverySalt: b64.encode(salt), recoveryVerifier: b64.encode(digest) };
+}
+
+async function deriveRecoveryEncryptionKey(recoveryCode, recoverySaltB64) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(recoveryCode), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: b64.decode(recoverySaltB64), iterations: 250000, hash: 'SHA-256' },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
 }
 
 async function encryptText(text) {
@@ -153,8 +186,19 @@ async function createRoom() {
   const secret = randomRoomSecret();
   const recoveryCode = randomRecoveryCode();
   const { recoverySalt, recoveryVerifier } = await hashRecovery(recoveryCode);
+  const recoveryKey = await deriveRecoveryEncryptionKey(recoveryCode, recoverySalt);
+  const recoverySecretIvRaw = crypto.getRandomValues(new Uint8Array(12));
+  const recoverySecretCiphertextRaw = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: recoverySecretIvRaw },
+    recoveryKey,
+    new TextEncoder().encode(secret)
+  );
+  const recoverySecretIv = b64.encode(recoverySecretIvRaw);
+  const recoverySecretCiphertext = b64.encode(recoverySecretCiphertextRaw);
   const res = await fetch('/api/rooms', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recoverySalt, recoveryVerifier })
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext })
   });
   const data = await res.json();
   const invite = `${data.inviteLink}#${secret}`;
@@ -170,6 +214,32 @@ async function createRoom() {
   els.goToChatBtn.onclick = () => {
     window.location.href = `/chat/${data.publicId}`;
   };
+}
+
+async function restoreChatByRecoveryCode() {
+  const roomId = els.restoreRoomIdInput.value.trim().toUpperCase();
+  const recoveryCode = els.restoreCodeInput.value.trim().toUpperCase();
+  if (!roomId || !recoveryCode) return alert('Введите room ID и recovery-код');
+
+  const res = await fetch(`/api/rooms/${roomId}/recover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recoveryCode })
+  });
+  if (!res.ok) return alert('Не удалось восстановить чат: проверьте room ID и recovery-код');
+  const data = await res.json();
+  const recoveryKey = await deriveRecoveryEncryptionKey(recoveryCode, data.recoverySalt);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64.decode(data.recoverySecretIv) },
+    recoveryKey,
+    b64.decode(data.recoverySecretCiphertext)
+  );
+  const secret = new TextDecoder().decode(plaintext);
+  const persisted = STORAGE.get(STORAGE.roomState(roomId)) || {};
+  STORAGE.set(STORAGE.roomState(roomId), { ...persisted, secret, deviceId: persisted.deviceId || randomDeviceId() });
+  upsertActiveChat(roomId);
+  renderActiveChats();
+  alert('Чат восстановлен на этом устройстве. Теперь его можно открыть.');
 }
 
 async function joinRoom() {
@@ -223,6 +293,9 @@ async function joinRoom() {
 renderActiveChats();
 els.createRoomBtn.addEventListener('click', createRoom);
 els.joinBtn.addEventListener('click', joinRoom);
+els.restoreChatBtn.addEventListener('click', () => {
+  void restoreChatByRecoveryCode().catch(() => alert('Ошибка восстановления чата'));
+});
 els.sendForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = els.messageInput.value.trim();

@@ -23,7 +23,16 @@ const socketsByRoom = new Map();
 const q = {
   createRoom: db.prepare('INSERT INTO rooms (public_id) VALUES (?)'),
   findRoomByPublicId: db.prepare('SELECT * FROM rooms WHERE public_id = ?'),
-  createRecovery: db.prepare('INSERT INTO recovery (room_id, recovery_salt, recovery_verifier) VALUES (?, ?, ?)'),
+  createRecovery: db.prepare(`
+    INSERT INTO recovery (room_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  findRecoveryByPublicId: db.prepare(`
+    SELECT rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext
+    FROM recovery rec
+    JOIN rooms room ON room.id = rec.room_id
+    WHERE room.public_id = ?
+  `),
   upsertParticipant: db.prepare(`
     INSERT INTO participants (room_id, display_name, device_id, last_seen_at)
     VALUES (?, ?, ?, datetime('now'))
@@ -76,15 +85,15 @@ function getBaseUrl(req) {
 
 app.post('/api/rooms', (req, res) => {
   const publicId = randomToken(16);
-  const { recoverySalt, recoveryVerifier } = req.body || {};
+  const { recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {};
 
-  if (!recoverySalt || !recoveryVerifier) {
+  if (!recoverySalt || !recoveryVerifier || !recoverySecretIv || !recoverySecretCiphertext) {
     return res.status(400).json({ error: 'recovery verifier required' });
   }
 
   const tx = db.transaction(() => {
     const roomResult = q.createRoom.run(publicId);
-    q.createRecovery.run(roomResult.lastInsertRowid, recoverySalt, recoveryVerifier);
+    q.createRecovery.run(roomResult.lastInsertRowid, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext);
   });
   tx();
 
@@ -92,6 +101,28 @@ app.post('/api/rooms', (req, res) => {
   return res.json({ publicId, inviteLink });
 });
 
+app.post('/api/rooms/:publicId/recover', async (req, res) => {
+  const { recoveryCode } = req.body || {};
+  if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
+
+  const recovery = q.findRecoveryByPublicId.get(req.params.publicId);
+  if (!recovery) return res.status(404).json({ error: 'room not found' });
+
+  const digest = crypto
+    .createHash('sha256')
+    .update(`${String(recoveryCode)}:${recovery.recovery_salt}`)
+    .digest('base64');
+
+  if (digest !== recovery.recovery_verifier) {
+    return res.status(403).json({ error: 'invalid recovery code' });
+  }
+
+  return res.json({
+    recoverySalt: recovery.recovery_salt,
+    recoverySecretIv: recovery.recovery_secret_iv,
+    recoverySecretCiphertext: recovery.recovery_secret_ciphertext
+  });
+});
 
 app.get('/i/:publicId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

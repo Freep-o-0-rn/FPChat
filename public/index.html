@@ -24,6 +24,12 @@
 
     <section id="activeChatsView" class="card">
       <h2>Активные чаты</h2>
+      <div class="restore-box">
+        <h3>Восстановить чат по recovery-коду</h3>
+        <input id="restoreRoomIdInput" placeholder="ID комнаты (16 символов)" maxlength="16" />
+        <input id="restoreCodeInput" placeholder="Recovery-код (R-XXXX-...)" />
+        <button id="restoreChatBtn">Восстановить чат</button>
+      </div>
       <div id="activeChatsList"></div>
     </section>
 
