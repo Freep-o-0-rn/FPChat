@@ -1,0 +1,16 @@
+{
+  "name": "fpchat",
+  "version": "1.0.0",
+  "description": "Private invite-based chat MVP with client-side encryption",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}

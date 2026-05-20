@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FPChat</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>FPChat — приватный чат</h1>
+
+    <section id="createView" class="card">
+      <h2>Создать комнату</h2>
+      <button id="createRoomBtn">Создать</button>
+      <div id="createdResult" class="hidden">
+        <p><strong>Invite-ссылка:</strong></p>
+        <textarea id="inviteLink" readonly></textarea>
+        <p class="warn">Сохраните recovery-код. Он показывается один раз.</p>
+        <div id="recoveryCode" class="recovery"></div>
+      </div>
+    </section>
+
+    <section id="joinView" class="card hidden">
+      <h2>Вход в комнату</h2>
+      <p id="roomLabel"></p>
+      <label>Ваше имя</label>
+      <input id="displayNameInput" maxlength="48" />
+      <button id="joinBtn">Войти</button>
+    </section>
+
+    <section id="chatView" class="card hidden">
+      <h2>Комната <span id="chatRoomId"></span></h2>
+      <div id="messages" class="messages"></div>
+      <form id="sendForm">
+        <input id="messageInput" autocomplete="off" placeholder="Текст сообщения" />
+        <button type="submit">Отправить</button>
+      </form>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

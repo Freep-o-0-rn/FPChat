@@ -1,0 +1,189 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ChatType {
+  DIRECT
+  GROUP
+}
+
+enum ChatRole {
+  owner
+  member
+}
+
+enum MessageType {
+  TEXT
+  MEDIA
+  SYSTEM
+}
+
+enum DeliveryState {
+  sent
+  delivered
+  read
+}
+
+enum AttachmentCategory {
+  image
+  video
+  file
+  audio
+}
+
+model User {
+  id                  String       @id @default(uuid())
+  nickname            String       @unique
+  displayName         String
+  avatarUrl           String?
+  passwordHash        String
+  identityPublicKey   String
+  lastSeenAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  sessions            UserSession[]
+  sentMessages        Message[]    @relation("MessageSender")
+  chatMemberships     ChatMember[]
+  deliveryStatuses    DeliveryStatus[]
+}
+
+model UserSession {
+  id               String   @id @default(uuid())
+  userId           String
+  refreshTokenHash String
+  ipAddress        String?
+  userAgent        String?
+  revokedAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+}
+
+model Invite {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  maxActivations  Int      @default(1)
+  usedActivations Int      @default(0)
+  createdAt       DateTime @default(now())
+}
+
+model Chat {
+  id                 String              @id @default(uuid())
+  type               ChatType
+  title              String?
+  avatarUrl          String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  members            ChatMember[]
+  messages           Message[]
+  disappearingPolicy DisappearingPolicy?
+}
+
+model ChatMember {
+  id        String   @id @default(uuid())
+  chatId    String
+  userId    String
+  role      ChatRole @default(member)
+  createdAt DateTime @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([userId, chatId])
+}
+
+model Message {
+  id          String         @id @default(uuid())
+  chatId       String
+  senderId     String
+  type         MessageType
+  ciphertext   String
+  nonce        String
+  replyToId    String?
+  deletedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  chat         Chat           @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender       User           @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      Message?       @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies      Message[]      @relation("MessageReplies")
+  edits        MessageEdit[]
+  attachments  Attachment[]
+  deliveries   DeliveryStatus[]
+  forwardedFrom ForwardLink[] @relation("ForwardTarget")
+  forwards      ForwardLink[] @relation("ForwardSource")
+
+  @@index([chatId, createdAt, id])
+}
+
+model MessageEdit {
+  id            String   @id @default(uuid())
+  messageId      String
+  prevCiphertext String
+  prevNonce      String
+  editedAt       DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, editedAt])
+}
+
+model Attachment {
+  id                  String             @id @default(uuid())
+  messageId           String
+  encryptedObjectPath String
+  encryptedObjectHash String
+  encryptedFileName   String
+  mimeType            String
+  sizeBytes           Int
+  category            AttachmentCategory
+  createdAt           DateTime           @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model DeliveryStatus {
+  id         String        @id @default(uuid())
+  messageId  String
+  userId     String
+  status     DeliveryState @default(sent)
+  updatedAt  DateTime      @updatedAt
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId, status])
+}
+
+model ForwardLink {
+  id              String   @id @default(uuid())
+  sourceMessageId String
+  targetMessageId String
+  createdAt       DateTime @default(now())
+
+  sourceMessage Message @relation("ForwardSource", fields: [sourceMessageId], references: [id], onDelete: Cascade)
+  targetMessage Message @relation("ForwardTarget", fields: [targetMessageId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceMessageId, targetMessageId])
+}
+
+model DisappearingPolicy {
+  id            String   @id @default(uuid())
+  chatId         String   @unique
+  ttlSeconds     Int
+  enabled        Boolean  @default(false)
+  lastAppliedAt  DateTime?
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+}

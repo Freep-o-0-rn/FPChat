@@ -1,0 +1,48 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fpchat
+      POSTGRES_USER: fpchat
+      POSTGRES_PASSWORD: fpchat
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env.example
+    volumes:
+      - ./backend:/app
+      - ./storage/media:/app/storage/media
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - '3000:3000'
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:3000/api/v1
+      VITE_WS_URL: http://localhost:3000
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+    ports:
+      - '5173:5173'
+
+volumes:
+  postgres_data:

@@ -1,0 +1,13 @@
+body{font-family:Arial,sans-serif;background:#f3f5f8;margin:0;padding:24px;color:#222}
+.container{max-width:860px;margin:0 auto}
+.card{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.hidden{display:none}
+textarea{width:100%;height:80px}
+input,button{padding:10px;font-size:14px}
+#sendForm{display:flex;gap:8px}
+#messageInput{flex:1}
+.messages{height:320px;overflow:auto;border:1px solid #ddd;padding:8px;border-radius:8px;margin-bottom:10px;background:#fafafa}
+.msg{border-bottom:1px solid #ececec;padding:6px 2px}
+.meta{font-size:12px;color:#666}
+.warn{color:#a14f00;background:#fff3cd;padding:8px;border-radius:6px}
+.recovery{font-weight:700;letter-spacing:1px}

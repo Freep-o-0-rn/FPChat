@@ -1,0 +1,15 @@
+node_modules
+.pnpm-store
+.env
+.env.*
+!.env.example
+coverage
+dist
+build
+.tmp
+.DS_Store
+*.log
+frontend/.vite
+frontend/dist
+backend/dist
+backend/prisma/dev.db
