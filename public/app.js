@@ -13,6 +13,7 @@ function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRo
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
 function setView(v){state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
+function showChatsList(){state.roomId=null; closeMobileMenu(); els.appRoot?.classList.remove('mobile-chat'); renderChats(); setView('chats');}
 function openMobileMenu(){if(!isMobileViewport())return; els.sidebar?.classList.add('open'); els.sidebarOverlay?.classList.add('open','active'); els.appRoot?.classList.add('menu-open'); document.body.classList.add('menu-open');}
 function closeMobileMenu(){els.sidebar?.classList.remove('open'); els.sidebarOverlay?.classList.remove('open','active'); els.appRoot?.classList.remove('menu-open'); document.body.classList.remove('menu-open');}
 function toggleMobileMenu(){if(els.sidebar?.classList.contains('open')) closeMobileMenu(); else openMobileMenu();}
@@ -50,7 +51,35 @@ document.addEventListener('keydown',(e)=>{if(e.key==='Escape')closeMobileMenu();
 window.addEventListener('resize',()=>{if(!isMobileViewport())closeMobileMenu();});
 
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.dataset.view); closeMobileMenu();}); els.search.oninput=renderChats;
-(async()=>{await registerServiceWorker();applyTheme(localStorage.getItem(STORAGE.theme)||'auto'); const inv=parseInvite(); const chat=parseChat(); if(inv||chat){const roomId=inv?.roomId||chat; const stored=STORAGE.get(STORAGE.roomState(roomId))||{}; const secret=inv?.secret||stored.secret; if(secret){STORAGE.set(STORAGE.roomState(roomId),{...stored,secret,deviceId:stored.deviceId||crypto.randomUUID()}); upsertChat(roomId,{}); state.roomId=roomId; await openChat(roomId);} } else {const last=localStorage.getItem(STORAGE.lastSelectedRoomId); renderChats(); if(last&&state.chats.some(c=>c.roomId===last)) {state.roomId=last; openChat(last);} else setView('chats');} if(!els.appRoot?.dataset.pane) showListPane();})();
+(async()=>{
+  await registerServiceWorker();
+  applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
+  const inv=parseInvite();
+  const chat=parseChat();
+
+  if(inv){
+    const stored=STORAGE.get(STORAGE.roomState(inv.roomId));
+    const isNewInvite=Boolean(inv.secret && !stored?.secret);
+
+    if(inv.secret){
+      STORAGE.set(STORAGE.roomState(inv.roomId),{...stored,secret:inv.secret,deviceId:stored?.deviceId||crypto.randomUUID()});
+    }
+
+    upsertChat(inv.roomId,{});
+
+    if(isNewInvite){
+      await openChat(inv.roomId);
+      return;
+    }
+  }
+
+  if(chat){
+    // Диплинк /chat/:id больше не открывает чат автоматически.
+  }
+
+  showChatsList();
+  if(!els.appRoot?.dataset.pane) showListPane();
+})();
 function urlB64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const rawData=atob(base64);return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));}
 async function registerServiceWorker(){if(!('serviceWorker' in navigator))return null;try{return await navigator.serviceWorker.register('/sw.js');}catch{return null;}}
 async function getPushConfig(){const r=await fetch('/api/push/vapid-public-key');return r.json();}
