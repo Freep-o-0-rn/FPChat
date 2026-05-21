@@ -7,50 +7,30 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main class="container">
-    <h1>FPChat — приватный чат</h1>
+  <div class="app" id="appRoot">
+    <aside class="sidebar" id="sidebar">
+      <button class="nav-btn active" data-view="chats"><span>💬</span><small>Чаты</small></button>
+      <button class="nav-btn" data-view="create"><span>➕</span><small>Создать</small></button>
+      <button class="nav-btn" data-view="restore"><span>🔑</span><small>Восстановить</small></button>
+      <button class="nav-btn" data-view="settings"><span>⚙</span><small>Настройки</small></button>
+    </aside>
 
-    <section id="createView" class="card">
-      <h2>Создать комнату</h2>
-      <button id="createRoomBtn">Создать</button>
-      <div id="createdResult" class="hidden">
-        <p><strong>Invite-ссылка:</strong></p>
-        <textarea id="inviteLink" readonly></textarea>
-        <p class="warn">Сохраните recovery-код. Он показывается один раз.</p>
-        <div id="recoveryCode" class="recovery"></div>
-        <button id="goToChatBtn" class="mt8">Перейти в чат</button>
+    <section class="chat-list" id="chatListPane">
+      <div class="chat-list-top">
+        <button id="mobileMenuBtn" class="mobile-only">☰</button>
+        <input id="chatSearch" placeholder="Поиск" />
       </div>
-    </section>
-
-    <section id="activeChatsView" class="card">
-      <h2>Активные чаты</h2>
-      <div class="restore-box">
-        <h3>Восстановить чат по recovery-коду</h3>
-        <input id="restoreRoomIdInput" placeholder="ID комнаты (16 символов)" maxlength="16" />
-        <input id="restoreCodeInput" placeholder="Recovery-код (R-XXXX-...)" />
-        <button id="restoreChatBtn">Восстановить чат</button>
+        <p>У вас пока нет чатов</p>
+        <button id="emptyCreateBtn">Создать чат</button>
+        <button id="emptyRestoreBtn">Восстановить по коду</button>
       </div>
-      <div id="activeChatsList"></div>
+      <div id="chatRows"></div>
     </section>
 
-    <section id="joinView" class="card hidden">
-      <h2>Вход в комнату</h2>
-      <p id="roomLabel"></p>
-      <label>Ваше имя</label>
-      <input id="displayNameInput" maxlength="48" />
-      <button id="joinBtn">Войти</button>
-      <button id="joinGoToChatBtn" class="hidden mt8">Перейти в чат</button>
-    </section>
+    <main class="content" id="contentPane"></main>
+  </div>
 
-    <section id="chatView" class="card hidden">
-      <h2>Комната <span id="chatRoomId"></span></h2>
-      <div id="messages" class="messages"></div>
-      <form id="sendForm">
-        <input id="messageInput" autocomplete="off" placeholder="Текст сообщения" />
-        <button type="submit">Отправить</button>
-      </form>
-    </section>
-  </main>
+  <div id="contextMenu" class="context-menu hidden"></div>
   <script src="/app.js"></script>
 </body>
 </html>

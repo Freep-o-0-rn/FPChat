@@ -1,308 +1,38 @@
-const STORAGE = {
-  roomState(roomId) { return `fpchat:room:${roomId}`; },
-  activeChatsKey: 'fpchat:active-chats',
-  set(k, v) { localStorage.setItem(k, JSON.stringify(v)); },
-  get(k) { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; },
-  setActiveChats(items) { this.set(this.activeChatsKey, items); },
-  getActiveChats() { return this.get(this.activeChatsKey) || []; }
-};
+const STORAGE={roomState:(id)=>`fpchat:room:${id}`,activeChatsKey:'fpchat:active-chats',lastSelectedRoomId:'lastSelectedRoomId',nick:'fpchat:nick',theme:'fpchat:theme',roomNames:'fpchat:room-names',notif:'fpchat:notif',set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),get:(k)=>{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}};
+const state={view:'chats',roomId:null,secret:null,key:null,ws:null,me:null,chats:STORAGE.get(STORAGE.activeChatsKey)||[],roomNames:STORAGE.get(STORAGE.roomNames)||{},nick:localStorage.getItem(STORAGE.nick)||`Гость-${String(Math.floor(Math.random()*100000)).padStart(5,'0')}`,notif:STORAGE.get(STORAGE.notif)||{enabled:false,showText:true,hideSender:false,sound:true}};localStorage.setItem(STORAGE.nick,state.nick);
+const els={content:document.getElementById('contentPane'),rows:document.getElementById('chatRows'),search:document.getElementById('chatSearch'),empty:document.getElementById('emptyChats'),sidebar:document.getElementById('sidebar'),context:document.getElementById('contextMenu')};
+const b64={encode:(buf)=>btoa(String.fromCharCode(...new Uint8Array(buf))),decode:(str)=>Uint8Array.from(atob(str),c=>c.charCodeAt(0))};
+const shortId=(id)=>`${id.slice(0,4)}...${id.slice(-3)}`; const fmtTime=(iso)=>iso?new Date(iso).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'';
+function saveChats(){STORAGE.set(STORAGE.activeChatsKey,state.chats);} function saveRoomNames(){STORAGE.set(STORAGE.roomNames,state.roomNames);}
+async function deriveKey(secret){const m=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),'PBKDF2',false,['deriveKey']); return crypto.subtle.deriveKey({name:'PBKDF2',salt:new TextEncoder().encode('fpchat-room-salt-v1'),iterations:150000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);}
+async function encryptText(t){const iv=crypto.getRandomValues(new Uint8Array(12)); const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},state.key,new TextEncoder().encode(t)); return {iv:b64.encode(iv),ciphertext:b64.encode(c)};}
+async function decryptText(iv,c){const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(iv)},state.key,b64.decode(c)); return new TextDecoder().decode(p)}
+function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId===roomId);const base=i>=0?state.chats[i]:{roomId,unread:0};const next={...base,...patch,roomId,lastActivity:patch.lastActivity||new Date().toISOString()};if(i>=0)state.chats[i]=next; else state.chats.push(next); state.chats.sort((a,b)=>new Date(b.lastActivity)-new Date(a.lastActivity)); saveChats(); renderChats();}
+function setView(v){state.view=v; document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v)); if(v==='chats') renderMainChatsPlaceholder(); if(v==='create') renderCreate(); if(v==='restore') renderRestore(); if(v==='settings') renderSettings();}
+function renderChats(){const q=els.search.value?.toLowerCase()||''; let chats=state.chats.filter(c=>{const n=(state.roomNames[c.roomId]||'').toLowerCase(); return [n,c.roomId,(c.lastMessage||'').toLowerCase()].some(s=>s.includes(q));}); els.rows.innerHTML=''; els.empty.classList.toggle('hidden', chats.length>0); chats.forEach(c=>{const minePrefix=c.lastSender===state.nick?'Вы: ':c.lastSender?`${c.lastSender}: `:'';const row=document.createElement('div'); row.className='chat-row'+(c.roomId===state.roomId?' active':'')+(c.unread?' unread':''); row.innerHTML=`<div class='row-top'><div><div><strong>${state.roomNames[c.roomId]||`Комната ${shortId(c.roomId)}`}</strong></div>${state.roomNames[c.roomId]?`<div class='sys'>Комната ${shortId(c.roomId)}</div>`:''}</div><div>${fmtTime(c.lastActivity)}</div></div><div class='row-top'><div class='last'>${minePrefix}${c.lastMessage||''}</div>${c.unread?`<span class='badge'>${c.unread}</span>`:''}</div>`; row.onclick=()=>openChat(c.roomId); row.oncontextmenu=(e)=>{e.preventDefault();showRoomMenu(c.roomId,e.clientX,e.clientY)}; els.rows.appendChild(row);});}
+function renderMainChatsPlaceholder(){ if(state.roomId){openChat(state.roomId);return;} els.content.innerHTML=`<div class='placeholder'><h2>Выберите чат из списка или создайте новый</h2></div>`;}
+function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16})$/);if(!m)return null;const roomId=m[1], secret=location.hash?location.hash.slice(1):null; if(secret)history.replaceState({},'',`/i/${roomId}`); return {roomId,secret};}
+function parseChat(){const m=location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/); return m?m[1]:null;}
+async function openChat(roomId){const persisted=STORAGE.get(STORAGE.roomState(roomId)); if(!persisted?.secret){alert('Нет секрета комнаты');return;} state.roomId=roomId; localStorage.setItem(STORAGE.lastSelectedRoomId,roomId); state.secret=persisted.secret; state.key=await deriveKey(state.secret); const deviceId=persisted.deviceId; const res=await fetch(`/api/rooms/${roomId}/join`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId})}); const data=await res.json(); state.me=data.participant; upsertChat(roomId,{lastActivity:new Date().toISOString(),unread:0}); document.getElementById('appRoot').classList.add('mobile-chat'); renderChatView(data.messages,deviceId); connectWs(roomId,deviceId); setView('chats'); renderChats();}
+function deliveryIcon(s){if(s==='read')return "<span style='color:#3390ec'>✓✓</span>"; if(s==='delivered')return '✓✓'; if(s==='sent')return '✓'; return '⏳';}
+function renderChatView(messages,deviceId){els.content.innerHTML=`<div class='chat-header'><div><strong>${state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`}</strong><div class='sys'>${state.ws?.readyState===1?'активен':'нет соединения'}</div></div><div><button id='backMob' class='mobile-only'>←</button><button id='reloadBtn'>↻ Обновить</button><button id='menuBtn'>⋮</button></div></div><div class='messages' id='messages'></div><form class='send' id='sendForm'><textarea id='msgInput' placeholder='Сообщение'></textarea><button>➤</button></form>`; document.getElementById('backMob')?.addEventListener('click',()=>document.getElementById('appRoot').classList.remove('mobile-chat')); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>showRoomMenu(state.roomId,e.clientX,e.clientY);
+const box=document.getElementById('messages'); let prev=''; messages.forEach(async m=>{const d=new Date(m.created_at).toDateString(); if(d!==prev){prev=d; const sep=document.createElement('div');sep.className='date-sep';sep.textContent=d===new Date().toDateString()?'Сегодня':d;box.appendChild(sep);} const txt=await decryptText(m.iv,m.ciphertext).catch(()=>"[cannot decrypt]"); appendMessage(box,m,txt,m.sender_device_id===deviceId);}); box.scrollTop=box.scrollHeight;
+const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'); input.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}}); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t||!state.ws||state.ws.readyState!==1)return;const enc=await encryptText(t); state.ws.send(JSON.stringify({type:'message:new',...enc})); input.value='';};}
+function appendMessage(box,m,txt,mine){const w=document.createElement('div');w.className=`bubble-wrap ${mine?'mine':''}`;w.innerHTML=`<div class='bubble'><div><b>${m.sender_name}</b></div><div>${txt}</div><div class='meta'>${fmtTime(m.created_at)} ${mine?deliveryIcon(m.status):''}</div></div>`;w.dataset.id=m.id;box.appendChild(w);box.scrollTop=box.scrollHeight;}
+function connectWs(roomId,deviceId){if(state.ws)state.ws.close();const p=location.protocol==='https:'?'wss':'ws';state.ws=new WebSocket(`${p}://${location.host}?room=${roomId}&device=${encodeURIComponent(deviceId)}`);state.ws.onmessage=async(ev)=>{const payload=JSON.parse(ev.data);const chat=state.chats.find(c=>c.roomId===roomId)||{}; if(payload.type==='message:new'){const txt=await decryptText(payload.message.iv,payload.message.ciphertext).catch(()=>"[cannot decrypt]"); const mine=payload.message.sender_device_id===deviceId; upsertChat(roomId,{lastMessage:txt,lastSender:payload.message.sender_name,lastActivity:new Date().toISOString(),unread: state.roomId===roomId?0:(chat.unread||0)+(mine?0:1)}); if(state.roomId===roomId){appendMessage(document.getElementById('messages'),payload.message,txt,mine); if(!mine) state.ws.send(JSON.stringify({type:'message:read',messageId:payload.message.id}));}
+if(!mine)notifyIncoming(payload.message.sender_name,txt);} if(payload.type==='message:status'){document.querySelectorAll('.bubble-wrap').forEach(el=>{if(Number(el.dataset.id)===payload.messageId){const meta=el.querySelector('.meta'); meta.innerHTML=`${meta.textContent.slice(0,5)} ${deliveryIcon(payload.status)}`;}});}};}
+function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); navigator.clipboard.writeText(`${location.origin}/i/${roomId}#${st.secret}`);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?\nСообщения и комната на сервере не удаляются.')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();renderChats();}}]].forEach(([t,fn])=>{const b=document.createElement('button');b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.style.left=x+'px';els.context.style.top=y+'px';els.context.classList.remove('hidden');}
+function hideMenu(){els.context.classList.add('hidden')} document.addEventListener('click',hideMenu);
+function renderCreate(){els.content.innerHTML=`<div class='panel'><h2>Создать чат</h2><label>Ваш ник</label><input id='nickCreate' value='${state.nick}'/><button id='createBtn'>Создать чат</button><button id='backBtn'>Назад</button><div id='createOut'></div></div>`; document.getElementById('backBtn').onclick=()=>setView('chats'); document.getElementById('createBtn').onclick=async()=>{state.nick=document.getElementById('nickCreate').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick);
+const secret=crypto.randomUUID().replace(/-/g,'')+crypto.randomUUID().replace(/-/g,''); const rec=`R-${Array.from({length:5}).map(()=>Array.from({length:4}).map(()=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random()*32)]).join('')).join('-')}`; const salt=crypto.getRandomValues(new Uint8Array(16)); const recSalt=b64.encode(salt); const dig=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(rec+':'+recSalt)); const mat=await crypto.subtle.importKey('raw',new TextEncoder().encode(rec),'PBKDF2',false,['deriveKey']); const rk=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64.decode(recSalt),iterations:250000,hash:'SHA-256'},mat,{name:'AES-GCM',length:256},false,['encrypt']); const iv=crypto.getRandomValues(new Uint8Array(12)); const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},rk,new TextEncoder().encode(secret));
+const res=await fetch('/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recoverySalt:recSalt,recoveryVerifier:b64.encode(dig),recoverySecretIv:b64.encode(iv),recoverySecretCiphertext:b64.encode(c)})}); const data=await res.json(); STORAGE.set(STORAGE.roomState(data.publicId),{secret,deviceId:crypto.randomUUID()}); upsertChat(data.publicId,{});
+const inv=`${data.inviteLink}#${secret}`; document.getElementById('createOut').innerHTML=`<label>Invite-ссылка</label><textarea readonly id='inv'>${inv}</textarea><button id='copyInv'>Скопировать ссылку</button><button id='shareInv'>Поделиться</button><label>Recovery-код</label><textarea readonly id='rec'>${rec}</textarea><button id='saveRec'>Сохранить</button><button id='goChat'>Перейти в чат</button>`; document.getElementById('copyInv').onclick=()=>navigator.clipboard.writeText(inv); document.getElementById('shareInv').onclick=async()=>{if(navigator.share){try{await navigator.share({text:inv});}catch{}} else navigator.clipboard.writeText(inv)}; document.getElementById('saveRec').onclick=()=>{navigator.clipboard.writeText(rec); const txt=`FPChat recovery code\n\nRecovery code:\n${rec}\n\nВажно:\nБез этого кода восстановить чат нельзя.\nНе отправляйте этот код посторонним.`; const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'})); a.download=`fpchat-recovery-${new Date().toISOString().slice(0,10)}.txt`; a.click();}; document.getElementById('goChat').onclick=()=>openChat(data.publicId);
+};}
+function renderRestore(){els.content.innerHTML=`<div class='panel'><h2>Восстановить</h2><label>Ваш ник</label><input id='nickRestore' value='${state.nick}'/><label>Recovery-код</label><input id='recCode'/><label>ID комнаты</label><input id='roomId' maxlength='16'/><button id='restoreBtn'>Восстановить</button><button id='backBtn'>Назад</button><div id='restoreOut'></div></div>`; document.getElementById('backBtn').onclick=()=>setView('chats'); document.getElementById('restoreBtn').onclick=async()=>{const recoveryCode=document.getElementById('recCode').value.trim().toUpperCase(); const roomId=document.getElementById('roomId').value.trim().toUpperCase(); state.nick=document.getElementById('nickRestore').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick); const res=await fetch(`/api/rooms/${roomId}/recover`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recoveryCode})}); if(!res.ok)return alert('Ошибка восстановления'); const d=await res.json(); const mat=await crypto.subtle.importKey('raw',new TextEncoder().encode(recoveryCode),'PBKDF2',false,['deriveKey']); const rk=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64.decode(d.recoverySalt),iterations:250000,hash:'SHA-256'},mat,{name:'AES-GCM',length:256},false,['decrypt']); const pl=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(d.recoverySecretIv)},rk,b64.decode(d.recoverySecretCiphertext)); STORAGE.set(STORAGE.roomState(roomId),{secret:new TextDecoder().decode(pl),deviceId:crypto.randomUUID()}); upsertChat(roomId,{}); document.getElementById('restoreOut').innerHTML=`<p>Чат восстановлен</p><button id='goRest'>Перейти в чат</button>`; document.getElementById('goRest').onclick=()=>openChat(roomId);};}
+function renderSettings(){els.content.innerHTML=`<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id='nick' value='${state.nick}'/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><label><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/> Включить уведомления</label><label><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/> Показывать текст сообщения</label><label><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/> Скрывать отправителя</label><label><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/> Звук нового сообщения</label><button id='save'>Сохранить</button></div>`; const t=document.getElementById('theme'); t.value=localStorage.getItem(STORAGE.theme)||'auto'; t.onchange=()=>applyTheme(t.value); const toggle=()=>{['nText','nSender','nSound'].forEach(id=>document.getElementById(id).disabled=!document.getElementById('nEnabled').checked)}; document.getElementById('nEnabled').onchange=async()=>{if(document.getElementById('nEnabled').checked&&'Notification'in window)await Notification.requestPermission(); toggle()}; toggle(); document.getElementById('save').onclick=()=>{state.nick=document.getElementById('nick').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick); state.notif={enabled:document.getElementById('nEnabled').checked,showText:document.getElementById('nText').checked,hideSender:document.getElementById('nSender').checked,sound:document.getElementById('nSound').checked}; STORAGE.set(STORAGE.notif,state.notif); alert('Сохранено');};}
+function applyTheme(v){localStorage.setItem(STORAGE.theme,v);const root=document.documentElement;if(v==='auto'){root.dataset.theme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';} else root.dataset.theme=v;}
+function notifyIncoming(sender,text){if(!state.notif.enabled)return; const msg= state.notif.showText ? (state.notif.hideSender?text:`${sender}: ${text}`) : (state.notif.hideSender?'Новое сообщение':`${sender}: новое сообщение`); if('Notification'in window && Notification.permission==='granted') new Notification('FPChat',{body:msg}); if(state.notif.sound){new Audio('data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YTAAAAABAQEB').play().catch(()=>{});} }
 
-const els = {
-  createView: document.getElementById('createView'),
-  createRoomBtn: document.getElementById('createRoomBtn'),
-  createdResult: document.getElementById('createdResult'),
-  inviteLink: document.getElementById('inviteLink'),
-  recoveryCode: document.getElementById('recoveryCode'),
-  goToChatBtn: document.getElementById('goToChatBtn'),
-  activeChatsList: document.getElementById('activeChatsList'),
-  joinView: document.getElementById('joinView'),
-  roomLabel: document.getElementById('roomLabel'),
-  displayNameInput: document.getElementById('displayNameInput'),
-  joinBtn: document.getElementById('joinBtn'),
-  joinGoToChatBtn: document.getElementById('joinGoToChatBtn'),
-  restoreRoomIdInput: document.getElementById('restoreRoomIdInput'),
-  restoreCodeInput: document.getElementById('restoreCodeInput'),
-  restoreChatBtn: document.getElementById('restoreChatBtn'),
-  chatView: document.getElementById('chatView'),
-  chatRoomId: document.getElementById('chatRoomId'),
-  messages: document.getElementById('messages'),
-  sendForm: document.getElementById('sendForm'),
-  messageInput: document.getElementById('messageInput')
-};
-
-let state = { roomId: null, secret: null, ws: null, me: null, key: null };
-
-function upsertActiveChat(roomId, patch = {}) {
-  const chats = STORAGE.getActiveChats();
-  const now = new Date().toISOString();
-  const index = chats.findIndex(item => item.roomId === roomId);
-  const existing = index >= 0 ? chats[index] : { roomId, createdAt: now };
-  const next = { ...existing, ...patch, roomId, lastOpenedAt: patch.lastOpenedAt || now };
-  if (index >= 0) chats[index] = next; else chats.unshift(next);
-  STORAGE.setActiveChats(chats.slice(0, 100));
-}
-
-function removeActiveChat(roomId) {
-  const chats = STORAGE.getActiveChats().filter(item => item.roomId !== roomId);
-  STORAGE.setActiveChats(chats);
-  localStorage.removeItem(STORAGE.roomState(roomId));
-}
-
-function renderActiveChats() {
-  const chats = STORAGE.getActiveChats();
-  if (!chats.length) {
-    els.activeChatsList.textContent = 'На этом устройстве пока нет активных чатов';
-    return;
-  }
-  els.activeChatsList.innerHTML = '';
-  chats
-    .slice()
-    .sort((a, b) => new Date(b.lastOpenedAt || 0) - new Date(a.lastOpenedAt || 0))
-    .forEach(chat => {
-      const row = document.createElement('div');
-      row.className = 'chat-row';
-      const title = chat.nickname ? `${chat.nickname} (${chat.roomId.slice(0, 8)}...)` : chat.roomId;
-      const lastOpen = chat.lastOpenedAt ? new Date(chat.lastOpenedAt).toLocaleString() : '—';
-      const lastMessage = chat.lastMessage || '—';
-      row.innerHTML = `<div><div><strong>${title}</strong></div><div class="chat-meta">Последнее открытие: ${lastOpen}</div><div class="chat-meta">Последнее сообщение: ${lastMessage}</div></div>`;
-      const actions = document.createElement('div');
-      actions.className = 'chat-actions';
-
-      const openBtn = document.createElement('button');
-      openBtn.textContent = 'Открыть чат';
-      openBtn.addEventListener('click', () => {
-        window.location.href = `/chat/${chat.roomId}`;
-      });
-      const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'danger';
-      deleteBtn.textContent = 'Удалить';
-      deleteBtn.addEventListener('click', () => {
-        removeActiveChat(chat.roomId);
-        renderActiveChats();
-      });
-
-      actions.appendChild(openBtn);
-      actions.appendChild(deleteBtn);
-      row.appendChild(actions);
-      els.activeChatsList.appendChild(row);
-    });
-}
-
-const b64 = {
-  encode: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))),
-  decode: (str) => Uint8Array.from(atob(str), c => c.charCodeAt(0))
-};
-
-async function deriveKey(secret) {
-  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: new TextEncoder().encode('fpchat-room-salt-v1'), iterations: 150000, hash: 'SHA-256' },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-function randomRoomSecret() { return crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, ''); }
-function randomDeviceId() { return crypto.randomUUID(); }
-function randomRecoveryCode() {
-  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const part = () => Array.from({ length: 4 }).map(() => a[Math.floor(Math.random() * a.length)]).join('');
-  return `R-${part()}-${part()}-${part()}-${part()}-${part()}`;
-}
-
-async function hashRecovery(recoveryCode) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const input = new TextEncoder().encode(recoveryCode + ':' + b64.encode(salt));
-  const digest = await crypto.subtle.digest('SHA-256', input);
-  return { recoverySalt: b64.encode(salt), recoveryVerifier: b64.encode(digest) };
-}
-
-async function deriveRecoveryEncryptionKey(recoveryCode, recoverySaltB64) {
-  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(recoveryCode), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: b64.decode(recoverySaltB64), iterations: 250000, hash: 'SHA-256' },
-    material,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-}
-
-async function encryptText(text) {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, state.key, new TextEncoder().encode(text));
-  return { iv: b64.encode(iv), ciphertext: b64.encode(ciphertext) };
-}
-
-async function decryptText(iv, ciphertext) {
-  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.decode(iv) }, state.key, b64.decode(ciphertext));
-  return new TextDecoder().decode(plain);
-}
-
-function renderMessage(item, decrypted, mine) {
-  const div = document.createElement('div');
-  div.className = 'msg';
-  div.dataset.id = item.id;
-  div.innerHTML = `<div><b>${item.sender_name}</b>: ${decrypted}</div>
-    <div class="meta">${new Date(item.created_at).toLocaleString()} · ${item.status}${mine ? ' (you)' : ''}</div>`;
-  els.messages.appendChild(div);
-  els.messages.scrollTop = els.messages.scrollHeight;
-}
-
-function parseInvite() {
-  const m = location.pathname.match(/^\/i\/([A-Z0-9]{16})$/);
-  if (!m) return null;
-  const roomId = m[1];
-  const secret = location.hash ? location.hash.slice(1) : null;
-  if (secret) history.replaceState({}, '', `/i/${roomId}`);
-  return { roomId, secret };
-}
-
-function parseChatPath() {
-  const m = location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/);
-  if (!m) return null;
-  return { roomId: m[1] };
-}
-
-async function initFromInvite() {
-  const invite = parseInvite();
-  const directChat = parseChatPath();
-  if (!invite && !directChat) return;
-
-  state.roomId = invite?.roomId || directChat.roomId;
-  const stored = STORAGE.get(STORAGE.roomState(state.roomId));
-  state.secret = invite?.secret || stored?.secret;
-  if (!state.secret) return alert('Нет секрета для расшифровки invite-ссылки');
-  STORAGE.set(STORAGE.roomState(state.roomId), { ...stored, secret: state.secret, deviceId: stored?.deviceId || randomDeviceId() });
-  state.key = await deriveKey(state.secret);
-  els.createView.classList.add('hidden');
-  els.joinView.classList.remove('hidden');
-  els.roomLabel.textContent = `Комната: ${state.roomId}`;
-}
-
-async function createRoom() {
-  const secret = randomRoomSecret();
-  const recoveryCode = randomRecoveryCode();
-  const { recoverySalt, recoveryVerifier } = await hashRecovery(recoveryCode);
-  const recoveryKey = await deriveRecoveryEncryptionKey(recoveryCode, recoverySalt);
-  const recoverySecretIvRaw = crypto.getRandomValues(new Uint8Array(12));
-  const recoverySecretCiphertextRaw = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: recoverySecretIvRaw },
-    recoveryKey,
-    new TextEncoder().encode(secret)
-  );
-  const recoverySecretIv = b64.encode(recoverySecretIvRaw);
-  const recoverySecretCiphertext = b64.encode(recoverySecretCiphertextRaw);
-  const res = await fetch('/api/rooms', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext })
-  });
-  const data = await res.json();
-  const invite = `${data.inviteLink}#${secret}`;
-
-  els.createdResult.classList.remove('hidden');
-  els.inviteLink.value = invite;
-  els.recoveryCode.textContent = recoveryCode;
-
-  STORAGE.set(STORAGE.roomState(data.publicId), { secret, deviceId: randomDeviceId() });
-  upsertActiveChat(data.publicId);
-  renderActiveChats();
-
-  els.goToChatBtn.onclick = () => {
-    window.location.href = `/chat/${data.publicId}`;
-  };
-}
-
-async function restoreChatByRecoveryCode() {
-  const roomId = els.restoreRoomIdInput.value.trim().toUpperCase();
-  const recoveryCode = els.restoreCodeInput.value.trim().toUpperCase();
-  if (!roomId || !recoveryCode) return alert('Введите room ID и recovery-код');
-
-  const res = await fetch(`/api/rooms/${roomId}/recover`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ recoveryCode })
-  });
-  if (!res.ok) return alert('Не удалось восстановить чат: проверьте room ID и recovery-код');
-  const data = await res.json();
-  const recoveryKey = await deriveRecoveryEncryptionKey(recoveryCode, data.recoverySalt);
-  const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: b64.decode(data.recoverySecretIv) },
-    recoveryKey,
-    b64.decode(data.recoverySecretCiphertext)
-  );
-  const secret = new TextDecoder().decode(plaintext);
-  const persisted = STORAGE.get(STORAGE.roomState(roomId)) || {};
-  STORAGE.set(STORAGE.roomState(roomId), { ...persisted, secret, deviceId: persisted.deviceId || randomDeviceId() });
-  upsertActiveChat(roomId);
-  renderActiveChats();
-  alert('Чат восстановлен на этом устройстве. Теперь его можно открыть.');
-}
-
-async function joinRoom() {
-  const displayName = els.displayNameInput.value.trim();
-  if (!displayName) return;
-
-  const persisted = STORAGE.get(STORAGE.roomState(state.roomId));
-  const deviceId = persisted?.deviceId || randomDeviceId();
-  STORAGE.set(STORAGE.roomState(state.roomId), { ...persisted, deviceId, secret: state.secret });
-
-  const res = await fetch(`/api/rooms/${state.roomId}/join`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName, deviceId })
-  });
-  const data = await res.json();
-  state.me = data.participant;
-  upsertActiveChat(state.roomId, { nickname: displayName });
-  renderActiveChats();
-  els.joinGoToChatBtn.classList.remove('hidden');
-  els.joinGoToChatBtn.onclick = () => { window.location.href = `/chat/${state.roomId}`; };
-
-  els.joinView.classList.add('hidden');
-  els.chatView.classList.remove('hidden');
-  els.chatRoomId.textContent = state.roomId;
-  els.messages.innerHTML = '';
-
-  for (const message of data.messages) {
-    const txt = await decryptText(message.iv, message.ciphertext).catch(() => '[cannot decrypt]');
-    renderMessage(message, txt, message.sender_device_id === deviceId);
-  }
-
-  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  state.ws = new WebSocket(`${wsProtocol}//${location.host}?room=${state.roomId}&device=${encodeURIComponent(deviceId)}`);
-  state.ws.onmessage = async (ev) => {
-    const payload = JSON.parse(ev.data);
-    if (payload.type === 'message:new') {
-      const txt = await decryptText(payload.message.iv, payload.message.ciphertext).catch(() => '[cannot decrypt]');
-      renderMessage(payload.message, txt, payload.message.sender_device_id === deviceId);
-      upsertActiveChat(state.roomId, { lastMessage: txt, nickname: state.me?.displayName || displayName });
-      renderActiveChats();
-      if (payload.message.sender_device_id !== deviceId) {
-        state.ws.send(JSON.stringify({ type: 'message:read', messageId: payload.message.id }));
-      }
-    }
-    if (payload.type === 'message:status') {
-      const msg = els.messages.querySelector(`.msg[data-id="${payload.messageId}"] .meta`);
-      if (msg) msg.textContent = `${msg.textContent.split(' · ')[0]} · ${payload.status}`;
-    }
-  };
-}
-
-renderActiveChats();
-els.createRoomBtn.addEventListener('click', createRoom);
-els.joinBtn.addEventListener('click', joinRoom);
-els.restoreChatBtn.addEventListener('click', () => {
-  void restoreChatByRecoveryCode().catch(() => alert('Ошибка восстановления чата'));
-});
-els.sendForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const text = els.messageInput.value.trim();
-  if (!text || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  const enc = await encryptText(text);
-  state.ws.send(JSON.stringify({ type: 'message:new', ...enc }));
-  els.messageInput.value = '';
-});
-
-initFromInvite();
+['emptyCreateBtn','emptyRestoreBtn','mobileMenuBtn'].forEach(id=>document.getElementById(id).onclick=()=>{if(id==='emptyCreateBtn')setView('create'); if(id==='emptyRestoreBtn')setView('restore'); if(id==='mobileMenuBtn')els.sidebar.classList.toggle('open');});
+document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>setView(b.dataset.view)); els.search.oninput=renderChats;
+(async()=>{applyTheme(localStorage.getItem(STORAGE.theme)||'auto'); const inv=parseInvite(); const chat=parseChat(); if(inv||chat){const roomId=inv?.roomId||chat; const stored=STORAGE.get(STORAGE.roomState(roomId))||{}; const secret=inv?.secret||stored.secret; if(secret){STORAGE.set(STORAGE.roomState(roomId),{...stored,secret,deviceId:stored.deviceId||crypto.randomUUID()}); upsertChat(roomId,{}); state.roomId=roomId; await openChat(roomId);} } else {const last=localStorage.getItem(STORAGE.lastSelectedRoomId); renderChats(); if(last&&state.chats.some(c=>c.roomId===last)) {state.roomId=last; openChat(last);} else setView('chats');}})();

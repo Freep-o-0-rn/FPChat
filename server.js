@@ -201,7 +201,12 @@ wss.on('connection', (ws, req) => {
       for (const client of set) {
         if (client.readyState === WebSocket.OPEN) {
           client.send(JSON.stringify(event));
-          if (client !== ws) q.updateDelivered.run(result.lastInsertRowid);
+          if (client !== ws) {
+            q.updateDelivered.run(result.lastInsertRowid);
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'message:status', messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() }));
+            }
+          }
         }
       }
     }
