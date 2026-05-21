@@ -51,12 +51,25 @@ function createDb(databasePath) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY(room_id) REFERENCES rooms(id)
     );
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      muted INTEGER NOT NULL DEFAULT 0,
+      show_text INTEGER NOT NULL DEFAULT 0,
+      hide_sender INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(room_id, device_id, endpoint),
+      FOREIGN KEY(room_id) REFERENCES rooms(id)
+    );
   `);
-  const recoveryColumns = db.prepare(`PRAGMA table_info(recovery)`).all();
-  const hasSecretIv = recoveryColumns.some((column) => column.name === 'recovery_secret_iv');
-  const hasSecretCiphertext = recoveryColumns.some((column) => column.name === 'recovery_secret_ciphertext');
-  if (!hasSecretIv) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_iv TEXT');
-  if (!hasSecretCiphertext) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_ciphertext TEXT');
+  const recoveryColumns = db.prepare('PRAGMA table_info(recovery)').all();
+  if (!recoveryColumns.some((column) => column.name === 'recovery_secret_iv')) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_iv TEXT');
+  if (!recoveryColumns.some((column) => column.name === 'recovery_secret_ciphertext')) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_ciphertext TEXT');
 
 
   return db;

@@ -1,0 +1,12 @@
+{
+  "name": "FPChat",
+  "short_name": "FPChat",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "theme_color": "#3390ec",
+  "background_color": "#0f172a",
+  "icons": [
+    {"src":"/icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}
