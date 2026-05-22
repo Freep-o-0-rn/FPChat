@@ -1,12 +1,24 @@
 {
-  "name": "FPChat",
+  "name": "FreeP0rn Chat",
   "short_name": "FPChat",
+  "description": "Private chat application",
   "display": "standalone",
   "start_url": "/",
   "scope": "/",
-  "theme_color": "#3390ec",
-  "background_color": "#0f172a",
+  "theme_color": "#7b2cff",
+  "background_color": "#050510",
   "icons": [
-    {"src":"/icons/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
   ]
 }
