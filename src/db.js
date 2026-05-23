@@ -73,7 +73,10 @@ function createDb(databasePath) {
 
   const participantColumns = db.prepare('PRAGMA table_info(participants)').all();
   if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
-  if (!participantColumns.some((column) => column.name === 'updated_at')) db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
+  if (!participantColumns.some((column) => column.name === 'updated_at')) {
+  db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT");
+  db.exec("UPDATE participants SET updated_at = datetime('now') WHERE updated_at IS NULL");
+}
 
   return db;
 }
