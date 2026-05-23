@@ -71,6 +71,9 @@ function createDb(databasePath) {
   if (!recoveryColumns.some((column) => column.name === 'recovery_secret_iv')) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_iv TEXT');
   if (!recoveryColumns.some((column) => column.name === 'recovery_secret_ciphertext')) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_ciphertext TEXT');
 
+  const participantColumns = db.prepare('PRAGMA table_info(participants)').all();
+  if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
+  if (!participantColumns.some((column) => column.name === 'updated_at')) db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))");
 
   return db;
 }
