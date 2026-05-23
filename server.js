@@ -37,6 +37,7 @@ const q = {
   findRoomById: db.prepare('SELECT * FROM rooms WHERE id = ?'),
   createRecovery: db.prepare(`INSERT INTO recovery (room_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext) VALUES (?, ?, ?, ?, ?)`),
   findRecoveryByPublicId: db.prepare(`SELECT rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext FROM recovery rec JOIN rooms room ON room.id = rec.room_id WHERE room.public_id = ?`),
+  listRecoveriesWithRooms: db.prepare(`SELECT room.public_id, rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext FROM recovery rec JOIN rooms room ON room.id = rec.room_id`),
   upsertParticipant: db.prepare(`INSERT INTO participants (room_id, display_name, device_id, last_seen_at, online, updated_at) VALUES (?, ?, ?, datetime('now'), 0, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET display_name = excluded.display_name, last_seen_at = datetime('now'), updated_at = datetime('now')`),
   listParticipantsByRoom: db.prepare(`SELECT device_id, display_name, online, last_seen_at FROM participants WHERE room_id = ? ORDER BY id ASC`),
   setParticipantOnline: db.prepare(`UPDATE participants SET online = 1, last_seen_at = datetime('now'), updated_at = datetime('now') WHERE room_id = ? AND device_id = ?`),
@@ -131,6 +132,22 @@ async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, sender
 
 // existing endpoints below ...
 app.post('/api/rooms', (req, res) => { const publicId = randomToken(16); const { recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {}; if (!recoverySalt || !recoveryVerifier || !recoverySecretIv || !recoverySecretCiphertext) return res.status(400).json({ error: 'recovery verifier required' }); db.transaction(() => { const roomResult = q.createRoom.run(publicId); q.createRecovery.run(roomResult.lastInsertRowid, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext); })(); return res.json({ publicId, inviteLink: `${getBaseUrl(req)}/i/${publicId}` }); });
+app.post('/api/recover', (req, res) => {
+  const { recoveryCode } = req.body || {};
+  if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
+  const recoveries = q.listRecoveriesWithRooms.all();
+  for (const recovery of recoveries) {
+    const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64');
+    if (digest !== recovery.recovery_verifier) continue;
+    return res.json({
+      publicId: recovery.public_id,
+      recoverySalt: recovery.recovery_salt,
+      recoverySecretIv: recovery.recovery_secret_iv,
+      recoverySecretCiphertext: recovery.recovery_secret_ciphertext
+    });
+  }
+  return res.status(403).json({ error: 'invalid recovery code' });
+});
 app.post('/api/rooms/:publicId/recover', (req, res) => { const { recoveryCode } = req.body || {}; if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' }); const recovery = q.findRecoveryByPublicId.get(req.params.publicId); if (!recovery) return res.status(404).json({ error: 'room not found' }); const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64'); if (digest !== recovery.recovery_verifier) return res.status(403).json({ error: 'invalid recovery code' }); return res.json({ recoverySalt: recovery.recovery_salt, recoverySecretIv: recovery.recovery_secret_iv, recoverySecretCiphertext: recovery.recovery_secret_ciphertext }); });
 app.get('/i/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/chat/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
