@@ -3,7 +3,10 @@ const state={view:'chats',roomId:null,secret:null,key:null,ws:null,me:null,chats
 const els={content:document.getElementById('contentPane'),rows:document.getElementById('chatRows'),search:document.getElementById('chatSearch'),empty:document.getElementById('emptyChats'),sidebar:document.getElementById('sidebar'),sidebarOverlay:document.getElementById('sidebarOverlay'),context:document.getElementById('contextMenu'),appRoot:document.getElementById('appRoot')};
 const b64={encode:(buf)=>btoa(String.fromCharCode(...new Uint8Array(buf))),decode:(str)=>Uint8Array.from(atob(str),c=>c.charCodeAt(0))};
 const shortId=(id)=>`${id.slice(0,4)}...${id.slice(-3)}`; const fmtTime=(iso)=>iso?new Date(iso).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}):'';
+const APP_BUILD_KEY='fpchat:app-build';
+const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
 let activeChatDeviceId=null;let pendingIncomingReadIds=[];let pendingPillCount=0;
+let appVersionCheckInFlight=false;
 function setLocalConnectionState(value){state.localConnectionState=value;renderPresenceStatus();}
 function formatLastSeen(lastSeenAt){if(!lastSeenAt)return '';const d=new Date(lastSeenAt);if(Number.isNaN(d.getTime()))return '';const now=new Date();const startToday=new Date(now.getFullYear(),now.getMonth(),now.getDate());const startTarget=new Date(d.getFullYear(),d.getMonth(),d.getDate());const oneDay=24*60*60*1000;const diff=Math.round((startToday-startTarget)/oneDay);const hhmm=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});if(diff===0)return `был в ${hhmm}`;if(diff===1)return `был вчера в ${hhmm}`;const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=d.getFullYear();return `был ${dd}.${mm}.${yyyy} в ${hhmm}`;}
 function renderPresenceStatus(){const line=document.getElementById('presenceLine');const warning=document.getElementById('connectionWarning');if(!line)return;const me=state.me?.deviceId;const peer=Object.values(state.presence).find((p)=>p?.deviceId&&p.deviceId!==me);if(peer){const dotClass=peer.online?'online':'offline';const label=peer.online?'Онлайн':`Оффлайн${peer.lastSeenAt?` · ${formatLastSeen(peer.lastSeenAt)}`:''}`;line.innerHTML=`<span class='presence-dot ${dotClass}'></span><span>${label}</span>`;}else{line.innerHTML="<span class='presence-dot offline'></span><span>Ожидание собеседника</span>";}
@@ -63,14 +66,16 @@ els.sidebarOverlay?.addEventListener('click',closeMobileMenu);
 document.addEventListener('keydown',(e)=>{if(e.key==='Escape')closeMobileMenu();});
 window.addEventListener('resize',()=>{if(!isMobileViewport())closeMobileMenu();});
 const restoreWsOnResume=()=>{if(state.roomId&&activeChatDeviceId){ensureWsConnected(state.roomId,activeChatDeviceId);}};
-window.addEventListener('focus',restoreWsOnResume);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')restoreWsOnResume();});
-window.addEventListener('pageshow',restoreWsOnResume);
+const handleAppResume=()=>{restoreWsOnResume();checkAppVersionOnEntry();};
+window.addEventListener('focus',handleAppResume);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')handleAppResume();});
+window.addEventListener('pageshow',handleAppResume);
 
 
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.dataset.view); closeMobileMenu();}); els.search.oninput=renderChats;
 (async()=>{
   await registerServiceWorker();
+  await checkAppVersionOnEntry();
   applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
   const inv=parseInvite();
   const chat=parseChat();
@@ -100,6 +105,56 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.datase
 })();
 function urlB64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const rawData=atob(base64);return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));}
 async function registerServiceWorker(){if(!('serviceWorker' in navigator))return null;try{return await navigator.serviceWorker.register('/sw.js');}catch{return null;}}
+async function applyAppUpdate(){
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const reg of regs){
+        try{await reg.update();}catch{}
+      }
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map((key)=>caches.delete(key)));
+    }
+  }finally{
+    location.reload();
+  }
+}
+async function checkAppVersionOnEntry(){
+  if(appVersionCheckInFlight)return;
+  appVersionCheckInFlight=true;
+  try{
+    const response=await fetch('/version.json',{cache:'no-store'});
+    if(!response.ok)return;
+    const payload=await response.json();
+    const serverBuild=Number(payload?.build);
+    if(!Number.isFinite(serverBuild))return;
+    const localBuildRaw=localStorage.getItem(APP_BUILD_KEY);
+    const localBuild=localBuildRaw===null?null:Number(localBuildRaw);
+    const isReloading=sessionStorage.getItem(APP_UPDATE_RELOADING_KEY)==='1';
+    if(localBuild===null||!Number.isFinite(localBuild)){
+      localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
+      if(isReloading)sessionStorage.removeItem(APP_UPDATE_RELOADING_KEY);
+      return;
+    }
+    if(serverBuild>localBuild){
+      localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
+      if(!isReloading){
+        sessionStorage.setItem(APP_UPDATE_RELOADING_KEY,'1');
+        await applyAppUpdate();
+      }
+      return;
+    }
+    if(serverBuild===localBuild&&isReloading){
+      sessionStorage.removeItem(APP_UPDATE_RELOADING_KEY);
+    }
+  }catch{
+    // Silent fallback: continue with the current app version.
+  }finally{
+    appVersionCheckInFlight=false;
+  }
+}
 async function getPushConfig(){const r=await fetch('/api/push/vapid-public-key');return r.json();}
 async function ensurePushSubscription(){if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){alert('Push-уведомления недоступны на этом устройстве');return null;}const registration=await navigator.serviceWorker.ready;const cfg=await getPushConfig();if(!cfg.enabled){alert('Push-уведомления отключены на сервере');return null;}if(Notification.permission!=='granted'){const p=await Notification.requestPermission();if(p!=='granted')return null;}let sub=await registration.pushManager.getSubscription();if(!sub){sub=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8Array(cfg.publicKey)});}return sub;}
 async function syncRoomPushSubscription(roomId){if(!state.notif.enabled||state.roomMute[roomId])return;const persisted=STORAGE.get(STORAGE.roomState(roomId));if(!persisted?.deviceId)return;const sub=await ensurePushSubscription();if(!sub)return;await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:persisted.deviceId,subscription:sub.toJSON(),settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});}
