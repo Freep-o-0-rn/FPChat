@@ -42,6 +42,7 @@ const q = {
   setParticipantOnline: db.prepare(`UPDATE participants SET online = 1, last_seen_at = datetime('now'), updated_at = datetime('now') WHERE room_id = ? AND device_id = ?`),
   setParticipantOffline: db.prepare(`UPDATE participants SET online = 0, last_seen_at = datetime('now'), updated_at = datetime('now') WHERE room_id = ? AND device_id = ?`),
   findParticipant: db.prepare('SELECT * FROM participants WHERE room_id = ? AND device_id = ?'),
+  listParticipantRoomsByDevice: db.prepare(`SELECT p.room_id, p.device_id, p.display_name, p.online, p.last_seen_at, r.public_id AS room_public_id FROM participants p JOIN rooms r ON r.id = p.room_id WHERE p.device_id = ?`),
   listMessages: db.prepare(`SELECT m.id, m.ciphertext, m.iv, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.room_id = ? ORDER BY m.id ASC`),
   createMessage: db.prepare(`INSERT INTO messages (room_id, sender_id, ciphertext, iv, status) VALUES (?, ?, ?, ?, 'sent')`),
   markDelivered: db.prepare(`UPDATE messages
@@ -155,6 +156,29 @@ function hasOpenSocketForDevice(roomPublicId, deviceId) {
   return false;
 }
 
+function hasOpenSocketForDeviceGlobal(deviceId) {
+  for (const set of socketsByRoom.values()) {
+    for (const client of set) {
+      if (client.deviceId === deviceId && client.readyState === WebSocket.OPEN) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function broadcastPresenceOfflineToParticipantRooms(deviceId) {
+  const participantRooms = q.listParticipantRoomsByDevice.all(deviceId);
+  for (const participant of participantRooms) {
+    broadcastPresenceUpdate(participant.room_public_id, {
+      deviceId: participant.device_id,
+      displayName: participant.display_name,
+      online: false,
+      lastSeenAt: participant.last_seen_at
+    });
+  }
+}
+
 const server = http.createServer(app); const wss = new WebSocket.Server({ server });
 wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`); const roomPublicId = url.searchParams.get('room'); const deviceId = url.searchParams.get('device'); if (!roomPublicId || !deviceId) return ws.close(); const room = q.findRoomByPublicId.get(roomPublicId); if (!room) return ws.close(); ws.roomPublicId = roomPublicId; ws.deviceId = deviceId; ws.roomId = room.id; const set = roomSockets(roomPublicId); set.add(ws);
   q.setParticipantOnline.run(ws.roomId, ws.deviceId);
@@ -196,18 +220,10 @@ wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_H
 
   ws.on('close', () => {
     set.delete(ws);
-    const stillOnline = hasOpenSocketForDevice(roomPublicId, ws.deviceId);
+    const stillOnline = hasOpenSocketForDeviceGlobal(ws.deviceId);
     if (!stillOnline) {
       q.setParticipantOffline.run(ws.roomId, ws.deviceId);
-      const disconnectedParticipant = q.findParticipant.get(ws.roomId, ws.deviceId);
-      if (disconnectedParticipant) {
-        broadcastPresenceUpdate(roomPublicId, {
-          deviceId: disconnectedParticipant.device_id,
-          displayName: disconnectedParticipant.display_name,
-          online: false,
-          lastSeenAt: disconnectedParticipant.last_seen_at
-        });
-      }
+      broadcastPresenceOfflineToParticipantRooms(ws.deviceId);
     }
     if (set.size === 0) socketsByRoom.delete(roomPublicId);
   });
