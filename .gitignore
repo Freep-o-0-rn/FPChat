@@ -13,3 +13,7 @@ frontend/.vite
 frontend/dist
 backend/dist
 backend/prisma/dev.db
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
