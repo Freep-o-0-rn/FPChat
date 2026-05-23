@@ -16,7 +16,6 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png">
   <link rel="apple-touch-icon" href="/icons/icon-180x180.png">
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div class="app" id="appRoot">
@@ -55,6 +54,31 @@
   </div>
 
   <div id="contextMenu" class="context-menu hidden"></div>
-  <script src="/app.js"></script>
+
+  <script>
+    (async () => {
+      let buildSuffix = '';
+      try {
+        const res = await fetch('/version.json', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          const buildNumber = Number(data?.build);
+          if (Number.isFinite(buildNumber)) {
+            buildSuffix = `?v=${buildNumber}`;
+          }
+        }
+      } catch {}
+
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = `/styles.css${buildSuffix}`;
+      document.head.appendChild(css);
+
+      const script = document.createElement('script');
+      script.src = `/app.js${buildSuffix}`;
+      script.defer = true;
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>
