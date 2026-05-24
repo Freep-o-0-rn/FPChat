@@ -131,19 +131,23 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.datase
 function urlB64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const rawData=atob(base64);return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));}
 async function registerServiceWorker(){if(!('serviceWorker' in navigator))return null;try{return await navigator.serviceWorker.register('/sw.js');}catch{return null;}}
 
-function showUpdateSplash(){
-  document.body.innerHTML = `
-    <div class="update-splash">
-      <div class="update-splash-card">
-        <div class="update-logo">FPChat</div>
-        <h2>Обновление приложения...</h2>
-        <p>Подготавливаем новую версию. Это займёт несколько секунд.</p>
-        <div class="update-progress">
-          <div class="update-progress-bar"></div>
-        </div>
+function showUpdateOverlay(){
+  if(document.getElementById('updateOverlay')) return;
+
+  const overlay=document.createElement('div');
+  overlay.id='updateOverlay';
+  overlay.className='update-overlay';
+  overlay.innerHTML=`
+    <div class="update-splash-card">
+      <div class="update-logo">FPChat</div>
+      <h2>Обновление приложения...</h2>
+      <p>Применяем новую версию</p>
+      <div class="update-progress">
+        <div class="update-progress-bar"></div>
       </div>
     </div>
   `;
+  document.body.appendChild(overlay);
 }
 
 async function applyAppUpdate(){
@@ -158,6 +162,8 @@ async function applyAppUpdate(){
       const keys=await caches.keys();
       await Promise.all(keys.map((key)=>caches.delete(key)));
     }
+    showUpdateOverlay();
+    await new Promise((resolve)=>setTimeout(resolve,3000));
   }finally{
     location.reload();
   }
@@ -183,7 +189,6 @@ async function checkAppVersionOnEntry(){
       localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
       if(!isReloading){
         sessionStorage.setItem(APP_UPDATE_RELOADING_KEY,'1');
-        showUpdateSplash();
         await applyAppUpdate();
       }
       return;

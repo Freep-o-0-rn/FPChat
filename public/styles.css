@@ -40,16 +40,25 @@
 .presence-dot.online{background:#2ab673}
 .presence-dot.offline{background:#8a94a3}
 .connection-warning{margin-top:4px;font-size:12px;color:#d98b00}
-.update-splash {
-  min-height: 100vh;
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(circle at top, rgba(123,44,255,.22), transparent 34%),
-    var(--bg, #0e1621);
+    radial-gradient(circle at top, rgba(123,44,255,.24), transparent 36%),
+    rgba(14,22,33,.92);
   color: var(--text, #e7edf4);
   padding: 24px;
+    backdrop-filter: blur(12px);
+  animation: fpchat-update-fade-in .18s ease-out both;
+}
+
+@keyframes fpchat-update-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .update-splash-card {
@@ -60,26 +69,23 @@
   background: rgba(255,255,255,.06);
   border: 1px solid rgba(255,255,255,.1);
   box-shadow: 0 18px 45px rgba(0,0,0,.22);
-  backdrop-filter: blur(14px);
 }
 
 .update-logo {
   font-size: 22px;
   font-weight: 800;
-  letter-spacing: .3px;
   margin-bottom: 12px;
 }
 
-.update-splash h2 {
+.update-splash-card h2 {
   margin: 0 0 8px;
   font-size: 18px;
 }
 
-.update-splash p {
+.update-splash-card p {
   margin: 0 0 18px;
   color: var(--muted, #95a3b3);
   font-size: 14px;
-  line-height: 1.4;
 }
 
 .update-progress {
@@ -102,10 +108,6 @@
 }
 
 @keyframes fpchat-update-progress {
-  0% {
-    left: -45%;
-  }
-  100% {
-    left: 100%;
-  }
+  0% { left: -45%; }
+  100% { left: 100%; }
 }
