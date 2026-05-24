@@ -59,7 +59,7 @@ function renderChats(){const q=els.search.value?.toLowerCase()||''; let chats=st
 function renderMainChatsPlaceholder(){els.content.innerHTML='';}
 function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16})$/);if(!m)return null;const roomId=m[1], secret=location.hash?location.hash.slice(1):null; if(secret)history.replaceState({},'',`/i/${roomId}`); return {roomId,secret};}
 function parseChat(){const m=location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/); return m?m[1]:null;}
-function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
+async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   state.roomId=roomId;
   state.secret=secret;
   if(key)state.key=key;
@@ -71,7 +71,7 @@ function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   syncRoomPushSubscription(roomId).catch(()=>{});
   showContentPane();
   els.appRoot?.classList.add('mobile-chat');
-  renderChatView(data.messages,deviceId);
+  await renderChatView(data.messages,deviceId);
   connectWs(roomId,deviceId);
   setActiveNav('chats');
   renderChats();
@@ -134,7 +134,7 @@ async function joinByInviteText(text){
   STORAGE.set(STORAGE.roomState(roomId),{...stored,secret,deviceId});
   state.key=key;
   upsertChat(roomId,{});
-  openChatWithJoinData(roomId,secret,deviceId,data,key);
+  await openChatWithJoinData(roomId,secret,deviceId,data,key);
   return true;
 }
 async function openChat(roomId){
@@ -180,7 +180,7 @@ async function openChat(roomId){
     setView('chats');
     return;
   }
-  openChatWithJoinData(roomId,persisted.secret,deviceId,data);
+  await openChatWithJoinData(roomId,persisted.secret,deviceId,data);
 }
 function deliveryIcon(s){if(s==='read')return "<span style='color:#3390ec'>✓✓</span>"; if(s==='delivered')return "<span style='color:#9aa0a6'>✓✓</span>"; if(s==='sent')return '✓'; return '⏳';}
 function isMessagesAtBottom(){const box=document.getElementById('messages');if(!box)return true;return box.scrollTop+box.clientHeight>=box.scrollHeight-40;}
@@ -194,8 +194,10 @@ function observeUnreadMessage(el){if(!el||!unreadVisibleObserver)return;if(el.da
 function markMessageRead(messageId){const id=Number(messageId);if(!id)return;const box=document.getElementById('messages');const msgEl=box?.querySelector(`.msg[data-message-id="${id}"], .msg[data-id="${id}"]`);if(!msgEl||msgEl.dataset.read!=='0')return;msgEl.dataset.read='1';unreadVisibleObserver?.unobserve(msgEl);markIncomingMessagesRead(state.roomId,activeChatDeviceId,[id]);recomputePendingUnread();updateUnreadIndicators();}
 let wsConnectStartedAt=0;let wsConnectInFlight=null;
 function ensureWsConnected(roomId,deviceId,timeoutMs=1800){if(!roomId||!deviceId)return Promise.resolve(false);if(state.ws&&state.ws.readyState===WebSocket.OPEN){setLocalConnectionState('connected');return Promise.resolve(true);}const isStaleConnecting=state.ws&&state.ws.readyState===WebSocket.CONNECTING&&Date.now()-wsConnectStartedAt>timeoutMs;if(!state.ws||state.ws.readyState===WebSocket.CLOSING||state.ws.readyState===WebSocket.CLOSED||isStaleConnecting){setLocalConnectionState('connecting');if(state.ws){try{state.ws.close();}catch{}}connectWs(roomId,deviceId);} if(wsConnectInFlight)return wsConnectInFlight;wsConnectInFlight=new Promise((resolve)=>{const ws=state.ws;if(!ws){wsConnectInFlight=null;resolve(false);return;}if(ws.readyState===WebSocket.OPEN){wsConnectInFlight=null;resolve(true);return;}const done=(ok)=>{clearTimeout(timer);ws.removeEventListener('open',onOpen);ws.removeEventListener('error',onFail);ws.removeEventListener('close',onFail);if(wsConnectInFlight===promiseRef)wsConnectInFlight=null;resolve(ok&&state.ws===ws&&ws.readyState===WebSocket.OPEN);};const onOpen=()=>done(true);const onFail=()=>done(false);const timer=setTimeout(()=>done(false),timeoutMs);const promiseRef=wsConnectInFlight;ws.addEventListener('open',onOpen,{once:true});ws.addEventListener('error',onFail,{once:true});ws.addEventListener('close',onFail,{once:true});});return wsConnectInFlight;}
-function renderChatView(messages,deviceId){messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-header'><div><strong>${state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><form class='send' id='sendForm'><textarea id='msgInput' placeholder='Сообщение'></textarea><button id='sendBtn' class='btn-send' type='submit' disabled>➤</button></form>`; document.getElementById('backMob')?.addEventListener('click',()=>setView('chats')); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};
-const box=document.getElementById('messages'); unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>{if(!entry.isIntersecting)return;const el=entry.target;markMessageRead(el.dataset.messageId);unreadVisibleObserver?.unobserve(el);});},{root:box,threshold:0.01}); let prev=''; messages.forEach(async m=>{const d=formatDateSeparator(m.created_at); if(d!==prev){prev=d; const sep=document.createElement('div');sep.className='date-sep';sep.textContent=d;box.appendChild(sep);} const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext).catch(()=>"[cannot decrypt]"); appendMessage(box,m,txt,mine,false);}); box.scrollTop=box.scrollHeight;recomputePendingUnread();updateUnreadIndicators();
+function scrollMessagesToBottom(box){if(!box)return;requestAnimationFrame(()=>{requestAnimationFrame(()=>{box.scrollTop=box.scrollHeight;});});}
+function scrollToFirstUnread(){const firstUnread=document.querySelector('.bubble-wrap[data-incoming="1"][data-read="0"]');if(firstUnread){requestAnimationFrame(()=>{requestAnimationFrame(()=>{firstUnread.scrollIntoView({behavior:'auto',block:'center'});});});return true;}return false;}
+async function renderChatView(messages,deviceId){messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-header'><div><strong>${state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><form class='send' id='sendForm'><textarea id='msgInput' placeholder='Сообщение'></textarea><button id='sendBtn' class='btn-send' type='submit' disabled>➤</button></form>`; document.getElementById('backMob')?.addEventListener('click',()=>setView('chats')); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};
+const box=document.getElementById('messages'); unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>{if(!entry.isIntersecting)return;const el=entry.target;markMessageRead(el.dataset.messageId);unreadVisibleObserver?.unobserve(el);});},{root:box,threshold:0.01}); let prev=''; for(const m of messages){const d=formatDateSeparator(m.created_at); if(d!==prev){prev=d; const sep=document.createElement('div');sep.className='date-sep';sep.textContent=d;box.appendChild(sep);} const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext).catch(()=>"[cannot decrypt]"); appendMessage(box,m,txt,mine,false);}recomputePendingUnread();const hasUnread=pendingIncomingReadIds.length>0;if(hasUnread){scrollToFirstUnread();renderNewMessagesPill(pendingIncomingReadIds.length);}else{scrollMessagesToBottom(box);renderNewMessagesPill(0);}updateUnreadIndicators();
 box.addEventListener('scroll',()=>{if(isMessagesAtBottom()){const unreadEls=[...box.querySelectorAll('.msg[data-incoming="1"][data-read="0"]')];if(unreadEls.length){unreadEls.forEach((el)=>{el.dataset.read='1';unreadVisibleObserver?.unobserve(el);});markIncomingMessagesRead(state.roomId,activeChatDeviceId,unreadEls.map(el=>Number(el.dataset.messageId||el.dataset.id)));}}recomputePendingUnread();updateUnreadIndicators();});
 document.getElementById('newMessagesPill').onclick=()=>{const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){firstUnread.scrollIntoView({behavior:'smooth',block:'center'});}};
 renderPresenceStatus();
