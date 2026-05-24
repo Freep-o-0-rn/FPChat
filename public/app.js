@@ -32,14 +32,85 @@ function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
 function setView(v){state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
 function showChatsList(){state.roomId=null; closeMobileMenu(); els.appRoot?.classList.remove('mobile-chat'); renderChats(); setView('chats');}
+function removeBrokenChat(roomId){
+  state.chats=state.chats.filter(c=>c.roomId!==roomId);
+  if(state.roomId===roomId){
+    state.roomId=null;
+  }
+  try{
+    localStorage.removeItem(STORAGE.roomState(roomId));
+  }catch{}
+  saveChats();
+  renderChats();
+  setView('chats');
+  if(typeof updatePushBadge==='function'){
+    updatePushBadge();
+  }
+}
 function openMobileMenu(){if(!isMobileViewport())return; els.sidebar?.classList.add('open'); els.sidebarOverlay?.classList.add('open','active'); els.appRoot?.classList.add('menu-open'); document.body.classList.add('menu-open');}
 function closeMobileMenu(){els.sidebar?.classList.remove('open'); els.sidebarOverlay?.classList.remove('open','active'); els.appRoot?.classList.remove('menu-open'); document.body.classList.remove('menu-open');}
 function toggleMobileMenu(){if(els.sidebar?.classList.contains('open')) closeMobileMenu(); else openMobileMenu();}
 function renderChats(){const q=els.search.value?.toLowerCase()||''; let chats=state.chats.filter(c=>{const n=(state.roomNames[c.roomId]||'').toLowerCase(); return [n,c.roomId,(c.lastMessage||'').toLowerCase()].some(s=>s.includes(q));}); els.rows.innerHTML=''; if(els.empty){ els.empty.classList.toggle('hidden', chats.length>0); } chats.forEach(c=>{const minePrefix=c.lastSender===state.nick?'Вы: ':c.lastSender?`${c.lastSender}: `:'';const row=document.createElement('div'); row.className='chat-row'+(c.roomId===state.roomId?' active':'')+(c.unread?' unread':''); row.innerHTML=`<div class='row-top'><div><div><strong>${state.roomNames[c.roomId]||`Комната ${shortId(c.roomId)}`}</strong></div>${state.roomNames[c.roomId]?`<div class='sys'>Комната ${shortId(c.roomId)}</div>`:''}</div><div>${fmtTime(c.lastActivity)}</div></div><div class='row-top'><div class='last'>${state.roomMute[c.roomId]?'🔕 ':''}${minePrefix}${c.lastMessage||''}</div>${c.unread?`<span class='badge'>${c.unread}</span>`:''}</div>`; let longPressTimer=null; let longPressTriggered=false; let suppressNextClickUntil=0; let startX=0; let startY=0; row.addEventListener('touchstart',(e)=>{const touch=e.touches?.[0]; if(!touch)return; startX=touch.clientX; startY=touch.clientY; longPressTriggered=false; if(longPressTimer){clearTimeout(longPressTimer);} longPressTimer=setTimeout(()=>{longPressTriggered=true; suppressNextClickUntil=Date.now()+500; showRoomMenu(c.roomId,startX,startY);navigator.vibrate?.(10);},600);},{passive:true}); row.addEventListener('touchmove',(e)=>{const touch=e.touches?.[0]; if(!touch||!longPressTimer)return; if(Math.abs(touch.clientX-startX)>10||Math.abs(touch.clientY-startY)>10){clearTimeout(longPressTimer);longPressTimer=null;}},{passive:true}); row.addEventListener('touchend',(e)=>{if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;} if(longPressTriggered===true){e.preventDefault();e.stopPropagation();longPressTriggered=false;}}, {passive:false}); row.addEventListener('touchcancel',()=>{if(longPressTimer){clearTimeout(longPressTimer);} longPressTimer=null; longPressTriggered=false;}); row.onclick=(e)=>{if(longPressTriggered===true||Date.now()<suppressNextClickUntil){e.preventDefault();e.stopPropagation();return;}openChat(c.roomId);}; row.oncontextmenu=(e)=>{e.preventDefault();e.stopPropagation();showRoomMenu(c.roomId,e.clientX,e.clientY)}; els.rows.appendChild(row);});}
-function renderMainChatsPlaceholder(){ els.content.innerHTML=`<div class='placeholder'><h2>Выберите чат из списка или создайте новый</h2></div>`;}
+function renderMainChatsPlaceholder(){els.content.innerHTML='';}
 function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16})$/);if(!m)return null;const roomId=m[1], secret=location.hash?location.hash.slice(1):null; if(secret)history.replaceState({},'',`/i/${roomId}`); return {roomId,secret};}
 function parseChat(){const m=location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/); return m?m[1]:null;}
-async function openChat(roomId){closeMobileMenu(); showContentPane(); els.appRoot?.classList.add('mobile-chat'); const persisted=STORAGE.get(STORAGE.roomState(roomId)); if(!persisted?.secret){alert('Нет секрета комнаты');return;} state.roomId=roomId; localStorage.setItem(STORAGE.lastSelectedRoomId,roomId); state.secret=persisted.secret; state.key=await deriveKey(state.secret); const deviceId=persisted.deviceId; const res=await fetch(`/api/rooms/${roomId}/join`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId})}); const data=await res.json(); if(!res.ok||!data||!Array.isArray(data.messages)){console.error('[FPChat] join failed',{status:res.status,data});alert('Не удалось загрузить чат');return;} state.me=data.participant; state.presence={}; (data.participants||[]).forEach((item)=>{if(!item?.deviceId)return;state.presence[item.deviceId]={deviceId:item.deviceId,displayName:item.displayName,online:Boolean(item.online),lastSeenAt:item.lastSeenAt||null};}); upsertChat(roomId,{lastActivity:new Date().toISOString(),unread:0}); syncRoomPushSubscription(roomId).catch(()=>{}); renderChatView(data.messages,deviceId); connectWs(roomId,deviceId); setActiveNav('chats'); renderChats();}
+async function openChat(roomId){
+  closeMobileMenu();
+  const persisted=STORAGE.get(STORAGE.roomState(roomId));
+  if(!persisted?.secret||!persisted?.deviceId){
+    alert('Нет доступа к этому чату. Восстановите доступ по recovery-коду или invite-ссылке.');
+    removeBrokenChat(roomId);
+    return;
+  }
+  const deviceId=persisted.deviceId;
+  let res;
+  try{
+    state.secret=persisted.secret;
+    state.key=await deriveKey(state.secret);
+    res=await fetch(`/api/rooms/${roomId}/join`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId})});
+  }catch{
+    alert('Не удалось подключиться к чату. Проверьте соединение.');
+    setView('chats');
+    return;
+  }
+  if([500,502,503].includes(res.status)){
+    alert('Не удалось подключиться к чату. Проверьте соединение.');
+    setView('chats');
+    return;
+  }
+  if(res.status===404){
+    removeBrokenChat(roomId);
+    return;
+  }
+  if(res.status===403){
+    alert('Нет доступа к этому чату. Восстановите доступ по recovery-коду или invite-ссылке.');
+    removeBrokenChat(roomId);
+    return;
+  }
+  if(!res.ok){
+    setView('chats');
+    return;
+  }
+  const data=await res.json().catch(()=>null);
+  if(!data||!Array.isArray(data.messages)){
+    alert('Не удалось загрузить чат.');
+    setView('chats');
+    return;
+  }
+  state.roomId=roomId;
+  localStorage.setItem(STORAGE.lastSelectedRoomId,roomId);
+  state.me=data.participant;
+  state.presence={};
+  (data.participants||[]).forEach((item)=>{if(!item?.deviceId)return;state.presence[item.deviceId]={deviceId:item.deviceId,displayName:item.displayName,online:Boolean(item.online),lastSeenAt:item.lastSeenAt||null};});
+  upsertChat(roomId,{lastActivity:new Date().toISOString(),unread:0});
+  syncRoomPushSubscription(roomId).catch(()=>{});
+  showContentPane();
+  els.appRoot?.classList.add('mobile-chat');
+  renderChatView(data.messages,deviceId);
+  connectWs(roomId,deviceId);
+  setActiveNav('chats');
+  renderChats();
+}
 function deliveryIcon(s){if(s==='read')return "<span style='color:#3390ec'>✓✓</span>"; if(s==='delivered')return "<span style='color:#9aa0a6'>✓✓</span>"; if(s==='sent')return '✓'; return '⏳';}
 function isMessagesAtBottom(){const box=document.getElementById('messages');if(!box)return true;return box.scrollTop+box.clientHeight>=box.scrollHeight-40;}
 function markIncomingMessagesRead(roomId,deviceId,messageIds){if(!state.ws||state.ws.readyState!==1||state.roomId!==roomId||!Array.isArray(messageIds)||!messageIds.length)return;state.ws.send(JSON.stringify({type:'message:read:bulk',messageIds:[...new Set(messageIds.map(Number).filter(Boolean))]}));upsertChat(roomId,{unread:0});renderChats();updatePushBadge();}
