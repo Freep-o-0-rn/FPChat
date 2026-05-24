@@ -13,7 +13,6 @@ function setBootSplashText(title, text) {
   if (titleEl) titleEl.textContent = title;
   if (textEl) textEl.textContent = text;
 }
-
 function hideBootSplash() {
   document.getElementById('bootSplash')?.remove();
   els.appRoot?.classList.remove('hidden-boot');
