@@ -29,7 +29,7 @@ const app = express();
 app.use(express.json({ limit: '128kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const socketsByRoom = new Map();
+const socketsByDevice = new Map();
 
 const q = {
   createRoom: db.prepare('INSERT INTO rooms (public_id) VALUES (?)'),
@@ -66,7 +66,10 @@ const q = {
 };
 
 function randomToken(length) { const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let out = ''; while (out.length < length) out += alphabet[crypto.randomInt(0, alphabet.length)]; return out; }
-function roomSockets(publicId) { if (!socketsByRoom.has(publicId)) socketsByRoom.set(publicId, new Set()); return socketsByRoom.get(publicId); }
+function getDeviceSockets(deviceId) {
+  if (!socketsByDevice.has(deviceId)) socketsByDevice.set(deviceId, new Set());
+  return socketsByDevice.get(deviceId);
+}
 function getBaseUrl(req) { if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL.replace(/\/+$/, ''); const protocol = req.headers['x-forwarded-proto']?.split(',')[0].trim() || req.protocol; const host = req.headers['x-forwarded-host']?.split(',')[0].trim() || req.headers.host; return `${protocol}://${host}`; }
 function pushOff(res) { return res.status(503).json({ ok: false, error: 'push disabled on server' }); }
 function getRoomByInput(roomId) { return q.findRoomByPublicId.get(roomId) || q.findRoomById.get(Number(roomId)); }
@@ -124,9 +127,7 @@ async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, sender
   let delivered = false;
   for (const sub of subs) {
     if (sub.device_id === senderDeviceId || sub.muted) continue;
-    const roomSet = socketsByRoom.get(roomPublicId);
-    const hasOpenSameRoom = roomSet && [...roomSet].some((sock) => sock.deviceId === sub.device_id && sock.roomPublicId === roomPublicId && sock.readyState === WebSocket.OPEN);
-    if (hasOpenSameRoom) continue;
+    if (hasVisibleSocketForDevice(sub.device_id)) continue;
     const privateBody = sub.hide_sender ? 'Новое сообщение' : `${senderName}: новое сообщение`;
     const shownPreview = sub.show_text && preview ? (sub.hide_sender ? preview : `${senderName}: ${preview}`) : privateBody;
     const payload = JSON.stringify({ type: 'message', roomId: roomPublicId, url: `/chat/${roomPublicId}`, title: 'FPChat', body: shownPreview });
@@ -167,31 +168,27 @@ app.get('/api/rooms/:publicId', (req, res) => { const room = q.findRoomByPublicI
 app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); if (recoverySalt && recoveryVerifier && recoverySecretIv && recoverySecretCiphertext && !q.findRecoveryByRoomDevice.get(room.id, safeDeviceId)) { q.createRecovery.run(room.id, safeDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext); } const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = q.listMessages.all(room.id).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages }); });
 
 
-function broadcastPresenceUpdate(roomPublicId, payload) {
-  const set = socketsByRoom.get(roomPublicId);
-  if (!set) return;
-  const event = JSON.stringify({ type: 'presence:update', ...payload });
-  for (const client of set) {
-    if (client.readyState === WebSocket.OPEN) client.send(event);
-  }
-}
-
-function hasOpenSocketForDevice(roomPublicId, deviceId) {
-  const set = socketsByRoom.get(roomPublicId);
-  if (!set) return false;
-  for (const client of set) {
-    if (client.deviceId === deviceId && client.readyState === WebSocket.OPEN) return true;
-  }
-  return false;
-}
-
-function hasOpenSocketForDeviceGlobal(deviceId) {
-  for (const set of socketsByRoom.values()) {
-    for (const client of set) {
-      if (client.deviceId === deviceId && client.readyState === WebSocket.OPEN) {
-        return true;
-      }
+function sendToRoomParticipants(roomPublicId, payload, exceptDeviceId = null) {
+  const room = q.findRoomByPublicId.get(roomPublicId);
+  if (!room) return;
+  const participants = q.listParticipantsByRoom.all(room.id);
+  const event = JSON.stringify(payload);
+  for (const participant of participants) {
+    if (exceptDeviceId && participant.device_id === exceptDeviceId) continue;
+    const sockets = socketsByDevice.get(participant.device_id);
+    if (!sockets) continue;
+    for (const client of sockets) {
+      if (client.readyState === WebSocket.OPEN) client.send(event);
     }
+  }
+}
+
+function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', ...payload }); }
+function hasVisibleSocketForDevice(deviceId) {
+  const sockets = socketsByDevice.get(deviceId);
+  if (!sockets) return false;
+  for (const client of sockets) {
+    if (client.readyState === WebSocket.OPEN && client.visible === true) return true;
   }
   return false;
 }
@@ -209,39 +206,40 @@ function broadcastPresenceOfflineToParticipantRooms(deviceId) {
 }
 
 const server = http.createServer(app); const wss = new WebSocket.Server({ server });
-wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`); const roomPublicId = url.searchParams.get('room'); const deviceId = url.searchParams.get('device'); if (!roomPublicId || !deviceId) return ws.close(); const room = q.findRoomByPublicId.get(roomPublicId); if (!room) return ws.close(); ws.roomPublicId = roomPublicId; ws.deviceId = deviceId; ws.roomId = room.id; const set = roomSockets(roomPublicId); set.add(ws);
-  q.setParticipantOnline.run(ws.roomId, ws.deviceId);
-  const connectedParticipant = q.findParticipant.get(ws.roomId, ws.deviceId);
-  if (connectedParticipant) {
-    broadcastPresenceUpdate(roomPublicId, {
-      deviceId: connectedParticipant.device_id,
-      displayName: connectedParticipant.display_name,
+wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`); const deviceId = url.searchParams.get('device'); if (!deviceId) return ws.close(); ws.deviceId = deviceId; ws.visible = false; ws.activeRoomId = null; ws.subscribedRooms = new Set(); const participantRooms = q.listParticipantRoomsByDevice.all(ws.deviceId); for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id); const set = getDeviceSockets(deviceId); set.add(ws);
+  for (const participant of participantRooms) {
+    q.setParticipantOnline.run(participant.room_id, ws.deviceId);
+    broadcastPresenceUpdate(participant.room_public_id, {
+      deviceId: participant.device_id,
+      displayName: participant.display_name,
       online: true,
-      lastSeenAt: toIsoUtc(connectedParticipant.last_seen_at)
+      lastSeenAt: toIsoUtc(participant.last_seen_at)
     });
   }
   ws.on('message', async (raw) => { let payload; try { payload = JSON.parse(raw.toString()); } catch { return; }
-    if (payload.type === 'message:new') { const sender = q.findParticipant.get(ws.roomId, ws.deviceId); if (!sender || !payload.ciphertext || !payload.iv) return; const result = q.createMessage.run(ws.roomId, sender.id, payload.ciphertext, payload.iv); const event = { type: 'message:new', message: { id: result.lastInsertRowid, ciphertext: payload.ciphertext, iv: payload.iv, status: 'sent', created_at: new Date().toISOString(), delivered_at: null, read_at: null, sender_name: sender.display_name, sender_device_id: sender.device_id } }; let deliveredNotified = false; for (const client of set) { if (client.readyState === WebSocket.OPEN) { client.send(JSON.stringify(event)); if (client !== ws) { const info = q.markDelivered.run(result.lastInsertRowid); if (info.changes && !deliveredNotified) { deliveredNotified = true; ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: 'message:status', messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() })); } } } }
+    if (payload.type === 'client:state') { ws.activeRoomId = payload.activeRoomId || null; ws.visible = Boolean(payload.visible); return; }
+    if (payload.type === 'message:new') { const room = q.findRoomByPublicId.get(String(payload.roomId || '')); if (!room) return; const sender = q.findParticipant.get(room.id, ws.deviceId); if (!sender || !payload.ciphertext || !payload.iv) return; const result = q.createMessage.run(room.id, sender.id, payload.ciphertext, payload.iv); const event = { type: 'message:new', roomId: room.public_id, message: { id: result.lastInsertRowid, ciphertext: payload.ciphertext, iv: payload.iv, status: 'sent', created_at: new Date().toISOString(), delivered_at: null, read_at: null, sender_name: sender.display_name, sender_device_id: sender.device_id } }; let deliveredNotified = false; const participants = q.listParticipantsByRoom.all(room.id); for (const p of participants) { const sockets = socketsByDevice.get(p.device_id); if (!sockets) continue; for (const client of sockets) { if (client.readyState === WebSocket.OPEN) { client.send(JSON.stringify(event)); if (client.deviceId !== ws.deviceId) { const info = q.markDelivered.run(result.lastInsertRowid); if (info.changes && !deliveredNotified) { deliveredNotified = true; ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: 'message:status', roomId: room.public_id, messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() })); } } } } }
       // notificationPreview is intentionally plaintext for push preview: privacy/usability tradeoff.
       const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
-            const pushDelivered = await sendPushForMessage({ roomId: ws.roomId, roomPublicId, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
+            const pushDelivered = await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
       if (pushDelivered && !deliveredNotified) {
         const info = q.markDelivered.run(result.lastInsertRowid);
         if (info.changes && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'message:status', messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() }));
+          ws.send(JSON.stringify({ type: 'message:status', roomId: room.public_id, messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() }));
         }
       }
     }
     if (payload.type === 'message:read:bulk' && Array.isArray(payload.messageIds)) {
-      const sender = q.findParticipant.get(ws.roomId, ws.deviceId);
+      const room = q.findRoomByPublicId.get(String(payload.roomId || '')); if (!room) return;
+      const sender = q.findParticipant.get(room.id, ws.deviceId);
       if (!sender) return;
       const ids = payload.messageIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
       if (!ids.length) return;
       for (const id of ids) {
-        const info = q.markReadBulk.run(ws.roomId, id, sender.id);
+        const info = q.markReadBulk.run(room.id, id, sender.id);
         if (!info.changes) continue;
-        const event = { type: 'message:status', messageId: id, status: 'read', readAt: new Date().toISOString() };
-        for (const client of set) if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(event));
+        const event = { type: 'message:status', roomId: room.public_id, messageId: id, status: 'read', readAt: new Date().toISOString() };
+        sendToRoomParticipants(room.public_id, event);
       }
     }
   });
@@ -249,12 +247,13 @@ wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_H
 
   ws.on('close', () => {
     set.delete(ws);
-    const stillOnline = hasOpenSocketForDeviceGlobal(ws.deviceId);
+    if (set.size === 0) socketsByDevice.delete(ws.deviceId);
+    const stillOnline = socketsByDevice.has(ws.deviceId) && [...socketsByDevice.get(ws.deviceId)].some((sock) => sock.readyState === WebSocket.OPEN);
     if (!stillOnline) {
-      q.setParticipantOffline.run(ws.roomId, ws.deviceId);
+      const participantRoomsOnClose = q.listParticipantRoomsByDevice.all(ws.deviceId);
+      for (const participant of participantRoomsOnClose) q.setParticipantOffline.run(participant.room_id, ws.deviceId);
       broadcastPresenceOfflineToParticipantRooms(ws.deviceId);
     }
-    if (set.size === 0) socketsByRoom.delete(roomPublicId);
   });
 });
 
