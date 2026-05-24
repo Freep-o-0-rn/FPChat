@@ -15,7 +15,7 @@ function setBootSplashText(title, text) {
 }
 function hideBootSplash() {
   document.getElementById('bootSplash')?.remove();
-  els.appRoot?.classList.remove('hidden-boot');
+  els.appRoot?.classList.remove('hidden-boot');}
 let settingsVersionInfo='Версия: —';
 function setLocalConnectionState(value){state.localConnectionState=value;renderPresenceStatus();}
 function formatLastSeen(lastSeenAt){if(!lastSeenAt)return '';const d=new Date(lastSeenAt);if(Number.isNaN(d.getTime()))return '';const now=new Date();const startToday=new Date(now.getFullYear(),now.getMonth(),now.getDate());const startTarget=new Date(d.getFullYear(),d.getMonth(),d.getDate());const oneDay=24*60*60*1000;const diff=Math.round((startToday-startTarget)/oneDay);const hhmm=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});if(diff===0)return `был в ${hhmm}`;if(diff===1)return `был вчера в ${hhmm}`;const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=d.getFullYear();return `был ${dd}.${mm}.${yyyy} в ${hhmm}`;}
