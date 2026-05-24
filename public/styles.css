@@ -40,3 +40,6 @@
 .presence-dot.online{background:#2ab673}
 .presence-dot.offline{background:#8a94a3}
 .connection-warning{margin-top:4px;font-size:12px;color:#d98b00}
+#toastRoot{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:1000}
+.fp-toast{max-width:320px;text-align:left;border:1px solid var(--border,#333);background:var(--panel,#1f1f1f);color:inherit;border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.2);cursor:pointer}
+.fp-toast strong{display:block;margin-bottom:4px}

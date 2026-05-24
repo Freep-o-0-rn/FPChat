@@ -84,13 +84,15 @@ app.post('/api/push/subscribe', (req, res) => {
   const { roomId, deviceId, subscription, settings } = req.body || {};
   const room = getRoomByInput(roomId);
   if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
-  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  const safeDeviceId = String(deviceId || '').slice(0, 64);
+  if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const endpoint = subscription?.endpoint;
   const p256dh = subscription?.keys?.p256dh;
   const auth = subscription?.keys?.auth;
   if (!endpoint || !p256dh || !auth) return res.status(400).json({ ok: false, error: 'invalid subscription' });
-  q.deletePushByRoomEndpointOtherDevice.run(room.id, endpoint, String(deviceId).slice(0, 64));
-  q.upsertPushSub.run(room.id, String(deviceId).slice(0, 64), endpoint, p256dh, auth, room.id, String(deviceId).slice(0, 64), endpoint, settings?.showText ? 1 : 0, settings?.hideSender ? 1 : 0);
+  q.deletePushByRoomEndpointOtherDevice.run(room.id, endpoint, safeDeviceId);
+  q.upsertPushSub.run(room.id, safeDeviceId, endpoint, p256dh, auth, room.id, safeDeviceId, endpoint, settings?.showText ? 1 : 0, settings?.hideSender ? 1 : 0);
   res.json({ ok: true });
 });
 
@@ -98,8 +100,7 @@ app.post('/api/push/settings', (req, res) => {
   if (!pushEnabled) return pushOff(res);
   const room = getRoomByInput(req.body?.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
   const info = q.updatePushSettings.run(req.body?.showText ? 1 : 0, req.body?.hideSender ? 1 : 0, room.id, String(req.body?.deviceId || '').slice(0, 64));
-  if (!info.changes) return res.status(404).json({ ok: false, error: 'subscription not found' });
-  res.json({ ok: true });
+  res.json({ ok: true, updated: info.changes>0 });
 });
 
 app.post('/api/push/mute-room', (req, res) => {
