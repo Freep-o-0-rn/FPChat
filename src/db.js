@@ -43,12 +43,14 @@ function createDb(databasePath) {
 
     CREATE TABLE IF NOT EXISTS recovery (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      room_id INTEGER NOT NULL UNIQUE,
+      room_id INTEGER NOT NULL,
+      device_id TEXT,
       recovery_salt TEXT NOT NULL,
       recovery_verifier TEXT NOT NULL,
       recovery_secret_iv TEXT,
       recovery_secret_ciphertext TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(room_id, device_id),  
       FOREIGN KEY(room_id) REFERENCES rooms(id)
     );
     CREATE TABLE IF NOT EXISTS push_subscriptions (
