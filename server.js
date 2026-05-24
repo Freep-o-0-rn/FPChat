@@ -38,7 +38,7 @@ const q = {
   createRecovery: db.prepare(`INSERT INTO recovery (room_id, device_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext) VALUES (?, ?, ?, ?, ?, ?)`),
   findRecoveryByPublicId: db.prepare(`SELECT rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext FROM recovery rec JOIN rooms room ON room.id = rec.room_id WHERE room.public_id = ? ORDER BY rec.id ASC LIMIT 1`),
   findRecoveryByRoomDevice: db.prepare(`SELECT rec.id FROM recovery rec WHERE rec.room_id = ? AND rec.device_id = ?`),
-  listRecoveriesWithRooms: db.prepare(`SELECT room.public_id, rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext FROM recovery rec JOIN rooms room ON room.id = rec.room_id`),
+  listRecoveriesWithRooms: db.prepare(`SELECT room.public_id, rec.device_id, rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext FROM recovery rec JOIN rooms room ON room.id = rec.room_id`),
   upsertParticipant: db.prepare(`INSERT INTO participants (room_id, display_name, device_id, last_seen_at, online, updated_at) VALUES (?, ?, ?, datetime('now'), 0, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET display_name = excluded.display_name, last_seen_at = datetime('now'), updated_at = datetime('now')`),
   listParticipantsByRoom: db.prepare(`SELECT device_id, display_name, online, last_seen_at FROM participants WHERE room_id = ? ORDER BY id ASC`),
   setParticipantOnline: db.prepare(`UPDATE participants SET online = 1, last_seen_at = datetime('now'), updated_at = datetime('now') WHERE room_id = ? AND device_id = ?`),
@@ -56,6 +56,7 @@ const q = {
         read_at = CASE WHEN read_at IS NULL THEN datetime('now') ELSE read_at END
     WHERE room_id = ? AND id = ? AND sender_id != ? AND status != 'read'`),
   upsertPushSub: db.prepare(`INSERT INTO push_subscriptions (room_id, device_id, endpoint, p256dh, auth, muted, show_text, hide_sender, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT muted FROM push_subscriptions WHERE room_id=? AND device_id=? AND endpoint=?),0), ?, ?, datetime('now')) ON CONFLICT(room_id, device_id, endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, show_text=excluded.show_text, hide_sender=excluded.hide_sender, updated_at=datetime('now')`),
+  deletePushByRoomEndpointOtherDevice: db.prepare('DELETE FROM push_subscriptions WHERE room_id = ? AND endpoint = ? AND device_id != ?'),
   updatePushSettings: db.prepare(`UPDATE push_subscriptions SET show_text=?, hide_sender=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
   mutePushRoom: db.prepare(`UPDATE push_subscriptions SET muted=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
   deletePushByDeviceRoom: db.prepare('DELETE FROM push_subscriptions WHERE device_id = ? AND room_id = ?'),
@@ -88,6 +89,7 @@ app.post('/api/push/subscribe', (req, res) => {
   const p256dh = subscription?.keys?.p256dh;
   const auth = subscription?.keys?.auth;
   if (!endpoint || !p256dh || !auth) return res.status(400).json({ ok: false, error: 'invalid subscription' });
+  q.deletePushByRoomEndpointOtherDevice.run(room.id, endpoint, String(deviceId).slice(0, 64));
   q.upsertPushSub.run(room.id, String(deviceId).slice(0, 64), endpoint, p256dh, auth, room.id, String(deviceId).slice(0, 64), endpoint, settings?.showText ? 1 : 0, settings?.hideSender ? 1 : 0);
   res.json({ ok: true });
 });
@@ -139,7 +141,7 @@ async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, sender
 }
 
 // existing endpoints below ...
-app.post('/api/rooms', (req, res) => { const publicId = randomToken(16); const { recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {}; if (!recoverySalt || !recoveryVerifier || !recoverySecretIv || !recoverySecretCiphertext) return res.status(400).json({ error: 'recovery verifier required' }); db.transaction(() => { const roomResult = q.createRoom.run(publicId); q.createRecovery.run(roomResult.lastInsertRowid, null, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext); })(); return res.json({ publicId, inviteLink: `${getBaseUrl(req)}/i/${publicId}` }); });
+app.post('/api/rooms', (req, res) => { const publicId = randomToken(16); const { creatorDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {}; if (!recoverySalt || !recoveryVerifier || !recoverySecretIv || !recoverySecretCiphertext) return res.status(400).json({ error: 'recovery verifier required' }); if (!creatorDeviceId) return res.status(400).json({ error: 'creatorDeviceId required' }); const safeCreatorDeviceId = String(creatorDeviceId).slice(0, 64); db.transaction(() => { const roomResult = q.createRoom.run(publicId); q.createRecovery.run(roomResult.lastInsertRowid, safeCreatorDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext); })(); return res.json({ publicId, inviteLink: `${getBaseUrl(req)}/i/${publicId}` }); });
 app.post('/api/recover', (req, res) => {
   const { recoveryCode } = req.body || {};
   if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
@@ -149,6 +151,7 @@ app.post('/api/recover', (req, res) => {
     if (digest !== recovery.recovery_verifier) continue;
     return res.json({
       publicId: recovery.public_id,
+      deviceId: recovery.device_id,
       recoverySalt: recovery.recovery_salt,
       recoverySecretIv: recovery.recovery_secret_iv,
       recoverySecretCiphertext: recovery.recovery_secret_ciphertext
