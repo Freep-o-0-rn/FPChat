@@ -193,6 +193,16 @@ function hasVisibleSocketForDevice(deviceId) {
   return false;
 }
 
+function unregisterWsFromAllDevices(ws) {
+  if (!ws?.deviceIds || !(ws.deviceIds instanceof Set)) return;
+  for (const boundDeviceId of ws.deviceIds) {
+    const bucket = socketsByDevice.get(boundDeviceId);
+    if (!bucket) continue;
+    bucket.delete(ws);
+    if (bucket.size === 0) socketsByDevice.delete(boundDeviceId);
+  }
+}
+
 function broadcastPresenceOfflineToParticipantRooms(deviceId) {
   const participantRooms = q.listParticipantRoomsByDevice.all(deviceId);
   for (const participant of participantRooms) {
@@ -206,7 +216,7 @@ function broadcastPresenceOfflineToParticipantRooms(deviceId) {
 }
 
 const server = http.createServer(app); const wss = new WebSocket.Server({ server });
-wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`); const deviceId = url.searchParams.get('device'); if (!deviceId) return ws.close(); ws.deviceId = deviceId; ws.visible = false; ws.activeRoomId = null; ws.subscribedRooms = new Set(); const participantRooms = q.listParticipantRoomsByDevice.all(ws.deviceId); for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id); const set = getDeviceSockets(deviceId); set.add(ws);
+wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`); const deviceId = url.searchParams.get('device'); if (!deviceId) return ws.close(); ws.deviceId = deviceId; ws.deviceIds = new Set([deviceId]); ws.visible = false; ws.activeRoomId = null; ws.subscribedRooms = new Set(); const participantRooms = q.listParticipantRoomsByDevice.all(ws.deviceId); for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id); const set = getDeviceSockets(deviceId); set.add(ws);
   for (const participant of participantRooms) {
     q.setParticipantOnline.run(participant.room_id, ws.deviceId);
     broadcastPresenceUpdate(participant.room_public_id, {
@@ -246,8 +256,7 @@ wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_H
 
 
   ws.on('close', () => {
-    set.delete(ws);
-    if (set.size === 0) socketsByDevice.delete(ws.deviceId);
+    unregisterWsFromAllDevices(ws);
     const stillOnline = socketsByDevice.has(ws.deviceId) && [...socketsByDevice.get(ws.deviceId)].some((sock) => sock.readyState === WebSocket.OPEN);
     if (!stillOnline) {
       const participantRoomsOnClose = q.listParticipantRoomsByDevice.all(ws.deviceId);
