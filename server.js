@@ -68,6 +68,13 @@ function roomSockets(publicId) { if (!socketsByRoom.has(publicId)) socketsByRoom
 function getBaseUrl(req) { if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL.replace(/\/+$/, ''); const protocol = req.headers['x-forwarded-proto']?.split(',')[0].trim() || req.protocol; const host = req.headers['x-forwarded-host']?.split(',')[0].trim() || req.headers.host; return `${protocol}://${host}`; }
 function pushOff(res) { return res.status(503).json({ ok: false, error: 'push disabled on server' }); }
 function getRoomByInput(roomId) { return q.findRoomByPublicId.get(roomId) || q.findRoomById.get(Number(roomId)); }
+function toIsoUtc(value) {
+  if (!value) return null;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return value.replace(' ', 'T') + 'Z';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
 
 app.get('/api/push/vapid-public-key', (req, res) => res.json(pushEnabled ? { enabled: true, publicKey: VAPID_PUBLIC_KEY } : { enabled: false }));
 app.post('/api/push/subscribe', (req, res) => {
@@ -152,7 +159,7 @@ app.post('/api/rooms/:publicId/recover', (req, res) => { const { recoveryCode } 
 app.get('/i/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/chat/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/api/rooms/:publicId', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); return res.json({ publicId: room.public_id, createdAt: room.created_at }); });
-app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: item.last_seen_at })); return res.json({ participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages: q.listMessages.all(room.id) }); });
+app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = q.listMessages.all(room.id).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages }); });
 
 
 function broadcastPresenceUpdate(roomPublicId, payload) {
@@ -191,7 +198,7 @@ function broadcastPresenceOfflineToParticipantRooms(deviceId) {
       deviceId: participant.device_id,
       displayName: participant.display_name,
       online: false,
-      lastSeenAt: participant.last_seen_at
+      lastSeenAt: toIsoUtc(participant.last_seen_at)
     });
   }
 }
@@ -205,7 +212,7 @@ wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_H
       deviceId: connectedParticipant.device_id,
       displayName: connectedParticipant.display_name,
       online: true,
-      lastSeenAt: connectedParticipant.last_seen_at
+      lastSeenAt: toIsoUtc(connectedParticipant.last_seen_at)
     });
   }
   ws.on('message', async (raw) => { let payload; try { payload = JSON.parse(raw.toString()); } catch { return; }
