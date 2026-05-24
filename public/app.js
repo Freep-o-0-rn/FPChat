@@ -7,6 +7,16 @@ const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
 let activeChatDeviceId=null;let pendingIncomingReadIds=[];let pendingPillCount=0;
 let appVersionCheckInFlight=false;
+function setBootSplashText(title, text) {
+  const titleEl = document.getElementById('bootTitle');
+  const textEl = document.getElementById('bootText');
+  if (titleEl) titleEl.textContent = title;
+  if (textEl) textEl.textContent = text;
+}
+
+function hideBootSplash() {
+  document.getElementById('bootSplash')?.remove();
+  els.appRoot?.classList.remove('hidden-boot');
 let settingsVersionInfo='Версия: —';
 function setLocalConnectionState(value){state.localConnectionState=value;renderPresenceStatus();}
 function formatLastSeen(lastSeenAt){if(!lastSeenAt)return '';const d=new Date(lastSeenAt);if(Number.isNaN(d.getTime()))return '';const now=new Date();const startToday=new Date(now.getFullYear(),now.getMonth(),now.getDate());const startTarget=new Date(d.getFullYear(),d.getMonth(),d.getDate());const oneDay=24*60*60*1000;const diff=Math.round((startToday-startTarget)/oneDay);const hhmm=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});if(diff===0)return `был в ${hhmm}`;if(diff===1)return `был вчера в ${hhmm}`;const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yyyy=d.getFullYear();return `был ${dd}.${mm}.${yyyy} в ${hhmm}`;}
@@ -100,7 +110,8 @@ window.addEventListener('pageshow',handleAppResume);
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.dataset.view); closeMobileMenu();}); els.search.oninput=renderChats;
 (async()=>{
   await registerServiceWorker();
-  await checkAppVersionOnEntry();
+  const updateStarted=await checkAppVersionOnEntry();
+  if(updateStarted)return;
   applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
   const inv=parseInvite();
   const chat=parseChat();
@@ -117,6 +128,7 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.datase
 
     if(isNewInvite){
       await openChat(inv.roomId);
+      hideBootSplash();
       return;
     }
   }
@@ -127,28 +139,10 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.datase
 
   showChatsList();
   if(!els.appRoot?.dataset.pane) showListPane();
+  hideBootSplash();
 })();
 function urlB64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const rawData=atob(base64);return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));}
 async function registerServiceWorker(){if(!('serviceWorker' in navigator))return null;try{return await navigator.serviceWorker.register('/sw.js');}catch{return null;}}
-
-function showUpdateOverlay(){
-  if(document.getElementById('updateOverlay')) return;
-
-  const overlay=document.createElement('div');
-  overlay.id='updateOverlay';
-  overlay.className='update-overlay';
-  overlay.innerHTML=`
-    <div class="update-splash-card">
-      <div class="update-logo">FPChat</div>
-      <h2>Обновление приложения...</h2>
-      <p>Применяем новую версию</p>
-      <div class="update-progress">
-        <div class="update-progress-bar"></div>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-}
 
 async function applyAppUpdate(){
   try{
@@ -162,42 +156,38 @@ async function applyAppUpdate(){
       const keys=await caches.keys();
       await Promise.all(keys.map((key)=>caches.delete(key)));
     }
-    showUpdateOverlay();
-    await new Promise((resolve)=>setTimeout(resolve,3000));
   }finally{
     location.reload();
   }
 }
 async function checkAppVersionOnEntry(){
-  if(appVersionCheckInFlight)return;
+  if(appVersionCheckInFlight)return false;
   appVersionCheckInFlight=true;
   try{
     const response=await fetch('/version.json',{cache:'no-store'});
-    if(!response.ok)return;
+    if(!response.ok)return false;
     const payload=await response.json();
     const serverBuild=Number(payload?.build);
-    if(!Number.isFinite(serverBuild))return;
+    if(!Number.isFinite(serverBuild))return false;
     const localBuildRaw=localStorage.getItem(APP_BUILD_KEY);
     const localBuild=localBuildRaw===null?null:Number(localBuildRaw);
     const isReloading=sessionStorage.getItem(APP_UPDATE_RELOADING_KEY)==='1';
     if(localBuild===null||!Number.isFinite(localBuild)){
       localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
-      if(isReloading)sessionStorage.removeItem(APP_UPDATE_RELOADING_KEY);
-      return;
+      return false;
     }
     if(serverBuild>localBuild){
       localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
-      if(!isReloading){
-        sessionStorage.setItem(APP_UPDATE_RELOADING_KEY,'1');
-        await applyAppUpdate();
-      }
-      return;
+      sessionStorage.setItem(APP_UPDATE_RELOADING_KEY,'1');
+      setBootSplashText('Обновление приложения...','Применяем новую версию');
+      await applyAppUpdate();
+      return true;
     }
-    if(serverBuild===localBuild&&isReloading){
+    if(serverBuild<=localBuild&&isReloading){
       sessionStorage.removeItem(APP_UPDATE_RELOADING_KEY);
     }
   }catch{
-    // Silent fallback: continue with the current app version.
+    return false;
   }finally{
     appVersionCheckInFlight=false;
   }
