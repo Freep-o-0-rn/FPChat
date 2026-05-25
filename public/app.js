@@ -34,6 +34,22 @@ function generateRecoveryCode(){return `R-${Array.from({length:5}).map(()=>Array
 async function buildRecoveryPayload(recoveryCode,secret){const salt=crypto.getRandomValues(new Uint8Array(16));const recoverySalt=b64.encode(salt);const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(recoveryCode+':'+recoverySalt));const material=await crypto.subtle.importKey('raw',new TextEncoder().encode(recoveryCode),'PBKDF2',false,['deriveKey']);const recoveryKey=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64.decode(recoverySalt),iterations:250000,hash:'SHA-256'},material,{name:'AES-GCM',length:256},false,['encrypt']);const iv=crypto.getRandomValues(new Uint8Array(12));const ciphertext=await crypto.subtle.encrypt({name:'AES-GCM',iv},recoveryKey,new TextEncoder().encode(secret));return {recoveryCode,recoverySalt,recoveryVerifier:b64.encode(digest),recoverySecretIv:b64.encode(iv),recoverySecretCiphertext:b64.encode(ciphertext)};}
 function makeRecoveryTxt(recoveryCode){return `FPChat recovery code\n\nRecovery code:\n${recoveryCode}\n\nВажно:\nБез этого кода восстановить чат нельзя.\nНе отправляйте этот код посторонним.`;}
 function downloadRecoveryCode(recoveryCode){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([makeRecoveryTxt(recoveryCode)],{type:'text/plain'}));a.download=`fpchat-recovery-${new Date().toISOString().slice(0,10)}.txt`;a.click();}
+async function registerRecoveryForJoinedParticipant(publicId,deviceId,roomSecret){
+  const recoveryCode=generateRecoveryCode();
+  const recoveryPayload=await buildRecoveryPayload(recoveryCode,roomSecret);
+  const res=await fetch(`/api/rooms/${publicId}/recovery`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,recoverySalt:recoveryPayload.recoverySalt,recoveryVerifier:recoveryPayload.recoveryVerifier,recoverySecretIv:recoveryPayload.recoverySecretIv,recoverySecretCiphertext:recoveryPayload.recoverySecretCiphertext})});
+  if(!res.ok)throw new Error('failed to register recovery');
+  return recoveryCode;
+}
+function showRecoveryCodeModal(recoveryCode){
+  const root=document.createElement('div');
+  root.style.position='fixed';root.style.inset='0';root.style.background='rgba(0,0,0,.45)';root.style.display='flex';root.style.alignItems='center';root.style.justifyContent='center';root.style.zIndex='1000';
+  root.innerHTML=`<div class='panel' style='max-width:560px;width:min(92vw,560px)'><h2>Сохраните recovery-код</h2><textarea readonly id='joinRecoveryCode' style='min-height:72px'>${recoveryCode}</textarea><p class='sys'>Recovery-код помогает восстановить чат только на устройстве участника. Если очистить данные приложения или браузера, восстановление может быть невозможно. Храните recovery-код как пароль.</p><div class='panel-actions'><button id='joinRecCopy' class='btn btn-secondary'>Скопировать</button><button id='joinRecSave' class='btn btn-secondary'>Скачать .txt</button><button id='joinRecDone' class='btn btn-primary'>Я сохранил</button></div></div>`;
+  document.body.appendChild(root);
+  root.querySelector('#joinRecCopy').onclick=async()=>{try{await navigator.clipboard.writeText(recoveryCode);}catch{alert('Не удалось скопировать recovery-код. Скопируйте вручную.');}};
+  root.querySelector('#joinRecSave').onclick=()=>downloadRecoveryCode(recoveryCode);
+  root.querySelector('#joinRecDone').onclick=()=>root.remove();
+}
 async function encryptText(t){const iv=crypto.getRandomValues(new Uint8Array(12)); const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},state.key,new TextEncoder().encode(t)); return {iv:b64.encode(iv),ciphertext:b64.encode(c)};}
 async function decryptText(iv,c){const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(iv)},state.key,b64.decode(c)); return new TextDecoder().decode(p)}
 function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId===roomId);const existing=i>=0?state.chats[i]:null;const next={...(existing||{roomId,unread:0}),...patch,roomId};if(!next.lastActivity){next.lastActivity=existing?.lastActivity||new Date().toISOString();}if(i>=0)state.chats[i]=next; else state.chats.push(next); state.chats.sort((a,b)=>new Date(b.lastActivity)-new Date(a.lastActivity)); saveChats(); renderChats();}
@@ -123,7 +139,11 @@ async function joinByInviteText(text){
   STORAGE.set(STORAGE.roomState(data.publicId),{secret:data.roomSecret,deviceId});
   upsertChat(data.publicId,{});
   state.key=key;
+  let joinedRecoveryCode=null;
+  let recoveryRegistrationFailed=false;
+  try{joinedRecoveryCode=await registerRecoveryForJoinedParticipant(data.publicId,deviceId,data.roomSecret);}catch{recoveryRegistrationFailed=true;}
   await openChatWithJoinData(data.publicId,data.roomSecret,deviceId,data,key);
+  if(joinedRecoveryCode){showRecoveryCodeModal(joinedRecoveryCode);}else if(recoveryRegistrationFailed){alert('Чат подключён, но recovery-код не был создан. Перезайдите или создайте новый чат.');}
   return true;
 }
 async function openChat(roomId){
