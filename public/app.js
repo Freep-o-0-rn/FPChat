@@ -64,7 +64,7 @@ function toggleMobileMenu(){if(els.sidebar?.classList.contains('open')) closeMob
 let edgeSwipe={active:false,startX:0,startY:0,tracking:false};
 function renderChats(){const q=els.search.value?.toLowerCase()||''; let chats=state.chats.filter(c=>{const n=(state.roomNames[c.roomId]||'').toLowerCase(); return [n,c.roomId,(c.lastMessage||'').toLowerCase()].some(s=>s.includes(q));}); els.rows.innerHTML=''; if(els.empty){ els.empty.classList.toggle('hidden', chats.length>0); } chats.forEach(c=>{const minePrefix=c.lastSender===state.nick?'Вы: ':c.lastSender?`${c.lastSender}: `:'';const row=document.createElement('div'); row.className='chat-row'+(c.roomId===state.roomId?' active':'')+(c.unread?' unread':''); row.innerHTML=`<div class='row-top'><div><div><strong>${state.roomNames[c.roomId]||`Комната ${shortId(c.roomId)}`}</strong></div>${state.roomNames[c.roomId]?`<div class='sys'>Комната ${shortId(c.roomId)}</div>`:''}</div><div class="chat-row-meta">${c.unread>0?`<span class="chat-unread-badge">${c.unread>99?'99+':c.unread}</span>`:''}<span class="chat-time">${formatChatListTime(c.lastActivity)}</span></div></div><div class='row-top'><div class='last'>${state.roomMute[c.roomId]?'🔕 ':''}${minePrefix}${c.lastMessage||''}</div></div>`; let longPressTimer=null; let longPressTriggered=false; let suppressNextClickUntil=0; let startX=0; let startY=0; row.addEventListener('touchstart',(e)=>{const touch=e.touches?.[0]; if(!touch)return; startX=touch.clientX; startY=touch.clientY; longPressTriggered=false; if(longPressTimer){clearTimeout(longPressTimer);} longPressTimer=setTimeout(()=>{longPressTriggered=true; suppressNextClickUntil=Date.now()+500; showRoomMenu(c.roomId,startX,startY);navigator.vibrate?.(10);},600);},{passive:true}); row.addEventListener('touchmove',(e)=>{const touch=e.touches?.[0]; if(!touch||!longPressTimer)return; if(Math.abs(touch.clientX-startX)>10||Math.abs(touch.clientY-startY)>10){clearTimeout(longPressTimer);longPressTimer=null;}},{passive:true}); row.addEventListener('touchend',(e)=>{if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;} if(longPressTriggered===true){e.preventDefault();e.stopPropagation();longPressTriggered=false;}}, {passive:false}); row.addEventListener('touchcancel',()=>{if(longPressTimer){clearTimeout(longPressTimer);} longPressTimer=null; longPressTriggered=false;}); row.onclick=(e)=>{if(longPressTriggered===true||Date.now()<suppressNextClickUntil){e.preventDefault();e.stopPropagation();return;}openChat(c.roomId);}; row.oncontextmenu=(e)=>{e.preventDefault();e.stopPropagation();showRoomMenu(c.roomId,e.clientX,e.clientY)}; els.rows.appendChild(row);});}
 function renderMainChatsPlaceholder(){els.content.innerHTML='';}
-function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{20,})$/);if(!m)return null; if(location.hash){return {error:'legacy'};} return {inviteCode:m[1]};}
+function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16,64})$/i);if(!m)return null; if(location.hash){return {error:'legacy'};} return {inviteCode:m[1]};}
 function getKnownDeviceIds(){const ids=new Set();for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key||!key.startsWith('fpchat:room:'))continue;const val=STORAGE.get(key);if(val?.deviceId)ids.add(String(val.deviceId));}return [...ids];}
 function parseChat(){const m=location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/); return m?m[1]:null;}
 async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
@@ -91,61 +91,39 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
 async function joinByInviteText(text){
   const parsed=parseInviteInput(text);
   if(parsed?.error==='empty'){alert('Вставьте invite-ссылку');return false;}
-  if(parsed?.error==='legacy'){alert('Старая invite-ссылка больше не поддерживается. Попросите новую ссылку.');return false;}
-  if(!parsed||parsed?.error){alert('Некорректная invite-ссылка');return false;}
+  if(parsed?.error==='old_invite'){alert('Старая invite-ссылка больше не поддерживается. Попросите новую ссылку.');return false;}
+  if(parsed?.error==='invalid'){alert('Некорректная invite-ссылка');return false;}
+  if(!parsed?.inviteCode){alert('Некорректная invite-ссылка');return false;}
   state.nick=localStorage.getItem(STORAGE.nick)||state.nick;
-  const {inviteCode}=parsed;
+  const displayName=state.nick;
   const deviceId=crypto.randomUUID();
-  const recoveryCode=generateRecoveryCode();
   let res;
   try{
-    res=await fetch(`/api/invites/${inviteCode}/join`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId})});
+    res=await fetch(`/api/invites/${parsed.inviteCode}/join`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName,deviceId})});
   }catch{
     alert('Не удалось подключиться. Проверьте соединение.');
     return false;
   }
-  if([500,502,503].includes(res.status)){
-    alert('Не удалось подключиться. Проверьте соединение.');
-    return false;
-  }
-  if(res.status===404){
-    alert('Invite-ссылка недействительна.');
-    return false;
-  }
+  if(res.status===404){alert('Invite-ссылка недействительна.');return false;}
   if(res.status===410){alert('Invite-ссылка устарела или уже использована.');return false;}
   if(res.status===409){alert('В этот чат уже присоединился второй участник.');return false;}
-  if(res.status===403){
-    alert('Нет доступа к этому чату.');
-    return false;
-  }
-  if(!res.ok){
-    alert('Не удалось подключиться. Проверьте соединение.');
-    return false;
-  }
+  if(res.status===403){alert('Нет доступа к этому чату.');return false;}
+  if(!res.ok){alert('Не удалось подключиться. Проверьте соединение.');return false;}
   const data=await res.json().catch(()=>null);
-  if(!data||!Array.isArray(data.messages)){
-    alert('Не удалось подключиться. Проверьте соединение.');
-    return false;
-  }
-  const roomId=data.publicId;
-  const secret=data.roomSecret;
+  if(!data?.ok||!data.publicId||!data.roomSecret||!Array.isArray(data.messages)){alert('Не удалось подключиться. Проверьте соединение.');return false;}
   let key;
-  try{ key=await deriveKey(secret);}catch{alert('Не удалось подключиться. Проверьте соединение.');return false;}
+  try{key=await deriveKey(data.roomSecret);}catch{alert('Не удалось подключиться. Проверьте соединение.');return false;}
   if(data.messages.length>0){
     let decryptedAny=false;
     for(const msg of data.messages){
       try{await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(msg.iv)},key,b64.decode(msg.ciphertext));decryptedAny=true;break;}catch{}
     }
-    if(!decryptedAny){
-      alert('Не удалось подключиться. Проверьте соединение.');
-      return false;
-    }
+    if(!decryptedAny){alert('Не удалось подключиться. Проверьте соединение.');return false;}
   }
-  STORAGE.set(STORAGE.roomState(roomId),{secret,deviceId,recoveryCode});
-  els.content.innerHTML=`<div class='panel'><h2>Вы присоединились к чату</h2><p>Сохраните recovery-код. Он понадобится для восстановления доступа к этому чату на другом устройстве.</p><label>Recovery-код</label><textarea readonly id='joinRecCode'>${recoveryCode}</textarea><div class='panel-actions'><button id='copyJoinRec' class='btn btn-secondary'>Скопировать recovery-код</button><button id='saveJoinRec' class='btn btn-secondary'>Скачать .txt</button><button id='goJoinChat' class='btn btn-primary'>Перейти в чат</button></div></div>`;
-  document.getElementById('copyJoinRec').onclick=()=>navigator.clipboard.writeText(recoveryCode);
-  document.getElementById('saveJoinRec').onclick=()=>downloadRecoveryCode(recoveryCode);
-  document.getElementById('goJoinChat').onclick=async()=>{state.key=key;upsertChat(roomId,{});await openChatWithJoinData(roomId,secret,deviceId,data,key);};
+  STORAGE.set(STORAGE.roomState(data.publicId),{secret:data.roomSecret,deviceId});
+  upsertChat(data.publicId,{});
+  state.key=key;
+  await openChatWithJoinData(data.publicId,data.roomSecret,deviceId,data,key);
   return true;
 }
 async function openChat(roomId){
@@ -220,9 +198,9 @@ function connectWs(deviceId){setLocalConnectionState('connecting');if(state.ws)s
 if(!mine)notifyIncoming(payload.message.sender_name,txt,roomId,mine);}if(payload.type==='presence:update'&&payload.deviceId){state.presence[payload.deviceId]={deviceId:payload.deviceId,displayName:payload.displayName,online:Boolean(payload.online),lastSeenAt:payload.lastSeenAt||null};renderPresenceStatus();}if(payload.type==='message:status'){if(payload.roomId&&payload.roomId!==state.roomId)return;document.querySelectorAll('.bubble-wrap').forEach(el=>{if(Number(el.dataset.messageId||el.dataset.id)===payload.messageId){const meta=el.querySelector('.meta');const createdAt=el.dataset.createdAt;const base=formatMessageTime(createdAt);const hasIcon=meta.textContent.includes('✓')||meta.textContent.includes('⏳');meta.innerHTML=hasIcon?`${base} ${deliveryIcon(payload.status)}`:base;if(payload.status==='read'){el.dataset.read='1';unreadVisibleObserver?.unobserve(el);pendingIncomingReadIds=pendingIncomingReadIds.filter((x)=>Number(x)!==Number(payload.messageId));}}});recomputePendingUnread();updateUnreadIndicators();}};}
 function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){if(state.ws)state.ws.close();state.ws=null;state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
 function hideMenu(){els.context.classList.add('hidden')} document.addEventListener('click',hideMenu);
-function parseInviteInput(value){const input=(value||'').trim(); if(!input)return {error:'empty'}; if(input.includes('#')) return {error:'legacy'}; const parsePath=(path)=>{const m=(path||'').match(/^\/i\/([A-Z0-9]{20,})$/); return m?{inviteCode:m[1]}:null;}; try{const u=new URL(input); const p=parsePath(u.pathname); if(p)return p;}catch{} if(input.startsWith('/i/')) return parsePath(input)||{error:'invalid'}; if(/^[A-Z0-9]{20,}$/.test(input)) return {inviteCode:input}; return {error:'invalid'};}
+function parseInviteInput(value){const raw=String(value||'').trim();if(!raw)return {error:'empty'};if(raw.includes('#'))return {error:'old_invite'};let inviteCode='';try{const url=new URL(raw,location.origin);const match=url.pathname.match(/^\/i\/([A-Z0-9]{16,64})$/i);if(match)inviteCode=match[1];}catch{}if(!inviteCode){const direct=raw.match(/^([A-Z0-9]{16,64})$/i);if(direct)inviteCode=direct[1];}if(!inviteCode)return {error:'invalid'};return {inviteCode};}
 
-function renderJoin(){els.content.innerHTML=`<div class='panel'><h2>Присоединиться к чату</h2><label>Invite-ссылка</label><textarea id='joinInviteInput' placeholder='Вставьте invite-ссылку'></textarea><div class='panel-actions'><button id='joinBtn' class='btn btn-primary'>Присоединиться</button><button id='pasteJoinBtn' class='btn btn-secondary'>Вставить из буфера</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`; document.getElementById('backBtn').onclick=()=>setView('chats'); document.getElementById('joinBtn').onclick=async()=>{await joinByInviteText(document.getElementById('joinInviteInput').value);}; document.getElementById('pasteJoinBtn').onclick=async()=>{if(!navigator.clipboard?.readText){alert('Буфер обмена недоступен. Вставьте ссылку вручную.');return;} let text=''; try{text=await navigator.clipboard.readText();}catch{text='';} const parsed=parseInviteInput(text); if(parsed?.error==='empty'||parsed?.error==='invalid'){alert('В буфере обмена не invite-ссылка FPChat.');return;} if(parsed?.error==='legacy'){alert('Старая invite-ссылка больше не поддерживается. Попросите новую ссылку.');return;} if(parsed?.error){alert('В буфере обмена не invite-ссылка FPChat.');return;} const input=document.getElementById('joinInviteInput'); if(input)input.value=text; await joinByInviteText(text);};}
+function renderJoin(){els.content.innerHTML=`<div class='panel'><h2>Присоединиться к чату</h2><label>Invite-ссылка</label><textarea id='joinInviteInput' placeholder='Вставьте invite-ссылку или invite-код'></textarea><p class='sys'>Invite-ссылка действует 24 часа и только один раз.</p><div class='panel-actions'><button id='joinBtn' class='btn btn-primary'>Присоединиться</button><button id='pasteJoinBtn' class='btn btn-secondary'>Вставить из буфера</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`; document.getElementById('backBtn').onclick=()=>setView('chats'); document.getElementById('joinBtn').onclick=async()=>{const input=document.getElementById('joinInviteInput');await joinByInviteText(input?.value||'');}; document.getElementById('pasteJoinBtn').onclick=async()=>{if(!navigator.clipboard?.readText){alert('Буфер обмена недоступен. Вставьте ссылку вручную.');return;} try{const text=await navigator.clipboard.readText();const parsed=parseInviteInput(text);if(parsed?.error==='empty'){alert('В буфере обмена нет invite-ссылки.');return;}if(parsed?.error==='old_invite'){alert('В буфере старая invite-ссылка. Попросите новую ссылку.');return;}if(!parsed||parsed.error){alert('В буфере обмена не invite-ссылка FPChat.');return;}const input=document.getElementById('joinInviteInput');if(input)input.value=text;await joinByInviteText(text);}catch{alert('Не удалось прочитать буфер обмена. Вставьте ссылку вручную.');}};}
 function renderCreate(){els.content.innerHTML=`<div class='panel'><h2>Создать чат</h2><label>Ваш ник</label><input id='nickCreate' value='${state.nick}'/><div class='panel-actions'><button id='createBtn' class='btn btn-primary'>Создать чат</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div><div id='createOut'></div></div>`; document.getElementById('backBtn').onclick=()=>setView('chats'); document.getElementById('createBtn').onclick=async()=>{const createBtn=document.getElementById('createBtn');const baseText='Создать чат';createBtn.disabled=true;createBtn.classList.add('btn-loading');createBtn.textContent='Создание...';try{state.nick=document.getElementById('nickCreate').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick);
 const secret=crypto.randomUUID().replace(/-/g,'')+crypto.randomUUID().replace(/-/g,''); const rec=`R-${Array.from({length:5}).map(()=>Array.from({length:4}).map(()=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random()*32)]).join('')).join('-')}`; const salt=crypto.getRandomValues(new Uint8Array(16)); const recSalt=b64.encode(salt); const dig=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(rec+':'+recSalt)); const mat=await crypto.subtle.importKey('raw',new TextEncoder().encode(rec),'PBKDF2',false,['deriveKey']); const rk=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64.decode(recSalt),iterations:250000,hash:'SHA-256'},mat,{name:'AES-GCM',length:256},false,['encrypt']); const iv=crypto.getRandomValues(new Uint8Array(12)); const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},rk,new TextEncoder().encode(secret));
 const creatorDeviceId=crypto.randomUUID();const res=await fetch('/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId:creatorDeviceId,roomSecret:secret,recoverySalt:recSalt,recoveryVerifier:b64.encode(dig),recoverySecretIv:b64.encode(iv),recoverySecretCiphertext:b64.encode(c)})}); const data=await res.json(); STORAGE.set(STORAGE.roomState(data.publicId),{secret,deviceId:creatorDeviceId,recoveryCode:rec,inviteLink:data.inviteLink,inviteExpiresAt:data.inviteExpiresAt}); upsertChat(data.publicId,{}); if(state.notif.enabled)syncRoomPushSubscription(data.publicId).catch(()=>{});
