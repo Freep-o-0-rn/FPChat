@@ -13,6 +13,7 @@ const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
 let activeChatDeviceId=null;let pendingIncomingReadIds=[];let unreadVisibleObserver=null;let appWsSeq=0;let activeAppWsSeq=0;let appWsConnectInFlight=null;
 let appVersionCheckInFlight=false;
+let deferredInstallPrompt=null;
 function setBootSplashText(title, text) {
   const titleEl = document.getElementById('bootTitle');
   const textEl = document.getElementById('bootText');
@@ -250,7 +251,64 @@ async function refreshSettingsVersionLine(){
   if(el)el.textContent=settingsVersionInfo;
 }
 
-function renderSettings(){els.content.innerHTML=`<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id='nick' value='${state.nick}'/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><label><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/> Включить уведомления</label><label><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/> Показывать текст сообщения</label><label><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/> Скрывать отправителя</label><label><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/> Звук нового сообщения</label><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='save' class='btn btn-primary'>Сохранить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;void refreshSettingsVersionLine(); document.getElementById('backBtn').onclick=()=>setView('chats'); const t=document.getElementById('theme'); t.value=localStorage.getItem(STORAGE.theme)||'auto'; t.onchange=()=>applyTheme(t.value); const toggle=()=>{['nText','nSender','nSound'].forEach(id=>document.getElementById(id).disabled=!document.getElementById('nEnabled').checked)}; document.getElementById('nEnabled').onchange=async()=>{if(document.getElementById('nEnabled').checked){await ensurePushSubscription();} toggle()}; toggle(); document.getElementById('save').onclick=async()=>{state.nick=document.getElementById('nick').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick); state.notif={enabled:document.getElementById('nEnabled').checked,showText:document.getElementById('nText').checked,hideSender:document.getElementById('nSender').checked,sound:document.getElementById('nSound').checked}; STORAGE.set(STORAGE.notif,state.notif);if(!state.notif.enabled){await unsubscribeAllPushDevices();}else{await syncAllPushSubscriptions();await updateAllPushSettings();} alert('Сохранено');};}
+function isStandalonePwa(){
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone===true;
+}
+function isIosDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+function getInstallHelpText(){
+  if(isStandalonePwa()){
+    return 'FPChat уже установлен и запущен как приложение.';
+  }
+  if(deferredInstallPrompt){
+    return 'Можно установить FPChat как отдельное приложение.';
+  }
+  if(isIosDevice()){
+    return 'Для установки на iPhone/iPad откройте меню «Поделиться» в Safari и выберите «На экран Домой».';
+  }
+  return 'Если кнопка установки недоступна, откройте меню браузера и выберите «Установить приложение» или «Добавить на главный экран».';
+}
+function updateInstallUi(){
+  const help=document.getElementById('installHelpText');
+  const btn=document.getElementById('installPwaBtn');
+  if(help){
+    help.textContent=getInstallHelpText();
+  }
+  if(!btn)return;
+  if(isStandalonePwa()){
+    btn.textContent='Приложение установлено';
+    btn.disabled=true;
+    return;
+  }
+  btn.textContent=deferredInstallPrompt?'Установить FPChat':'Как установить FPChat';
+  btn.disabled=false;
+}
+async function handleInstallClick(){
+  if(isStandalonePwa()){
+    alert('FPChat уже установлен.');
+    return;
+  }
+  if(!deferredInstallPrompt){
+    alert(getInstallHelpText());
+    return;
+  }
+  try{
+    deferredInstallPrompt.prompt();
+    const choice=await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt=null;
+    if(typeof updateInstallUi==='function'){
+      updateInstallUi();
+    }
+    if(choice?.outcome==='accepted'){
+      alert('FPChat устанавливается.');
+    }
+  }catch{
+    alert('Не удалось открыть установку. Попробуйте установить через меню браузера.');
+  }
+}
+function renderSettings(){els.content.innerHTML=`<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id='nick' value='${state.nick}'/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><label><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/> Включить уведомления</label><label><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/> Показывать текст сообщения</label><label><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/> Скрывать отправителя</label><label><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/> Звук нового сообщения</label><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='save' class='btn btn-primary'>Сохранить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;void refreshSettingsVersionLine(); document.getElementById('backBtn').onclick=()=>setView('chats'); const t=document.getElementById('theme'); t.value=localStorage.getItem(STORAGE.theme)||'auto'; t.onchange=()=>applyTheme(t.value); const toggle=()=>{['nText','nSender','nSound'].forEach(id=>document.getElementById(id).disabled=!document.getElementById('nEnabled').checked)}; document.getElementById('nEnabled').onchange=async()=>{if(document.getElementById('nEnabled').checked){await ensurePushSubscription();} toggle()}; toggle(); bindClick('installPwaBtn',handleInstallClick);updateInstallUi(); document.getElementById('save').onclick=async()=>{state.nick=document.getElementById('nick').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick); state.notif={enabled:document.getElementById('nEnabled').checked,showText:document.getElementById('nText').checked,hideSender:document.getElementById('nSender').checked,sound:document.getElementById('nSound').checked}; STORAGE.set(STORAGE.notif,state.notif);if(!state.notif.enabled){await unsubscribeAllPushDevices();}else{await syncAllPushSubscriptions();await updateAllPushSettings();} alert('Сохранено');};}
 function applyTheme(v){localStorage.setItem(STORAGE.theme,v);const root=document.documentElement;if(v==='auto'){root.dataset.theme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';} else root.dataset.theme=v;}
 function buildNotificationText(sender,text,notif=state.notif){if(notif.showText){return notif.hideSender?text:`${sender}: ${text}`;}return notif.hideSender?'Новое сообщение':`${sender}: новое сообщение`;}
 let notificationAudio=null;
@@ -263,6 +321,20 @@ function showInAppToast({roomId,roomName,sender,text}){if(!state.notif.enabled||
 function notifyIncoming(sender,text,roomId,mine=false){if(shouldShowInAppToast({roomId,mine})){showInAppToast({roomId,roomName:state.roomNames[roomId],sender,text});}playNotificationSound({roomId,mine});}
 
 function bindClick(id,handler){const el=document.getElementById(id); if(el) el.onclick=handler; return el;}
+window.addEventListener('beforeinstallprompt',(event)=>{
+  event.preventDefault();
+  deferredInstallPrompt=event;
+  if(typeof updateInstallUi==='function'){
+    updateInstallUi();
+  }
+});
+window.addEventListener('appinstalled',()=>{
+  deferredInstallPrompt=null;
+  localStorage.setItem('fpchat:pwa-installed','1');
+  if(typeof updateInstallUi==='function'){
+    updateInstallUi();
+  }
+});
 bindClick('emptyCreateBtn',()=>setView('create'));
 bindClick('emptyRestoreBtn',()=>setView('restore'));
 bindClick('emptyJoinBtn',()=>setView('join'));

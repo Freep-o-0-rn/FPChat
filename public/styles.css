@@ -71,3 +71,5 @@
 .fp-toast strong{display:block;margin-bottom:4px}
 :root[data-theme='dark'] .date-sep{background:rgba(255,255,255,.08);color:#9fb0c3}
 :root[data-theme='light'] .date-sep{background:rgba(80,100,130,.12);color:#637083}
+.settings-section{margin-top:18px;padding-top:14px}
+.settings-hint{margin:6px 0 10px;color:var(--muted);font-size:13px;line-height:1.4}
