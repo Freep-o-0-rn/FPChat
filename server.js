@@ -62,7 +62,17 @@ const q = {
   deletePushByDeviceRoom: db.prepare('DELETE FROM push_subscriptions WHERE device_id = ? AND room_id = ?'),
   deletePushByDevice: db.prepare('DELETE FROM push_subscriptions WHERE device_id = ?'),
   listPushForRoom: db.prepare(`SELECT ps.*, r.public_id as room_public_id, p.display_name as device_name FROM push_subscriptions ps JOIN rooms r ON r.id = ps.room_id JOIN participants p ON p.room_id = ps.room_id AND p.device_id = ps.device_id WHERE ps.room_id = ?`),
-  deletePushById: db.prepare('DELETE FROM push_subscriptions WHERE id = ?')
+  deletePushById: db.prepare('DELETE FROM push_subscriptions WHERE id = ?'),
+  createInvite: db.prepare(`INSERT INTO invites (invite_code, room_id, room_secret, expires_at) VALUES (?, ?, ?, datetime('now', '+24 hours'))`),
+  findInviteByCode: db.prepare(`SELECT * FROM invites WHERE invite_code = ?`),
+  consumeInvite: db.prepare(`UPDATE invites SET used_at = datetime('now'), used_by_device_id = ?, room_secret = NULL WHERE id = ? AND used_at IS NULL AND revoked = 0 AND expires_at > datetime('now') AND room_secret IS NOT NULL`),
+  listExpiredSoloInviteRooms: db.prepare(`SELECT i.room_id FROM invites i WHERE i.expires_at <= datetime('now') AND i.used_at IS NULL AND (SELECT COUNT(*) FROM participants p WHERE p.room_id = i.room_id) < 2`),
+  deletePushByRoomId: db.prepare('DELETE FROM push_subscriptions WHERE room_id = ?'),
+  deleteMessagesByRoomId: db.prepare('DELETE FROM messages WHERE room_id = ?'),
+  deleteParticipantsByRoomId: db.prepare('DELETE FROM participants WHERE room_id = ?'),
+  deleteRecoveryByRoomId: db.prepare('DELETE FROM recovery WHERE room_id = ?'),
+  deleteInvitesByRoomId: db.prepare('DELETE FROM invites WHERE room_id = ?'),
+  deleteRoomById: db.prepare('DELETE FROM rooms WHERE id = ?')
 };
 
 function randomToken(length) { const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let out = ''; while (out.length < length) out += alphabet[crypto.randomInt(0, alphabet.length)]; return out; }
@@ -143,17 +153,53 @@ async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, sender
 }
 
 // existing endpoints below ...
-app.post('/api/rooms', (req, res) => { const publicId = randomToken(16); const { creatorDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {}; if (!recoverySalt || !recoveryVerifier || !recoverySecretIv || !recoverySecretCiphertext) return res.status(400).json({ error: 'recovery verifier required' }); if (!creatorDeviceId) return res.status(400).json({ error: 'creatorDeviceId required' }); const safeCreatorDeviceId = String(creatorDeviceId).slice(0, 64); db.transaction(() => { const roomResult = q.createRoom.run(publicId); q.createRecovery.run(roomResult.lastInsertRowid, safeCreatorDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext); })(); return res.json({ publicId, inviteLink: `${getBaseUrl(req)}/i/${publicId}` }); });
+const removeRoomCascade = db.transaction((roomId) => {
+  q.deletePushByRoomId.run(roomId);
+  q.deleteMessagesByRoomId.run(roomId);
+  q.deleteParticipantsByRoomId.run(roomId);
+  q.deleteRecoveryByRoomId.run(roomId);
+  q.deleteInvitesByRoomId.run(roomId);
+  q.deleteRoomById.run(roomId);
+});
+function cleanupExpiredSoloRooms() {
+  const rows = q.listExpiredSoloInviteRooms.all();
+  for (const row of rows) removeRoomCascade(row.room_id);
+}
+app.post('/api/rooms', (req, res) => {
+  const publicId = randomToken(16);
+  const inviteCode = randomToken(24);
+  const { displayName, deviceId, roomSecret, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {};
+  if (!displayName || !deviceId || !roomSecret) return res.status(400).json({ error: 'displayName, deviceId, roomSecret required' });
+  if (!recoverySalt || !recoveryVerifier || !recoverySecretIv || !recoverySecretCiphertext) return res.status(400).json({ error: 'recovery verifier required' });
+  const safeDeviceId = String(deviceId).slice(0, 64);
+  const safeName = String(displayName).slice(0, 48);
+  let roomId;
+  db.transaction(() => {
+    const roomResult = q.createRoom.run(publicId);
+    roomId = roomResult.lastInsertRowid;
+    q.createRecovery.run(roomId, safeDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext);
+    q.upsertParticipant.run(roomId, safeName, safeDeviceId);
+    q.createInvite.run(inviteCode, roomId, String(roomSecret));
+  })();
+  const invite = q.findInviteByCode.get(inviteCode);
+  const participant = q.findParticipant.get(roomId, safeDeviceId);
+  return res.json({ ok: true, publicId, inviteLink: `${getBaseUrl(req)}/i/${inviteCode}`, inviteExpiresAt: toIsoUtc(invite.expires_at), participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id } });
+});
 app.post('/api/recover', (req, res) => {
-  const { recoveryCode } = req.body || {};
+  const { recoveryCode, deviceIds } = req.body || {};
   if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
+  const safeDeviceIds = Array.isArray(deviceIds) ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))] : [];
+  if (safeDeviceIds.length === 0) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
   const recoveries = q.listRecoveriesWithRooms.all();
   for (const recovery of recoveries) {
     const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64');
     if (digest !== recovery.recovery_verifier) continue;
+    const room = q.findRoomByPublicId.get(recovery.public_id);
+    const participant = q.listParticipantsByRoom.all(room.id).find((p) => safeDeviceIds.includes(p.device_id));
+    if (!participant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
     return res.json({
       publicId: recovery.public_id,
-      deviceId: recovery.device_id,
+      deviceId: participant.device_id,
       recoverySalt: recovery.recovery_salt,
       recoverySecretIv: recovery.recovery_secret_iv,
       recoverySecretCiphertext: recovery.recovery_secret_ciphertext
@@ -161,11 +207,12 @@ app.post('/api/recover', (req, res) => {
   }
   return res.status(403).json({ error: 'invalid recovery code' });
 });
-app.post('/api/rooms/:publicId/recover', (req, res) => { const { recoveryCode } = req.body || {}; if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' }); const recovery = q.findRecoveryByPublicId.get(req.params.publicId); if (!recovery) return res.status(404).json({ error: 'room not found' }); const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64'); if (digest !== recovery.recovery_verifier) return res.status(403).json({ error: 'invalid recovery code' }); return res.json({ recoverySalt: recovery.recovery_salt, recoverySecretIv: recovery.recovery_secret_iv, recoverySecretCiphertext: recovery.recovery_secret_ciphertext }); });
+app.post('/api/rooms/:publicId/recover', (req, res) => { const { recoveryCode, deviceIds } = req.body || {}; if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' }); const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const safeDeviceIds = Array.isArray(deviceIds) ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))] : []; if (!safeDeviceIds.length) return res.status(403).json({ error: 'recovery only allowed from existing participant device' }); const hasParticipant = q.listParticipantsByRoom.all(room.id).some((p) => safeDeviceIds.includes(p.device_id)); if (!hasParticipant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' }); const recovery = q.findRecoveryByPublicId.get(req.params.publicId); if (!recovery) return res.status(404).json({ error: 'room not found' }); const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64'); if (digest !== recovery.recovery_verifier) return res.status(403).json({ error: 'invalid recovery code' }); return res.json({ recoverySalt: recovery.recovery_salt, recoverySecretIv: recovery.recovery_secret_iv, recoverySecretCiphertext: recovery.recovery_secret_ciphertext }); });
+app.post('/api/invites/:inviteCode/join', (req, res) => { const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const invite = q.findInviteByCode.get(req.params.inviteCode); if (!invite) return res.status(404).json({ error: 'invite not found' }); if (invite.revoked || invite.used_at || !invite.room_secret) return res.status(410).json({ error: 'invite expired or used' }); if (new Date(`${invite.expires_at.replace(' ', 'T')}Z`).getTime() <= Date.now()) { cleanupExpiredSoloRooms(); return res.status(410).json({ error: 'invite expired or used' }); } const room = q.findRoomById.get(invite.room_id); if (!room) return res.status(404).json({ error: 'room not found' }); if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' }); const safeDeviceId = String(deviceId).slice(0, 64); const safeName = String(displayName).slice(0, 48); const roomSecret = invite.room_secret; const tx = db.transaction(() => { const info = q.consumeInvite.run(safeDeviceId, invite.id); if (!info.changes) return false; q.upsertParticipant.run(room.id, safeName, safeDeviceId); return true; }); if (!tx()) return res.status(410).json({ error: 'invite expired or used' }); const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = q.listMessages.all(room.id).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ ok: true, publicId: room.public_id, roomSecret, participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages }); });
 app.get('/i/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/chat/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/api/rooms/:publicId', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); return res.json({ publicId: room.public_id, createdAt: room.created_at }); });
-app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); if (recoverySalt && recoveryVerifier && recoverySecretIv && recoverySecretCiphertext && !q.findRecoveryByRoomDevice.get(room.id, safeDeviceId)) { q.createRecovery.run(room.id, safeDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext); } const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = q.listMessages.all(room.id).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages }); });
+app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); const participant = q.findParticipant.get(room.id, safeDeviceId); if (!participant) return res.status(403).json({ error: 'forbidden' }); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); const updated = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = q.listMessages.all(room.id).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ participant: { id: updated.id, displayName: updated.display_name, deviceId: updated.device_id }, participants, messages }); });
 
 
 function sendToRoomParticipants(roomPublicId, payload, exceptDeviceId = null) {
@@ -266,4 +313,6 @@ wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_H
   });
 });
 
+cleanupExpiredSoloRooms();
+setInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);
 server.listen(APP_PORT, APP_HOST, () => console.log(`FPChat listening on http://${APP_HOST}:${APP_PORT}`));

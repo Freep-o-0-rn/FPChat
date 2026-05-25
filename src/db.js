@@ -68,6 +68,19 @@ function createDb(databasePath) {
       UNIQUE(room_id, device_id, endpoint),
       FOREIGN KEY(room_id) REFERENCES rooms(id)
     );
+
+    CREATE TABLE IF NOT EXISTS invites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invite_code TEXT NOT NULL UNIQUE,
+      room_id INTEGER NOT NULL,
+      room_secret TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      used_by_device_id TEXT,
+      revoked INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY(room_id) REFERENCES rooms(id)
+    );
   `);
   const recoveryColumns = db.prepare('PRAGMA table_info(recovery)').all();
   if (!recoveryColumns.some((column) => column.name === 'recovery_secret_iv')) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_iv TEXT');
