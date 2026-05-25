@@ -37,42 +37,7 @@ function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId==
 function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));}
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
-let detachMobileComposerViewportSync=null;
-function isTouchMobile(){return isMobileViewport()&&('ontouchstart'in window||navigator.maxTouchPoints>0);}
-function setupMobileComposerViewportSync(composerEl,inputEl){
-  detachMobileComposerViewportSync?.();
-  detachMobileComposerViewportSync=null;
-  if(!composerEl||!inputEl||!isTouchMobile()||!window.visualViewport)return;
-  const vv=window.visualViewport;
-  let rafId=0;
-  const applyOffset=()=>{
-    rafId=0;
-    const keyboardLikeGap=Math.max(0,window.innerHeight-(vv.height+vv.offsetTop));
-    const offset=keyboardLikeGap>24?Math.round(keyboardLikeGap):0;
-    composerEl.style.setProperty('--composer-kb-offset',`${offset}px`);
-  };
-  const schedule=()=>{if(rafId)cancelAnimationFrame(rafId);rafId=requestAnimationFrame(applyOffset);};
-  vv.addEventListener('resize',schedule);
-  vv.addEventListener('scroll',schedule);
-  inputEl.addEventListener('focus',schedule);
-  inputEl.addEventListener('blur',schedule);
-  schedule();
-  detachMobileComposerViewportSync=()=>{
-    vv.removeEventListener('resize',schedule);
-    vv.removeEventListener('scroll',schedule);
-    inputEl.removeEventListener('focus',schedule);
-    inputEl.removeEventListener('blur',schedule);
-    if(rafId)cancelAnimationFrame(rafId);
-    composerEl.style.removeProperty('--composer-kb-offset');
-  };
-}
-function setChatMode(enabled){
-  if(!enabled&&detachMobileComposerViewportSync){
-    detachMobileComposerViewportSync();
-    detachMobileComposerViewportSync=null;
-  }
-  els.content?.classList.toggle('chat-mode',Boolean(enabled));
-}
+function setChatMode(enabled){els.content?.classList.toggle('chat-mode',Boolean(enabled));}
 function setView(v){state.view=v; setActiveNav(v); closeMobileMenu(); setChatMode(false); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
 function showChatsList(){state.roomId=null; closeMobileMenu(); els.appRoot?.classList.remove('mobile-chat'); renderChats(); setView('chats');}
@@ -244,7 +209,7 @@ const box=document.getElementById('messages'); unreadVisibleObserver=new Interse
 box.addEventListener('scroll',()=>{if(isMessagesAtBottom()){const unreadEls=[...box.querySelectorAll('.msg[data-incoming="1"][data-read="0"]')];if(unreadEls.length){unreadEls.forEach((el)=>{el.dataset.read='1';unreadVisibleObserver?.unobserve(el);});markIncomingMessagesRead(state.roomId,activeChatDeviceId,unreadEls.map(el=>Number(el.dataset.messageId||el.dataset.id)));}}recomputePendingUnread();updateUnreadIndicators();});
 document.getElementById('newMessagesPill').onclick=()=>{const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){firstUnread.scrollIntoView({behavior:'smooth',block:'center'});}};
 renderPresenceStatus();
-const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'),plusBtn=document.getElementById('plusBtn'),emojiBtn=document.getElementById('emojiBtn'); if(form&&input&&sendBtn){setupMobileComposerViewportSync(form,input);const toastSoon=()=>showInAppToast({roomId:state.roomId,roomName:'FPChat',sender:'',text:'Скоро'});const resizeInput=()=>{input.style.height='auto';const lineHeight=parseFloat(getComputedStyle(input).lineHeight)||20;const maxHeight=Math.round(lineHeight*8+22);const minHeight=46;const next=Math.max(minHeight,Math.min(input.scrollHeight,maxHeight));input.style.height=next+'px';input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';};const resetInput=()=>{input.value='';input.style.height='';input.style.overflowY='hidden';};const syncSendBtn=()=>{sendBtn.disabled=!input.value.trim();}; input.addEventListener('input',()=>{resizeInput();syncSendBtn();}); input.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}}); plusBtn?.addEventListener('click',toastSoon); emojiBtn?.addEventListener('click',toastSoon); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t); state.ws.send(JSON.stringify({type:'message:new',roomId:state.roomId,...enc,notificationPreview:t.slice(0,80)})); resetInput(); syncSendBtn();}; syncSendBtn();resizeInput();}}
+const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'),plusBtn=document.getElementById('plusBtn'),emojiBtn=document.getElementById('emojiBtn'); if(form&&input&&sendBtn){const toastSoon=()=>showInAppToast({roomId:state.roomId,roomName:'FPChat',sender:'',text:'Скоро'});const resizeInput=()=>{input.style.height='auto';const lineHeight=parseFloat(getComputedStyle(input).lineHeight)||20;const maxHeight=Math.round(lineHeight*8+22);const minHeight=46;const next=Math.max(minHeight,Math.min(input.scrollHeight,maxHeight));input.style.height=next+'px';input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';};const resetInput=()=>{input.value='';input.style.height='';input.style.overflowY='hidden';};const syncSendBtn=()=>{sendBtn.disabled=!input.value.trim();}; input.addEventListener('input',()=>{resizeInput();syncSendBtn();}); input.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}}); plusBtn?.addEventListener('click',toastSoon); emojiBtn?.addEventListener('click',toastSoon); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t); state.ws.send(JSON.stringify({type:'message:new',roomId:state.roomId,...enc,notificationPreview:t.slice(0,80)})); resetInput(); syncSendBtn();}; syncSendBtn();resizeInput();}}
 function appendMessage(box,m,txt,mine,autoScroll=true){const w=document.createElement('div');w.className=`bubble-wrap msg ${mine?'mine':''}`;const isIncoming=!mine;const isRead=mine?1:(m.status==='read'?1:0);w.innerHTML=`<div class='bubble'><div><b>${m.sender_name}</b></div><div>${txt}</div><div class='meta'>${formatMessageTime(m.created_at)} ${mine?deliveryIcon(m.status):''}</div></div>`;w.dataset.id=m.id;w.dataset.createdAt=m.created_at;w.dataset.messageId=String(m.id);w.dataset.incoming=isIncoming?'1':'0';w.dataset.read=String(isRead);box.appendChild(w);if(isIncoming&&!isRead){if(!autoScroll){pendingIncomingReadIds.push(Number(m.id));}observeUnreadMessage(w);}if(autoScroll)box.scrollTop=box.scrollHeight;}
 function sendClientState(){if(!state.ws||state.ws.readyState!==WebSocket.OPEN)return;state.ws.send(JSON.stringify({type:'client:state',activeRoomId:state.roomId||null,visible:document.visibilityState==='visible'}));}
 function connectWs(deviceId){setLocalConnectionState('connecting');if(state.ws)state.ws.close();const p=location.protocol==='https:'?'wss':'ws';const currentSeq=++appWsSeq;activeAppWsSeq=currentSeq;const ws=new WebSocket(`${p}://${location.host}?device=${encodeURIComponent(deviceId)}`);ws.deviceId=deviceId;state.ws=ws;const isCurrentWs=()=>state.ws===ws&&activeAppWsSeq===currentSeq;wsConnectStartedAt=Date.now();ws.onopen=()=>{if(!isCurrentWs())return;setLocalConnectionState('connected');sendClientState();};ws.onerror=()=>{if(!isCurrentWs())return;setLocalConnectionState('disconnected');};ws.onclose=()=>{if(!isCurrentWs())return;setLocalConnectionState('disconnected');};ws.onmessage=async(ev)=>{if(!isCurrentWs())return;const payload=JSON.parse(ev.data);if(payload.type==='message:new'){const roomId=payload.roomId; if(!roomId)return; const chat=state.chats.find(c=>c.roomId===roomId)||{};const txt=await decryptText(payload.message.iv,payload.message.ciphertext).catch(()=>"[cannot decrypt]");const mine=payload.message.sender_device_id===deviceId;const box=document.getElementById('messages');const inActiveChat=state.roomId===roomId&&box;const nearBottom=inActiveChat?isMessagesAtBottom():false;const messageId=payload.message.id;const messageSelector=`[data-message-id="${messageId}"], [data-id="${messageId}"]`;const hasMessageInDom=Boolean(document.querySelector(messageSelector));const normalizedLast={lastMessage:txt,lastSender:payload.message.sender_name,lastActivity:payload.message.created_at||new Date().toISOString()};if(mine){upsertChat(roomId,{...normalizedLast,unread:chat.unread||0});if(inActiveChat&&!hasMessageInDom){appendMessage(box,payload.message,txt,true,true);box.scrollTop=box.scrollHeight;}}else if(inActiveChat){if(!hasMessageInDom){appendMessage(box,payload.message,txt,false,nearBottom);}if(nearBottom){markIncomingMessagesRead(roomId,deviceId,[messageId]);upsertChat(roomId,{...normalizedLast,unread:0});}else{const incomingId=Number(messageId);if(Number.isInteger(incomingId)&&incomingId>0){pendingIncomingReadIds=[...new Set([...pendingIncomingReadIds,incomingId])];}const unreadCount=pendingIncomingReadIds.length;upsertChat(roomId,{...normalizedLast,unread:unreadCount});renderNewMessagesPill(unreadCount);}}else{const unread=(chat.unread||0)+1;upsertChat(roomId,{...normalizedLast,unread});updateUnreadPresentation();}
