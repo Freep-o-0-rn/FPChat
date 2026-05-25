@@ -33,7 +33,7 @@ function makeRecoveryTxt(recoveryCode){return `FPChat recovery code\n\nRecovery 
 function downloadRecoveryCode(recoveryCode){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([makeRecoveryTxt(recoveryCode)],{type:'text/plain'}));a.download=`fpchat-recovery-${new Date().toISOString().slice(0,10)}.txt`;a.click();}
 async function encryptText(t){const iv=crypto.getRandomValues(new Uint8Array(12)); const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},state.key,new TextEncoder().encode(t)); return {iv:b64.encode(iv),ciphertext:b64.encode(c)};}
 async function decryptText(iv,c){const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(iv)},state.key,b64.decode(c)); return new TextDecoder().decode(p)}
-function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId===roomId);const base=i>=0?state.chats[i]:{roomId,unread:0};const next={...base,...patch,roomId,lastActivity:patch.lastActivity||new Date().toISOString()};if(i>=0)state.chats[i]=next; else state.chats.push(next); state.chats.sort((a,b)=>new Date(b.lastActivity)-new Date(a.lastActivity)); saveChats(); renderChats();}
+function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId===roomId);const existing=i>=0?state.chats[i]:null;const next={...(existing||{roomId,unread:0}),...patch,roomId};if(!next.lastActivity){next.lastActivity=existing?.lastActivity||new Date().toISOString();}if(i>=0)state.chats[i]=next; else state.chats.push(next); state.chats.sort((a,b)=>new Date(b.lastActivity)-new Date(a.lastActivity)); saveChats(); renderChats();}
 function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));}
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
@@ -71,7 +71,10 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   state.presence={};
   (data.participants||[]).forEach((item)=>{if(!item?.deviceId)return;state.presence[item.deviceId]={deviceId:item.deviceId,displayName:item.displayName,online:Boolean(item.online),lastSeenAt:item.lastSeenAt||null};});
   localStorage.setItem(STORAGE.lastSelectedRoomId,roomId);
-  upsertChat(roomId,{lastActivity:new Date().toISOString(),unread:0});
+  const last=data.messages?.[data.messages.length-1];
+  const historyPatch={unread:0};
+  if(last){historyPatch.lastActivity=last.created_at; const existing=state.chats.find(c=>c.roomId===roomId); if(!existing?.lastSender){historyPatch.lastSender=last.sender_name||'';}}
+  upsertChat(roomId,historyPatch);
   syncRoomPushSubscription(roomId).catch(()=>{});
   showContentPane();
   els.appRoot?.classList.add('mobile-chat');
