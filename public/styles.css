@@ -73,3 +73,22 @@
 :root[data-theme='light'] .date-sep{background:rgba(80,100,130,.12);color:#637083}
 .settings-section{margin-top:18px;padding-top:14px}
 .settings-hint{margin:6px 0 10px;color:var(--muted);font-size:13px;line-height:1.4}
+.reply-composer-bar{display:flex;align-items:center;gap:8px;margin:0 12px 6px;padding:8px 10px;border-radius:14px;background:var(--composer-input-bg);border-left:3px solid var(--accent)}
+.reply-composer-bar.hidden{display:none}
+.reply-composer-content{flex:1;min-width:0}
+.reply-composer-author{font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reply-composer-preview{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reply-composer-close{width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}
+.reply-block{display:block;width:100%;margin-bottom:6px;padding:5px 7px;border-radius:9px;border-left:3px solid var(--accent);background:rgba(120,130,145,.14);cursor:pointer;text-align:left}
+.reply-block-author{font-size:12px;font-weight:700;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reply-block-preview{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reply-highlight .bubble{animation:replyHighlight 1.4s ease}
+@keyframes replyHighlight{0%{box-shadow:0 0 0 999px rgba(51,144,236,.10) inset}100%{box-shadow:none}}
+.message-reply-menu{position:fixed;z-index:9999;min-width:130px;border-radius:12px;padding:6px;background:var(--panel-bg,var(--panel));box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.message-reply-menu button{width:100%;border:0;background:transparent;color:var(--text);text-align:left;padding:9px 10px;border-radius:9px;cursor:pointer}
+.message-reply-menu button:hover{background:rgba(120,130,145,.15)}
+.swipe-reply-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%) scale(.8);opacity:0;width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;pointer-events:none;transition:opacity .12s ease,transform .12s ease}
+.msg.swiping{transition:none}
+.msg.swipe-reset{transition:transform .18s ease}
+.draft-label{color:#e53935;font-weight:600}
+.draft-text{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

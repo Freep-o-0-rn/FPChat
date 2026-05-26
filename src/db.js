@@ -33,12 +33,26 @@ function createDb(databasePath) {
       sender_id INTEGER NOT NULL,
       ciphertext TEXT NOT NULL,
       iv TEXT NOT NULL,
+      reply_to_message_id INTEGER,      
       status TEXT NOT NULL DEFAULT 'sent',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       delivered_at TEXT,
       read_at TEXT,
       FOREIGN KEY(room_id) REFERENCES rooms(id),
-      FOREIGN KEY(sender_id) REFERENCES participants(id)
+      FOREIGN KEY(sender_id) REFERENCES participants(id),
+      FOREIGN KEY(reply_to_message_id) REFERENCES messages(id)
+    );
+    CREATE TABLE IF NOT EXISTS drafts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      ciphertext TEXT,
+      iv TEXT,
+      reply_to_message_id INTEGER,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(room_id, device_id),
+      FOREIGN KEY(room_id) REFERENCES rooms(id),
+      FOREIGN KEY(reply_to_message_id) REFERENCES messages(id)
     );
 
     CREATE TABLE IF NOT EXISTS recovery (
@@ -87,6 +101,8 @@ function createDb(databasePath) {
   if (!recoveryColumns.some((column) => column.name === 'recovery_secret_ciphertext')) db.exec('ALTER TABLE recovery ADD COLUMN recovery_secret_ciphertext TEXT');
 
   const participantColumns = db.prepare('PRAGMA table_info(participants)').all();
+  const messageColumns = db.prepare('PRAGMA table_info(messages)').all();
+  if (!messageColumns.some((column) => column.name === 'reply_to_message_id')) db.exec('ALTER TABLE messages ADD COLUMN reply_to_message_id INTEGER');
   if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
   if (!participantColumns.some((column) => column.name === 'updated_at')) {
   db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT");
