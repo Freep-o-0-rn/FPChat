@@ -33,6 +33,7 @@ function createDb(databasePath) {
       sender_id INTEGER NOT NULL,
       ciphertext TEXT NOT NULL,
       iv TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'text',      
       reply_to_message_id INTEGER,      
       status TEXT NOT NULL DEFAULT 'sent',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -53,6 +54,34 @@ function createDb(databasePath) {
       UNIQUE(room_id, device_id),
       FOREIGN KEY(room_id) REFERENCES rooms(id),
       FOREIGN KEY(reply_to_message_id) REFERENCES messages(id)
+    );
+
+
+
+    CREATE TABLE IF NOT EXISTS media (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_id TEXT NOT NULL UNIQUE,
+      room_id INTEGER NOT NULL,
+      message_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending',
+      file_order INTEGER NOT NULL DEFAULT 0,
+      server_filename TEXT NOT NULL,
+      thumbnail_filename TEXT,
+      original_name_ciphertext TEXT,
+      original_name_iv TEXT,
+      mime_type TEXT NOT NULL,
+      media_kind TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      encrypted_size_bytes INTEGER NOT NULL,
+      thumb_size_bytes INTEGER,
+      thumb_encrypted_size_bytes INTEGER,
+      width INTEGER,
+      height INTEGER,
+      duration_seconds REAL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY(room_id) REFERENCES rooms(id),
+      FOREIGN KEY(message_id) REFERENCES messages(id)
     );
 
     CREATE TABLE IF NOT EXISTS recovery (
@@ -103,6 +132,7 @@ function createDb(databasePath) {
   const participantColumns = db.prepare('PRAGMA table_info(participants)').all();
   const messageColumns = db.prepare('PRAGMA table_info(messages)').all();
   if (!messageColumns.some((column) => column.name === 'reply_to_message_id')) db.exec('ALTER TABLE messages ADD COLUMN reply_to_message_id INTEGER');
+  if (!messageColumns.some((column) => column.name === 'type')) db.exec("ALTER TABLE messages ADD COLUMN type TEXT NOT NULL DEFAULT 'text'");
   if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
   if (!participantColumns.some((column) => column.name === 'updated_at')) {
   db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT");
