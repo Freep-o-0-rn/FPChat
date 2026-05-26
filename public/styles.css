@@ -29,7 +29,7 @@
 .btn-send{width:44px;height:44px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:18px;cursor:pointer;transition:all .18s ease}
 .btn-send:active{transform:translateY(1px) scale(.98)}
 .btn-loading,.btn:disabled,.btn-send:disabled{opacity:.58;pointer-events:none;cursor:not-allowed;transform:none;filter:none}
-.chat-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(0,0,0,.08);padding-bottom:8px}.chat-header-actions{display:flex;align-items:center;gap:8px}.messages{height:calc(100vh - 250px);overflow:auto;padding:10px 0}.bubble-wrap{display:flex;margin:8px 0}.mine{justify-content:flex-end}.bubble{max-width:75%;background:#eef3fa;padding:8px 10px;border-radius:12px}.mine .bubble{background:#d8ecff}.meta{font-size:12px;color:var(--muted);text-align:right}.date-sep{align-self:center;width:fit-content;max-width:80%;margin:14px auto 10px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600;color:var(--muted);background:rgba(120,130,145,.16);user-select:none}
+.chat-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(0,0,0,.08);padding-bottom:8px}.chat-header-actions{display:flex;align-items:center;gap:8px}.messages{height:calc(100vh - 250px);overflow-x:visible;overflow-y:auto;padding:10px 0}.bubble-wrap{position:relative;display:flex;margin:8px 0;padding-right:44px;overflow:visible}.mine{justify-content:flex-end}.bubble{max-width:75%;background:#eef3fa;padding:8px 10px;border-radius:12px;transition:transform .12s ease}.mine .bubble{background:#d8ecff}.meta{font-size:12px;color:var(--muted);text-align:right}.date-sep{align-self:center;width:fit-content;max-width:80%;margin:14px auto 10px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600;color:var(--muted);background:rgba(120,130,145,.16);user-select:none}
 .send{display:flex;gap:8px;padding-top:8px;align-items:flex-end}.send textarea{min-height:44px;max-height:120px}.mobile-only{display:none}
 .chat-view{height:100%;min-height:0;display:flex;flex-direction:column}
 .chat-view .chat-header{flex:0 0 auto}
@@ -87,7 +87,7 @@
 .message-reply-menu{position:fixed;z-index:9999;min-width:130px;border-radius:12px;padding:6px;background:var(--panel-bg,var(--panel));box-shadow:0 8px 30px rgba(0,0,0,.25)}
 .message-reply-menu button{width:100%;border:0;background:transparent;color:var(--text);text-align:left;padding:9px 10px;border-radius:9px;cursor:pointer}
 .message-reply-menu button:hover{background:rgba(120,130,145,.15)}
-.swipe-reply-icon{position:absolute;right:8px;left:auto;top:50%;transform:translateY(-50%) scale(.8);opacity:0;width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;pointer-events:none;transition:opacity .12s ease,transform .12s ease}
+.swipe-reply-icon{position:absolute;right:6px;top:50%;transform:translateY(-50%) scale(.8);opacity:0;width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;pointer-events:none;transition:opacity .12s ease,transform .12s ease;z-index:2}
 .msg.swiping{transition:none}
 .msg.swipe-reset{transition:transform .18s ease}
 .draft-label{color:#e53935;font-weight:600}
