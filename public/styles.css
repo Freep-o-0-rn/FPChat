@@ -87,7 +87,7 @@
 .message-reply-menu{position:fixed;z-index:9999;min-width:130px;border-radius:12px;padding:6px;background:var(--panel-bg,var(--panel));box-shadow:0 8px 30px rgba(0,0,0,.25)}
 .message-reply-menu button{width:100%;border:0;background:transparent;color:var(--text);text-align:left;padding:9px 10px;border-radius:9px;cursor:pointer}
 .message-reply-menu button:hover{background:rgba(120,130,145,.15)}
-.swipe-reply-icon{position:absolute;left:8px;top:50%;transform:translateY(-50%) scale(.8);opacity:0;width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;pointer-events:none;transition:opacity .12s ease,transform .12s ease}
+.swipe-reply-icon{position:absolute;right:8px;left:auto;top:50%;transform:translateY(-50%) scale(.8);opacity:0;width:34px;height:34px;border-radius:999px;display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;pointer-events:none;transition:opacity .12s ease,transform .12s ease}
 .msg.swiping{transition:none}
 .msg.swipe-reset{transition:transform .18s ease}
 .draft-label{color:#e53935;font-weight:600}
