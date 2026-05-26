@@ -162,6 +162,37 @@ function openMobileMenu(){if(!isMobileViewport())return; els.sidebar?.classList.
 function closeMobileMenu(){els.sidebar?.classList.remove('open'); els.sidebarOverlay?.classList.remove('open','active'); els.appRoot?.classList.remove('menu-open'); document.body.classList.remove('menu-open');}
 function toggleMobileMenu(){if(els.sidebar?.classList.contains('open')) closeMobileMenu(); else openMobileMenu();}
 let edgeSwipe={active:false,startX:0,startY:0,tracking:false};
+
+let lastBackPressAt=0;
+const BACK_EXIT_INTERVAL=2000;
+function showBackExitToast(){
+  let toast=document.getElementById('backExitToast');
+  if(!toast){
+    toast=document.createElement('div');
+    toast.id='backExitToast';
+    toast.className='back-exit-toast';
+    toast.textContent='Нажмите ещё раз, чтобы выйти';
+    document.body.appendChild(toast);
+  }
+  toast.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer=setTimeout(()=>{toast.classList.remove('show');},1800);
+}
+function handleAndroidBackNavigation(){
+  const sidebarOpen=els.sidebar?.classList.contains('open');
+  if(sidebarOpen){closeMobileMenu();return true;}
+  if(state.roomId){showChatsList();return true;}
+  if(state.view&&state.view!=='chats'){setView('chats');return true;}
+  const now=Date.now();
+  if(now-lastBackPressAt<BACK_EXIT_INTERVAL)return false;
+  lastBackPressAt=now;
+  showBackExitToast();
+  return true;
+}
+function pushAppHistoryState(){
+  try{history.pushState({fpchat:true},'',location.href);}catch{}
+}
+
 function renderChats(){const q=els.search.value?.toLowerCase()||''; let chats=state.chats.filter(c=>{const n=(state.roomNames[c.roomId]||'').toLowerCase(); return [n,c.roomId,(c.lastMessage||'').toLowerCase()].some(s=>s.includes(q));}); els.rows.innerHTML=''; if(els.empty){ els.empty.classList.toggle('hidden', chats.length>0); } chats.forEach(c=>{const minePrefix=c.lastSender===state.nick?'Вы: ':c.lastSender?`${c.lastSender}: `:'';const draft=state.drafts[c.roomId];const hasDraft=Boolean(draft&&(draft.text?.trim()||draft.replyTo));const lastHtml=hasDraft?`<div class='last'><span class='draft-label'>Черновик</span>${draft.text?.trim()?`<div class='draft-text'>${draft.text.trim()}</div>`:''}</div>`:`<div class='last'>${state.roomMute[c.roomId]?'🔕 ':''}${minePrefix}${c.lastMessage||''}</div>`;const row=document.createElement('div'); row.className='chat-row'+(c.roomId===state.roomId?' active':'')+(c.unread?' unread':''); row.innerHTML=`<div class='row-top'><div><div><strong>${state.roomNames[c.roomId]||`Комната ${shortId(c.roomId)}`}</strong></div>${state.roomNames[c.roomId]?`<div class='sys'>Комната ${shortId(c.roomId)}</div>`:''}</div><div class="chat-row-meta">${c.unread>0?`<span class="chat-unread-badge">${c.unread>99?'99+':c.unread}</span>`:''}<span class="chat-time">${formatChatListTime(c.lastActivity)}</span></div></div><div class='row-top'>${lastHtml}</div>`; let longPressTimer=null; let longPressTriggered=false; let suppressNextClickUntil=0; let startX=0; let startY=0; row.addEventListener('touchstart',(e)=>{const touch=e.touches?.[0]; if(!touch)return; startX=touch.clientX; startY=touch.clientY; longPressTriggered=false; if(longPressTimer){clearTimeout(longPressTimer);} longPressTimer=setTimeout(()=>{longPressTriggered=true; suppressNextClickUntil=Date.now()+500; showRoomMenu(c.roomId,startX,startY);navigator.vibrate?.(10);},600);},{passive:true}); row.addEventListener('touchmove',(e)=>{const touch=e.touches?.[0]; if(!touch||!longPressTimer)return; if(Math.abs(touch.clientX-startX)>10||Math.abs(touch.clientY-startY)>10){clearTimeout(longPressTimer);longPressTimer=null;}},{passive:true}); row.addEventListener('touchend',(e)=>{if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;} if(longPressTriggered===true){e.preventDefault();e.stopPropagation();longPressTriggered=false;}}, {passive:false}); row.addEventListener('touchcancel',()=>{if(longPressTimer){clearTimeout(longPressTimer);} longPressTimer=null; longPressTriggered=false;}); row.onclick=(e)=>{if(longPressTriggered===true||Date.now()<suppressNextClickUntil){e.preventDefault();e.stopPropagation();return;}openChat(c.roomId);}; row.oncontextmenu=(e)=>{e.preventDefault();e.stopPropagation();showRoomMenu(c.roomId,e.clientX,e.clientY)}; els.rows.appendChild(row);});}
 function renderMainChatsPlaceholder(){els.content.innerHTML='';}
 function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16,64})$/i);if(!m)return null; if(location.hash){return {error:'legacy'};} return {inviteCode:m[1]};}
@@ -459,8 +490,10 @@ window.addEventListener('focus',handleAppResume);
 document.addEventListener('visibilitychange',()=>{sendClientState();if(document.visibilityState==='visible')handleAppResume();});window.addEventListener('focus',sendClientState);window.addEventListener('pageshow',sendClientState);
 window.addEventListener('pageshow',handleAppResume);
 
+window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
 
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.dataset.view); closeMobileMenu();}); els.search.oninput=renderChats;
+pushAppHistoryState();
 (async()=>{
   await registerServiceWorker();
   const updateStarted=await checkAppVersionOnEntry();
