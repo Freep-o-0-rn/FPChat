@@ -3,6 +3,9 @@ const state={view:'chats',roomId:null,secret:null,key:null,ws:null,me:null,chats
 const messageCache=new Map();
 const SWIPE_REPLY_THRESHOLD=52;
 const SWIPE_CANCEL_VERTICAL=28;
+const onst CHAT_BACK_SWIPE_THRESHOLD=80;
+const CHAT_BACK_VERTICAL_CANCEL=40;
+const CHAT_BACK_MAX_TRANSLATE=120;
 const DRAFT_SAVE_DEBOUNCE_MS=700;
 const els={content:document.getElementById('contentPane'),rows:document.getElementById('chatRows'),search:document.getElementById('chatSearch'),empty:document.getElementById('emptyChats'),sidebar:document.getElementById('sidebar'),sidebarOverlay:document.getElementById('sidebarOverlay'),context:document.getElementById('contextMenu'),appRoot:document.getElementById('appRoot')};
 const b64={encode:(buf)=>btoa(String.fromCharCode(...new Uint8Array(buf))),decode:(str)=>Uint8Array.from(atob(str),c=>c.charCodeAt(0))};
@@ -75,6 +78,70 @@ function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRo
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
 function setView(v){state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
+function isBackGestureBlockedTarget(target){
+  if(!target)return true;
+  return Boolean(target.closest('.composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"]'));
+}
+function resetChatBackSwipe(chatView){
+  if(!chatView)return;
+  chatView.classList.remove('back-swiping');
+  chatView.classList.add('back-swipe-reset');
+  chatView.style.transform='translateX(0)';
+  const cleanup=()=>{
+    chatView.classList.remove('back-swipe-reset');
+    chatView.style.transform='';
+    chatView.style.transition='';
+    chatView.removeEventListener('transitionend',cleanup);
+  };
+  chatView.addEventListener('transitionend',cleanup);
+}
+function setupChatBackSwipe(chatView){
+  if(!chatView)return;
+  let swipe=null;
+  chatView.addEventListener('touchstart',(e)=>{
+    if(!isMobileViewport()||state.view!=='chats'||!state.roomId)return;
+    if(els.sidebar?.classList.contains('open'))return;
+    if(!els.context?.classList.contains('hidden'))return;
+    const touch=e.touches?.[0];
+    if(!touch)return;
+    const target=e.target;
+    if(isBackGestureBlockedTarget(target))return;
+    swipe={startX:touch.clientX,startY:touch.clientY,dx:0,dy:0,canceled:false,back:false};
+    chatView.classList.remove('back-swipe-reset');
+  },{passive:true});
+  chatView.addEventListener('touchmove',(e)=>{
+    if(!swipe||swipe.canceled)return;
+    const touch=e.touches?.[0];
+    if(!touch)return;
+    swipe.dx=touch.clientX-swipe.startX;
+    swipe.dy=touch.clientY-swipe.startY;
+    if(Math.abs(swipe.dy)>CHAT_BACK_VERTICAL_CANCEL&&Math.abs(swipe.dy)>Math.abs(swipe.dx)){
+      swipe.canceled=true;
+      chatView.classList.remove('back-swiping');
+      chatView.style.transform='';
+      return;
+    }
+    if(swipe.dx<=0)return;
+    swipe.back=true;
+    const translate=Math.min(swipe.dx,CHAT_BACK_MAX_TRANSLATE);
+    chatView.classList.add('back-swiping');
+    chatView.style.transform=`translateX(${translate}px)`;
+  },{passive:true});
+  const endSwipe=()=>{
+    if(!swipe)return;
+    const shouldGoBack=swipe.back&&!swipe.canceled&&swipe.dx>=CHAT_BACK_SWIPE_THRESHOLD;
+    if(shouldGoBack){
+      chatView.classList.remove('back-swiping');
+      chatView.style.transform='';
+      showChatsList();
+    }else{
+      resetChatBackSwipe(chatView);
+    }
+    swipe=null;
+  };
+  chatView.addEventListener('touchend',endSwipe,{passive:true});
+  chatView.addEventListener('touchcancel',endSwipe,{passive:true});
+}
 function showChatsList(){state.roomId=null; closeMobileMenu(); els.appRoot?.classList.remove('mobile-chat'); renderChats(); setView('chats');}
 function removeBrokenChat(roomId){
   state.chats=state.chats.filter(c=>c.roomId!==roomId);
@@ -224,7 +291,7 @@ function ensureWsConnected(deviceId,timeoutMs=1800){if(!deviceId)return Promise.
 function scrollMessagesToBottom(box){if(!box)return;requestAnimationFrame(()=>{requestAnimationFrame(()=>{box.scrollTop=box.scrollHeight;});});}
 function scrollToFirstUnread(){const firstUnread=document.querySelector('.bubble-wrap[data-incoming="1"][data-read="0"]');if(firstUnread){requestAnimationFrame(()=>{requestAnimationFrame(()=>{firstUnread.scrollIntoView({behavior:'auto',block:'center'});});});return true;}return false;}
 function autoResizeMessageInput(input){if(!input)return;const lineHeight=parseFloat(getComputedStyle(input).lineHeight)||22;const maxHeight=lineHeight*4;input.style.height=`${lineHeight}px`;const nextHeight=Math.min(input.scrollHeight,maxHeight);input.style.height=`${Math.max(lineHeight,nextHeight)}px`;input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';}
-async function renderChatView(messages,deviceId){messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8s2.5-.6 3.5-1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button></form></div>`; document.getElementById('backMob')?.addEventListener('click',()=>setView('chats')); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};
+async function renderChatView(messages,deviceId){messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8s2.5-.6 3.5-1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button></form></div>`; document.getElementById('backMob')?.addEventListener('click',()=>setView('chats')); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));
 const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>{if(!entry.isIntersecting)return;const el=entry.target;markMessageRead(el.dataset.messageId);unreadVisibleObserver?.unobserve(el);});},{root:box,threshold:0.01}); for(const m of messages){appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext).catch(()=>"[cannot decrypt]"); appendMessage(box,m,txt,mine,false);}recomputePendingUnread();const hasUnread=pendingIncomingReadIds.length>0;if(hasUnread){scrollToFirstUnread();renderNewMessagesPill(pendingIncomingReadIds.length);}else{scrollMessagesToBottom(box);renderNewMessagesPill(0);}updateUnreadIndicators();
 updateReplyComposerBar();
 box.addEventListener('scroll',()=>{if(isMessagesAtBottom()){const unreadEls=[...box.querySelectorAll('.msg[data-incoming="1"][data-read="0"]')];if(unreadEls.length){unreadEls.forEach((el)=>{el.dataset.read='1';unreadVisibleObserver?.unobserve(el);});markIncomingMessagesRead(state.roomId,activeChatDeviceId,unreadEls.map(el=>Number(el.dataset.messageId||el.dataset.id)));}}recomputePendingUnread();updateUnreadIndicators();
