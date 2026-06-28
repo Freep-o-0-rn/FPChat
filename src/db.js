@@ -56,6 +56,17 @@ function createDb(databasePath) {
       FOREIGN KEY(reply_to_message_id) REFERENCES messages(id)
     );
 
+    CREATE TABLE IF NOT EXISTS chat_view_state (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      anchor_message_id INTEGER,
+      anchor_offset_px INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(room_id, device_id),
+      FOREIGN KEY(room_id) REFERENCES rooms(id),
+      FOREIGN KEY(anchor_message_id) REFERENCES messages(id)
+    );
 
 
     CREATE TABLE IF NOT EXISTS media (

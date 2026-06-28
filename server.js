@@ -55,6 +55,8 @@ const q = {
   createMessage: db.prepare(`INSERT INTO messages (room_id, sender_id, ciphertext, iv, type, status, reply_to_message_id) VALUES (?, ?, ?, ?, ?, 'sent', ?)`),
   findMessageInRoom: db.prepare('SELECT id FROM messages WHERE id = ? AND room_id = ?'),
   findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id = ? AND device_id = ?`),
+  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, updated_at FROM chat_view_state WHERE room_id = ? AND device_id = ?`),
+  upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, updated_at) VALUES (?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, updated_at=datetime('now')`),
   upsertDraft: db.prepare(`INSERT INTO drafts (room_id, device_id, ciphertext, iv, reply_to_message_id, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET ciphertext=excluded.ciphertext, iv=excluded.iv, reply_to_message_id=excluded.reply_to_message_id, updated_at=datetime('now')`),
   deleteDraftByRoomDevice: db.prepare(`DELETE FROM drafts WHERE room_id = ? AND device_id = ?`),
   markDelivered: db.prepare(`UPDATE messages
@@ -90,6 +92,7 @@ const q = {
   deleteMediaByRoomId: db.prepare('DELETE FROM media WHERE room_id = ?'),
   deleteMessagesByRoomId: db.prepare('DELETE FROM messages WHERE room_id = ?'),
   deleteParticipantsByRoomId: db.prepare('DELETE FROM participants WHERE room_id = ?'),
+  deleteViewStateByRoomId: db.prepare('DELETE FROM chat_view_state WHERE room_id = ?'),
   deleteRecoveryByRoomId: db.prepare('DELETE FROM recovery WHERE room_id = ?'),
   deleteInvitesByRoomId: db.prepare('DELETE FROM invites WHERE room_id = ?'),
   deleteRoomById: db.prepare('DELETE FROM rooms WHERE id = ?')
@@ -105,6 +108,14 @@ function pushOff(res) { return res.status(503).json({ ok: false, error: 'push di
 function getRoomByInput(roomId) { return q.findRoomByPublicId.get(roomId) || q.findRoomById.get(Number(roomId)); }
 function hydrateMessages(messages) {
   return messages.map((m) => ({ ...m, media: m.type === 'media' ? q.listMediaByMessageId.all(m.id).map((item) => ({ ...item, thumbnail_url: `/api/media/${item.public_id}/thumb` })) : [] }));
+}
+function normalizeViewState(row) {
+  if (!row) return null;
+  return {
+    anchorMessageId: row.anchor_message_id ? Number(row.anchor_message_id) : null,
+    anchorOffsetPx: Number(row.anchor_offset_px || 0),
+    updatedAt: toIsoUtc(row.updated_at)
+  };
 }
 function toIsoUtc(value) {
   if (!value) return null;
@@ -180,6 +191,7 @@ const removeRoomCascade = db.transaction((roomId) => {
   for (const item of q.listMediaFilesByRoomId.all(roomId)) { safeUnlink(item.server_filename); safeUnlink(item.thumbnail_filename); }
   q.deleteMediaByRoomId.run(roomId);
   q.deletePushByRoomId.run(roomId);
+  q.deleteViewStateByRoomId.run(roomId);
   q.deleteMessagesByRoomId.run(roomId);
   q.deleteParticipantsByRoomId.run(roomId);
   q.deleteRecoveryByRoomId.run(roomId);
@@ -255,11 +267,32 @@ app.post('/api/recover', (req, res) => {
   return res.status(403).json({ error: 'invalid recovery code' });
 });
 app.post('/api/rooms/:publicId/recover', (req, res) => { const { recoveryCode, deviceIds } = req.body || {}; if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' }); const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const safeDeviceIds = Array.isArray(deviceIds) ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))] : []; if (!safeDeviceIds.length) return res.status(403).json({ error: 'recovery only allowed from existing participant device' }); const hasParticipant = q.listParticipantsByRoom.all(room.id).some((p) => safeDeviceIds.includes(p.device_id)); if (!hasParticipant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' }); const recoveries = q.listRecoveriesByRoomId.all(room.id); let matchedRecovery = null; for (const recovery of recoveries) { const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64'); if (digest === recovery.recovery_verifier) { matchedRecovery = recovery; break; } } if (!matchedRecovery) return res.status(403).json({ error: 'invalid recovery code' }); return res.json({ recoverySalt: matchedRecovery.recovery_salt, recoverySecretIv: matchedRecovery.recovery_secret_iv, recoverySecretCiphertext: matchedRecovery.recovery_secret_ciphertext }); });
-app.post('/api/invites/:inviteCode/join', (req, res) => { const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const invite = q.findInviteByCode.get(req.params.inviteCode); if (!invite) return res.status(404).json({ error: 'invite not found' }); if (invite.revoked || invite.used_at || !invite.room_secret) return res.status(410).json({ error: 'invite expired or used' }); if (new Date(`${invite.expires_at.replace(' ', 'T')}Z`).getTime() <= Date.now()) { cleanupExpiredSoloRooms(); return res.status(410).json({ error: 'invite expired or used' }); } const room = q.findRoomById.get(invite.room_id); if (!room) return res.status(404).json({ error: 'room not found' }); if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' }); const safeDeviceId = String(deviceId).slice(0, 64); const safeName = String(displayName).slice(0, 48); const roomSecret = invite.room_secret; const tx = db.transaction(() => { const info = q.consumeInvite.run(safeDeviceId, invite.id); if (!info.changes) return false; q.upsertParticipant.run(room.id, safeName, safeDeviceId); return true; }); if (!tx()) return res.status(410).json({ error: 'invite expired or used' }); const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = hydrateMessages(q.listMessages.all(room.id)).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ ok: true, publicId: room.public_id, roomSecret, participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages }); });
+app.post('/api/invites/:inviteCode/join', (req, res) => { const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const invite = q.findInviteByCode.get(req.params.inviteCode); if (!invite) return res.status(404).json({ error: 'invite not found' }); if (invite.revoked || invite.used_at || !invite.room_secret) return res.status(410).json({ error: 'invite expired or used' }); if (new Date(`${invite.expires_at.replace(' ', 'T')}Z`).getTime() <= Date.now()) { cleanupExpiredSoloRooms(); return res.status(410).json({ error: 'invite expired or used' }); } const room = q.findRoomById.get(invite.room_id); if (!room) return res.status(404).json({ error: 'room not found' }); if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' }); const safeDeviceId = String(deviceId).slice(0, 64); const safeName = String(displayName).slice(0, 48); const roomSecret = invite.room_secret; const tx = db.transaction(() => { const info = q.consumeInvite.run(safeDeviceId, invite.id); if (!info.changes) return false; q.upsertParticipant.run(room.id, safeName, safeDeviceId); return true; }); if (!tx()) return res.status(410).json({ error: 'invite expired or used' }); const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = hydrateMessages(q.listMessages.all(room.id)).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId)); return res.json({ ok: true, publicId: room.public_id, roomSecret, participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages, viewState }); });
 app.get('/i/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/chat/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/api/rooms/:publicId', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); return res.json({ publicId: room.public_id, createdAt: room.created_at }); });
-app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); const participant = q.findParticipant.get(room.id, safeDeviceId); if (!participant) return res.status(403).json({ error: 'forbidden' }); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); const updated = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = hydrateMessages(q.listMessages.all(room.id)).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); return res.json({ participant: { id: updated.id, displayName: updated.display_name, deviceId: updated.device_id }, participants, messages }); });
+app.post('/api/rooms/:publicId/join', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const safeDeviceId = String(deviceId).slice(0, 64); const participant = q.findParticipant.get(room.id, safeDeviceId); if (!participant) return res.status(403).json({ error: 'forbidden' }); q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId); const updated = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = hydrateMessages(q.listMessages.all(room.id)).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId)); return res.json({ participant: { id: updated.id, displayName: updated.display_name, deviceId: updated.device_id }, participants, messages, viewState }); });
+
+app.get('/api/rooms/:publicId/view-state', (req, res) => {
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const safeDeviceId = String(req.query?.deviceId || '').slice(0, 64);
+  if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  return res.json({ ok: true, viewState: normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId)) });
+});
+app.put('/api/rooms/:publicId/view-state', (req, res) => {
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  let anchorMessageId = Number(req.body?.anchorMessageId ?? req.body?.anchor_message_id);
+  if (!Number.isInteger(anchorMessageId) || anchorMessageId <= 0 || !q.findMessageInRoom.get(anchorMessageId, room.id)) anchorMessageId = null;
+  const anchorOffsetPx = Math.max(-100000, Math.min(100000, Number.parseInt(req.body?.anchorOffsetPx ?? req.body?.anchor_offset_px ?? 0, 10) || 0));
+  q.upsertViewState.run(room.id, safeDeviceId, anchorMessageId, anchorOffsetPx);
+  return res.json({ ok: true });
+});
 
 app.get('/api/rooms/:publicId/draft', (req, res) => {
   const room = q.findRoomByPublicId.get(req.params.publicId);
