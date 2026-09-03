@@ -254,7 +254,7 @@ app.post('/api/recover', (req, res) => {
     const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64');
     if (digest !== recovery.recovery_verifier) continue;
     const room = q.findRoomByPublicId.get(recovery.public_id);
-    const participant = q.listParticipantsByRoom.all(room.id).find((p) => safeDeviceIds.includes(p.device_id));
+    const participant = q.listParticipantsByRoom.all(room.id).find((p) => p.device_id === recovery.device_id && safeDeviceIds.includes(recovery.device_id));
     if (!participant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
     return res.json({
       publicId: recovery.public_id,
@@ -266,7 +266,36 @@ app.post('/api/recover', (req, res) => {
   }
   return res.status(403).json({ error: 'invalid recovery code' });
 });
-app.post('/api/rooms/:publicId/recover', (req, res) => { const { recoveryCode, deviceIds } = req.body || {}; if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' }); const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); const safeDeviceIds = Array.isArray(deviceIds) ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))] : []; if (!safeDeviceIds.length) return res.status(403).json({ error: 'recovery only allowed from existing participant device' }); const hasParticipant = q.listParticipantsByRoom.all(room.id).some((p) => safeDeviceIds.includes(p.device_id)); if (!hasParticipant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' }); const recoveries = q.listRecoveriesByRoomId.all(room.id); let matchedRecovery = null; for (const recovery of recoveries) { const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64'); if (digest === recovery.recovery_verifier) { matchedRecovery = recovery; break; } } if (!matchedRecovery) return res.status(403).json({ error: 'invalid recovery code' }); return res.json({ recoverySalt: matchedRecovery.recovery_salt, recoverySecretIv: matchedRecovery.recovery_secret_iv, recoverySecretCiphertext: matchedRecovery.recovery_secret_ciphertext }); });
+app.post('/api/rooms/:publicId/recover', (req, res) => {
+  const { recoveryCode, deviceIds } = req.body || {};
+  if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const safeDeviceIds = Array.isArray(deviceIds)
+    ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))]
+    : [];
+  if (!safeDeviceIds.length) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
+
+  const recoveries = q.listRecoveriesByRoomId.all(room.id);
+  let matchedRecovery = null;
+  for (const recovery of recoveries) {
+    if (!safeDeviceIds.includes(recovery.device_id)) continue;
+    const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64');
+    if (digest === recovery.recovery_verifier) {
+      matchedRecovery = recovery;
+      break;
+    }
+  }
+  if (!matchedRecovery) return res.status(403).json({ error: 'invalid recovery code or device' });
+  const participant = q.findParticipant.get(room.id, matchedRecovery.device_id);
+  if (!participant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
+  return res.json({
+    deviceId: matchedRecovery.device_id,
+    recoverySalt: matchedRecovery.recovery_salt,
+    recoverySecretIv: matchedRecovery.recovery_secret_iv,
+    recoverySecretCiphertext: matchedRecovery.recovery_secret_ciphertext
+  });
+});
 app.post('/api/invites/:inviteCode/join', (req, res) => { const { displayName, deviceId } = req.body || {}; if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' }); const invite = q.findInviteByCode.get(req.params.inviteCode); if (!invite) return res.status(404).json({ error: 'invite not found' }); if (invite.revoked || invite.used_at || !invite.room_secret) return res.status(410).json({ error: 'invite expired or used' }); if (new Date(`${invite.expires_at.replace(' ', 'T')}Z`).getTime() <= Date.now()) { cleanupExpiredSoloRooms(); return res.status(410).json({ error: 'invite expired or used' }); } const room = q.findRoomById.get(invite.room_id); if (!room) return res.status(404).json({ error: 'room not found' }); if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' }); const safeDeviceId = String(deviceId).slice(0, 64); const safeName = String(displayName).slice(0, 48); const roomSecret = invite.room_secret; const tx = db.transaction(() => { const info = q.consumeInvite.run(safeDeviceId, invite.id); if (!info.changes) return false; q.upsertParticipant.run(room.id, safeName, safeDeviceId); return true; }); if (!tx()) return res.status(410).json({ error: 'invite expired or used' }); const participant = q.findParticipant.get(room.id, safeDeviceId); const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({ deviceId: item.device_id, displayName: item.display_name, online: Boolean(item.online), lastSeenAt: toIsoUtc(item.last_seen_at) })); const messages = hydrateMessages(q.listMessages.all(room.id)).map((m) => ({ ...m, created_at: toIsoUtc(m.created_at), delivered_at: toIsoUtc(m.delivered_at), read_at: toIsoUtc(m.read_at) })); const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId)); return res.json({ ok: true, publicId: room.public_id, roomSecret, participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id }, participants, messages, viewState }); });
 app.get('/i/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/chat/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
