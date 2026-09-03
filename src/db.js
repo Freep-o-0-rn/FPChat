@@ -34,6 +34,7 @@ function createDb(databasePath) {
       ciphertext TEXT NOT NULL,
       iv TEXT NOT NULL,
       type TEXT NOT NULL DEFAULT 'text',      
+      client_message_id TEXT,
       reply_to_message_id INTEGER,      
       status TEXT NOT NULL DEFAULT 'sent',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -144,6 +145,8 @@ function createDb(databasePath) {
   const messageColumns = db.prepare('PRAGMA table_info(messages)').all();
   if (!messageColumns.some((column) => column.name === 'reply_to_message_id')) db.exec('ALTER TABLE messages ADD COLUMN reply_to_message_id INTEGER');
   if (!messageColumns.some((column) => column.name === 'type')) db.exec("ALTER TABLE messages ADD COLUMN type TEXT NOT NULL DEFAULT 'text'");
+  if (!messageColumns.some((column) => column.name === 'client_message_id')) db.exec('ALTER TABLE messages ADD COLUMN client_message_id TEXT');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_room_sender_client_id ON messages(room_id, sender_id, client_message_id) WHERE client_message_id IS NOT NULL');
   if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
   if (!participantColumns.some((column) => column.name === 'updated_at')) {
   db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT");
