@@ -87,6 +87,9 @@ const q = {
   deletePushByDevice: db.prepare('DELETE FROM push_subscriptions WHERE device_id = ?'),
   listPushForRoom: db.prepare(`SELECT ps.*, r.public_id as room_public_id, p.display_name as device_name FROM push_subscriptions ps JOIN rooms r ON r.id = ps.room_id JOIN participants p ON p.room_id = ps.room_id AND p.device_id = ps.device_id WHERE ps.room_id = ?`),
   deletePushById: db.prepare('DELETE FROM push_subscriptions WHERE id = ?'),
+  claimPushDelivery: db.prepare('INSERT OR IGNORE INTO push_deliveries (room_id, message_id, device_id) VALUES (?, ?, ?)'),
+  deletePushDelivery: db.prepare('DELETE FROM push_deliveries WHERE room_id = ? AND message_id = ? AND device_id = ?'),
+  deletePushDeliveriesByRoomId: db.prepare('DELETE FROM push_deliveries WHERE room_id = ?'),
   createInvite: db.prepare(`INSERT INTO invites (invite_code, room_id, room_secret, expires_at) VALUES (?, ?, ?, datetime('now', '+24 hours'))`),
   findInviteByCode: db.prepare(`SELECT * FROM invites WHERE invite_code = ?`),
   consumeInvite: db.prepare(`UPDATE invites SET used_at = datetime('now'), used_by_device_id = ?, room_secret = NULL WHERE id = ? AND used_at IS NULL AND revoked = 0 AND expires_at > datetime('now') AND room_secret IS NOT NULL`),
@@ -242,13 +245,17 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
-async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, senderName, preview }) {
+async function sendPushForMessage({ roomId, messageId, roomPublicId, senderDeviceId, senderName, preview }) {
   if (!pushEnabled) return;
+  const safeMessageId = Number(messageId);
+  if (!Number.isSafeInteger(safeMessageId) || safeMessageId <= 0) return;
   const subs = q.listPushForRoom.all(roomId);
   let delivered = false;
   for (const sub of subs) {
     if (sub.device_id === senderDeviceId || sub.muted) continue;
     if (hasVisibleSocketForDevice(sub.device_id, roomPublicId)) continue;
+    const claim = q.claimPushDelivery.run(roomId, safeMessageId, sub.device_id);
+    if (!claim.changes) continue;
     const privateBody = sub.hide_sender ? 'Новое сообщение' : `${senderName}: новое сообщение`;
     const shownPreview = sub.show_text && preview ? (sub.hide_sender ? preview : `${senderName}: ${preview}`) : privateBody;
     const payload = JSON.stringify({ type: 'message', roomId: roomPublicId, url: `/chat/${roomPublicId}`, title: 'FPChat', body: shownPreview });
@@ -256,6 +263,7 @@ async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, sender
       await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
       delivered = true;
     } catch (err) {
+      q.deletePushDelivery.run(roomId, safeMessageId, sub.device_id);
       if (err?.statusCode === 404 || err?.statusCode === 410) q.deletePushById.run(sub.id);
       else console.warn(`Push send failed for room ${roomPublicId}: ${err?.statusCode || 'error'}`);
     }
@@ -268,6 +276,7 @@ const removeRoomCascade = db.transaction((roomId) => {
   for (const item of q.listMediaFilesByRoomId.all(roomId)) { safeUnlink(item.server_filename); safeUnlink(item.thumbnail_filename); }
   q.deleteMediaByRoomId.run(roomId);
   q.deletePushByRoomId.run(roomId);
+  q.deletePushDeliveriesByRoomId.run(roomId);
   q.deleteViewStateByRoomId.run(roomId);
   q.deleteMessagesByRoomId.run(roomId);
   q.deleteParticipantsByRoomId.run(roomId);
@@ -722,7 +731,7 @@ async function handleTextMessage(ws, payload) {
 
   // Push wakes the recipient but is not proof that the message reached the app.
   const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
-  await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
+  await sendPushForMessage({ roomId: room.id, messageId: message.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
 }
 
 const server = http.createServer(app);
@@ -835,7 +844,7 @@ wss.on('connection', (ws, req) => {
 
       // Push wakes the recipient but is not proof that the message reached the app.
       const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
-      await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
+      await sendPushForMessage({ roomId: room.id, messageId, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
       return;
     }
 

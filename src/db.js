@@ -125,6 +125,16 @@ function createDb(databasePath) {
       FOREIGN KEY(room_id) REFERENCES rooms(id)
     );
 
+    CREATE TABLE IF NOT EXISTS push_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      message_id INTEGER NOT NULL,
+      device_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(room_id, message_id, device_id),
+      FOREIGN KEY(room_id) REFERENCES rooms(id)
+    );
+
     CREATE TABLE IF NOT EXISTS invites (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       invite_code TEXT NOT NULL UNIQUE,
