@@ -64,7 +64,6 @@ const q = {
   findMessageById: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.id = ? AND m.room_id = ?`),
   findMessageByClientId: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.room_id = ? AND m.sender_id = ? AND m.client_message_id = ?`),
   findMessageForRead: db.prepare('SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id = ? AND room_id = ?'),
-  listSentMessagesForParticipant: db.prepare(`SELECT id, client_message_id FROM messages WHERE room_id = ? AND sender_id != ? AND status = 'sent' ORDER BY id ASC`),
   findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id = ? AND device_id = ?`),
   findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, updated_at FROM chat_view_state WHERE room_id = ? AND device_id = ?`),
   upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, updated_at) VALUES (?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, updated_at=datetime('now')`),
@@ -76,6 +75,7 @@ const q = {
     WHERE id = ? AND status = 'sent'`),
   markReadBulk: db.prepare(`UPDATE messages
     SET status = 'read',
+        delivered_at = CASE WHEN delivered_at IS NULL THEN datetime('now') ELSE delivered_at END,
         read_at = CASE WHEN read_at IS NULL THEN datetime('now') ELSE read_at END
     WHERE room_id = ? AND id = ? AND sender_id != ? AND status != 'read'`),
   upsertPushSub: db.prepare(`INSERT INTO push_subscriptions (room_id, device_id, endpoint, p256dh, auth, muted, show_text, hide_sender, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT muted FROM push_subscriptions WHERE room_id=? AND device_id=? AND endpoint=?),0), ?, ?, datetime('now')) ON CONFLICT(room_id, device_id, endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, show_text=excluded.show_text, hide_sender=excluded.hide_sender, updated_at=datetime('now')`),
@@ -238,7 +238,7 @@ async function sendPushForMessage({ roomId, roomPublicId, senderDeviceId, sender
   let delivered = false;
   for (const sub of subs) {
     if (sub.device_id === senderDeviceId || sub.muted) continue;
-    if (hasVisibleSocketForDevice(sub.device_id)) continue;
+    if (hasVisibleSocketForDevice(sub.device_id, roomPublicId)) continue;
     const privateBody = sub.hide_sender ? 'Новое сообщение' : `${senderName}: новое сообщение`;
     const shownPreview = sub.show_text && preview ? (sub.hide_sender ? preview : `${senderName}: ${preview}`) : privateBody;
     const payload = JSON.stringify({ type: 'message', roomId: roomPublicId, url: `/chat/${roomPublicId}`, title: 'FPChat', body: shownPreview });
@@ -375,9 +375,11 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
   }
   const room = q.findRoomById.get(invite.room_id);
   if (!room) return res.status(404).json({ error: 'room not found' });
-  if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' });
   const safeDeviceId = String(deviceId).slice(0, 64);
   const safeName = String(displayName).slice(0, 48);
+  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });
+  if (q.findParticipant.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });
+  if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' });
   const roomSecret = invite.room_secret;
   const tx = db.transaction(() => {
     const info = q.consumeInvite.run(safeDeviceId, invite.id);
@@ -387,7 +389,6 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
   });
   if (!tx()) return res.status(410).json({ error: 'invite expired or used' });
   const participant = q.findParticipant.get(room.id, safeDeviceId);
-  markSentMessagesDelivered(room, participant.id);
   const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
     deviceId: item.device_id,
     displayName: item.display_name,
@@ -421,7 +422,6 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   if (!participant) return res.status(403).json({ error: 'forbidden' });
   q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId);
   const updated = q.findParticipant.get(room.id, safeDeviceId);
-  markSentMessagesDelivered(room, updated.id);
   const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
     deviceId: item.device_id,
     displayName: item.display_name,
@@ -533,11 +533,11 @@ function sendToRoomParticipants(roomPublicId, payload, exceptDeviceId = null) {
 }
 
 function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', ...payload }); }
-function hasVisibleSocketForDevice(deviceId) {
+function hasVisibleSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);
   if (!sockets) return false;
   for (const client of sockets) {
-    if (client.readyState === WebSocket.OPEN && client.visible === true) return true;
+    if (client.readyState === WebSocket.OPEN && client.visible === true && client.activeRoomId === roomPublicId) return true;
   }
   return false;
 }
@@ -638,14 +638,6 @@ function broadcastDeliveredStatus(room, message) {
   });
 }
 
-function markSentMessagesDelivered(room, recipientParticipantId) {
-  const pending = q.listSentMessagesForParticipant.all(room.id, recipientParticipantId);
-  for (const message of pending) {
-    const info = q.markDelivered.run(message.id);
-    if (info.changes) broadcastDeliveredStatus(room, message);
-  }
-}
-
 function broadcastRoomMessage(room, message, sourceDeviceId) {
   const event = { type: 'message:new', roomId: room.public_id, message };
   const eventJson = JSON.stringify(event);
@@ -661,13 +653,16 @@ function broadcastRoomMessage(room, message, sourceDeviceId) {
       } catch {}
     }
   }
-  if (!deliveredToRecipient) return false;
-  const info = q.markDelivered.run(message.id);
-  if (info.changes) {
-    const updated = q.findMessageById.get(message.id, room.id);
-    broadcastDeliveredStatus(room, updated || message);
-  }
-  return true;
+  return deliveredToRecipient;
+}
+
+function markMessageReceived(room, recipientParticipantId, messageId) {
+  const target = q.findMessageForRead.get(messageId, room.id);
+  if (!target || target.sender_id === recipientParticipantId) return;
+  const info = q.markDelivered.run(messageId);
+  if (!info.changes) return;
+  const updated = q.findMessageById.get(messageId, room.id);
+  broadcastDeliveredStatus(room, updated || target);
 }
 
 function broadcastTextMessage(room, message, sourceDeviceId) {
@@ -755,8 +750,6 @@ wss.on('connection', (ws, req) => {
 
   for (const participant of participantRooms) {
     q.setParticipantOnline.run(participant.room_id, ws.deviceId);
-    const connectedParticipant = q.findParticipant.get(participant.room_id, ws.deviceId);
-    if (connectedParticipant) markSentMessagesDelivered(q.findRoomById.get(participant.room_id), connectedParticipant.id);
     broadcastPresenceUpdate(participant.room_public_id, {
       deviceId: participant.device_id,
       displayName: participant.display_name,
@@ -830,6 +823,17 @@ wss.on('connection', (ws, req) => {
       // Push wakes the recipient but is not proof that the message reached the app.
       const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
       await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
+      return;
+    }
+
+    if (payload.type === 'message:received' || (payload.type === 'message:received:bulk' && Array.isArray(payload.messageIds))) {
+      const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
+      if (!room) return;
+      const recipient = q.findParticipant.get(room.id, ws.deviceId);
+      if (!recipient) return;
+      const rawIds = payload.type === 'message:received' ? [payload.messageId] : payload.messageIds;
+      const ids = [...new Set(rawIds.map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
+      for (const id of ids) markMessageReceived(room, recipient.id, id);
       return;
     }
 
