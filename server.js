@@ -185,22 +185,35 @@ app.post('/api/push/subscribe', (req, res) => {
 app.post('/api/push/settings', (req, res) => {
   if (!pushEnabled) return pushOff(res);
   const room = getRoomByInput(req.body?.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
-  const info = q.updatePushSettings.run(req.body?.showText ? 1 : 0, req.body?.hideSender ? 1 : 0, room.id, String(req.body?.deviceId || '').slice(0, 64));
+  const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  const info = q.updatePushSettings.run(req.body?.showText ? 1 : 0, req.body?.hideSender ? 1 : 0, room.id, safeDeviceId);
   res.json({ ok: true, updated: info.changes>0 });
 });
 
 app.post('/api/push/mute-room', (req, res) => {
   if (!pushEnabled) return pushOff(res);
   const room = getRoomByInput(req.body?.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
-  q.mutePushRoom.run(req.body?.muted ? 1 : 0, room.id, String(req.body?.deviceId || '').slice(0, 64));
+  const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  q.mutePushRoom.run(req.body?.muted ? 1 : 0, room.id, safeDeviceId);
   res.json({ ok: true });
 });
 
 app.post('/api/push/unsubscribe', (req, res) => {
   if (!pushEnabled) return pushOff(res);
   const deviceId = String(req.body?.deviceId || '').slice(0, 64); if (!deviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
-  if (req.body?.roomId) { const room = getRoomByInput(req.body.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' }); q.deletePushByDeviceRoom.run(deviceId, room.id); }
-  else q.deletePushByDevice.run(deviceId);
+  if (req.body?.roomId) {
+    const room = getRoomByInput(req.body.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+    if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+    q.deletePushByDeviceRoom.run(deviceId, room.id);
+  } else {
+    const participantRooms = q.listParticipantRoomsByDevice.all(deviceId);
+    if (!participantRooms.length) return res.status(403).json({ ok: false, error: 'forbidden' });
+    q.deletePushByDevice.run(deviceId);
+  }
   res.json({ ok: true });
 });
 

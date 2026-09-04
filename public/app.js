@@ -1,6 +1,11 @@
 const STORAGE={roomState:(id)=>`fpchat:room:${id}`,activeChatsKey:'fpchat:active-chats',lastSelectedRoomId:'lastSelectedRoomId',nick:'fpchat:nick',theme:'fpchat:theme',roomNames:'fpchat:room-names',notif:'fpchat:notif',roomMute:'fpchat:room-mute',deviceId:'fpchat:device-id',set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),get:(k)=>{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}};
+const DEFAULT_NOTIFICATION_SETTINGS=Object.freeze({enabled:true,showText:true,hideSender:false,sound:true});
+const NOTIFICATION_PROMPTED_KEY='fpchat:notification-prompted';
+function normalizeNotificationSettings(value){const raw=value&&typeof value==='object'?value:{};return {enabled:raw.enabled!==false,showText:raw.showText!==false,hideSender:raw.hideSender===true,sound:raw.sound!==false};}
+const storedNotificationSettings=STORAGE.get(STORAGE.notif);
+const initialNotificationSettings=normalizeNotificationSettings(storedNotificationSettings||DEFAULT_NOTIFICATION_SETTINGS);
 function getOrCreateDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(current))return current;const deviceId=crypto.randomUUID();localStorage.setItem(STORAGE.deviceId,deviceId);return deviceId;}
-const state={view:'chats',roomId:null,secret:null,key:null,ws:null,me:null,chats:STORAGE.get(STORAGE.activeChatsKey)||[],roomNames:STORAGE.get(STORAGE.roomNames)||{},nick:localStorage.getItem(STORAGE.nick)||`Гость-${String(Math.floor(Math.random()*100000)).padStart(5,'0')}`,notif:STORAGE.get(STORAGE.notif)||{enabled:false,showText:true,hideSender:false,sound:true},roomMute:STORAGE.get(STORAGE.roomMute)||{},presence:{},localConnectionState:'disconnected',drafts:{}};localStorage.setItem(STORAGE.nick,state.nick);
+const state={view:'chats',roomId:null,secret:null,key:null,ws:null,me:null,chats:STORAGE.get(STORAGE.activeChatsKey)||[],roomNames:STORAGE.get(STORAGE.roomNames)||{},nick:localStorage.getItem(STORAGE.nick)||`Гость-${String(Math.floor(Math.random()*100000)).padStart(5,'0')}`,notif:initialNotificationSettings,roomMute:STORAGE.get(STORAGE.roomMute)||{},presence:{},localConnectionState:'disconnected',drafts:{}};localStorage.setItem(STORAGE.nick,state.nick);if(!storedNotificationSettings)STORAGE.set(STORAGE.notif,state.notif);
 const messageCache=new Map();
 const SWIPE_REPLY_THRESHOLD=52;
 const SWIPE_CANCEL_VERTICAL=28;
@@ -521,7 +526,7 @@ async function handleInstallClick(){
     alert('Не удалось открыть установку. Попробуйте установить через меню браузера.');
   }
 }
-function renderSettings(){els.content.innerHTML=`<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><label><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/> Включить уведомления</label><label><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/> Показывать текст сообщения</label><label><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/> Скрывать отправителя</label><label><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/> Звук нового сообщения</label><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='save' class='btn btn-primary'>Сохранить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;void refreshSettingsVersionLine(); document.getElementById('backBtn').onclick=()=>setView('chats'); const t=document.getElementById('theme'); t.value=localStorage.getItem(STORAGE.theme)||'auto'; t.onchange=()=>applyTheme(t.value); const toggle=()=>{['nText','nSender','nSound'].forEach(id=>document.getElementById(id).disabled=!document.getElementById('nEnabled').checked)}; document.getElementById('nEnabled').onchange=async()=>{if(document.getElementById('nEnabled').checked){await ensurePushSubscription();} toggle()}; toggle(); bindClick('installPwaBtn',handleInstallClick);updateInstallUi(); document.getElementById('save').onclick=async()=>{state.nick=document.getElementById('nick').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick); state.notif={enabled:document.getElementById('nEnabled').checked,showText:document.getElementById('nText').checked,hideSender:document.getElementById('nSender').checked,sound:document.getElementById('nSound').checked}; STORAGE.set(STORAGE.notif,state.notif);if(!state.notif.enabled){await unsubscribeAllPushDevices();}else{await syncAllPushSubscriptions();await updateAllPushSettings();} alert('Сохранено');};}
+function renderSettings(){els.content.innerHTML=`<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/> Включить уведомления</label><label><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/> Показывать текст сообщения</label><label><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/> Скрывать отправителя</label><label><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/> Звук нового сообщения</label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='save' class='btn btn-primary'>Сохранить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;void refreshSettingsVersionLine(); document.getElementById('backBtn').onclick=()=>setView('chats'); const t=document.getElementById('theme'); t.value=localStorage.getItem(STORAGE.theme)||'auto'; t.onchange=()=>applyTheme(t.value); const toggle=()=>updateNotificationOptionControls(); document.getElementById('nEnabled').onchange=async()=>{if(document.getElementById('nEnabled').checked){await ensurePushSubscription({requestPermission:true,showErrors:true});}toggle();renderNotificationPermissionStatus();}; toggle();renderNotificationPermissionStatus();bindClick('requestNotificationsBtn',enableNotificationsFromSettings);bindClick('installPwaBtn',handleInstallClick);updateInstallUi(); document.getElementById('save').onclick=async()=>{state.nick=document.getElementById('nick').value.trim()||state.nick;localStorage.setItem(STORAGE.nick,state.nick);state.notif=normalizeNotificationSettings({enabled:document.getElementById('nEnabled').checked,showText:document.getElementById('nText').checked,hideSender:document.getElementById('nSender').checked,sound:document.getElementById('nSound').checked});STORAGE.set(STORAGE.notif,state.notif);let pushReady=true;if(!state.notif.enabled){await unsubscribeAllPushDevices();}else{const subscription=await ensurePushSubscription({requestPermission:true,showErrors:true});if(subscription){await syncAllPushSubscriptions({subscription});await updateAllPushSettings();}else pushReady=false;}renderNotificationPermissionStatus();alert(pushReady?'Сохранено':'Сохранено. Уведомления включены в FPChat, но разрешение браузера или push-подписка не выданы.');};}
 function applyTheme(v){localStorage.setItem(STORAGE.theme,v);const root=document.documentElement;if(v==='auto'){root.dataset.theme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';} else root.dataset.theme=v;}
 function buildNotificationText(sender,text,notif=state.notif){if(notif.showText){return notif.hideSender?text:`${sender}: ${text}`;}return notif.hideSender?'Новое сообщение':`${sender}: новое сообщение`;}
 let notificationAudio=null;
@@ -590,11 +595,14 @@ document.addEventListener('visibilitychange',()=>{sendClientState();if(document.
 window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
 
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.dataset.view); closeMobileMenu();}); els.search.oninput=renderChats;
+document.addEventListener('click',(event)=>{const target=event.target?.closest?.('.chat-row,#createBtn,#joinBtn,#pasteJoinBtn,#restoreBtn');if(target)void maybeRequestNotificationsFromUserGesture();},true);
 pushAppHistoryState();
 (async()=>{
   await registerServiceWorker();
   const updateStarted=await checkAppVersionOnEntry();
   if(updateStarted)return;
+  void getPushConfig().then(()=>{if(document.getElementById('notificationPermissionStatus'))renderNotificationPermissionStatus();});
+  void initializeNotifications();
   applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
   const inv=parseInvite();
   const chat=parseChat();
@@ -676,13 +684,133 @@ async function checkAppVersionOnEntry(){
     appVersionCheckInFlight=false;
   }
 }
-async function getPushConfig(){const r=await fetch('/api/push/vapid-public-key');return r.json();}
-async function ensurePushSubscription(){if(!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){alert('Push-уведомления недоступны на этом устройстве');return null;}const registration=await navigator.serviceWorker.ready;const cfg=await getPushConfig();if(!cfg.enabled){alert('Push-уведомления отключены на сервере');return null;}if(Notification.permission!=='granted'){const p=await Notification.requestPermission();if(p!=='granted')return null;}let sub=await registration.pushManager.getSubscription();if(!sub){sub=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8Array(cfg.publicKey)});}return sub;}
-async function syncRoomPushSubscription(roomId){if(!state.notif.enabled||state.roomMute[roomId])return;const persisted=STORAGE.get(STORAGE.roomState(roomId));if(!persisted?.deviceId)return;const sub=await ensurePushSubscription();if(!sub)return;await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:persisted.deviceId,subscription:sub.toJSON(),settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});}
+let pushSetupInFlight=null;
+let pushConfigCache=null;
+let pushConfigPromise=null;
+function canUsePushNotifications(){return typeof navigator!=='undefined'&&'serviceWorker' in navigator&&typeof window!=='undefined'&&'PushManager' in window&&typeof Notification!=='undefined';}
+function getNotificationPermission(){return canUsePushNotifications()?Notification.permission:'unsupported';}
+async function getPushConfig(){
+  if(pushConfigCache)return pushConfigCache;
+  if(pushConfigPromise)return pushConfigPromise;
+  pushConfigPromise=fetch('/api/push/vapid-public-key',{cache:'no-store'}).then(async(response)=>{
+    if(!response.ok)return {enabled:false};
+    const payload=await response.json();
+    return payload?.enabled&&typeof payload.publicKey==='string'&&payload.publicKey?{enabled:true,publicKey:payload.publicKey}:{enabled:false};
+  }).catch(()=>({enabled:false})).then((config)=>{pushConfigCache=config;return config;}).finally(()=>{pushConfigPromise=null;});
+  return pushConfigPromise;
+}
+async function ensurePushSubscription({requestPermission=false,showErrors=false}={}){
+  if(pushSetupInFlight)return pushSetupInFlight;
+  const run=async()=>{
+    const fail=(message)=>{if(showErrors&&message)alert(message);return null;};
+    if(!canUsePushNotifications())return fail('Push-уведомления недоступны в этом браузере или на этом устройстве.');
+    if(pushConfigCache&&!pushConfigCache.enabled)return fail('Push-уведомления сейчас недоступны на сервере.');
+    let permission=Notification.permission;
+    if(permission==='denied')return fail('Уведомления запрещены браузером. Разрешите их для сайта в настройках браузера.');
+    if(permission==='default'){
+      if(!requestPermission)return null;
+      try{
+        permission=await Notification.requestPermission();
+      }catch{
+        return fail('Не удалось запросить разрешение на уведомления.');
+      }
+      if(permission!=='granted')return fail(permission==='denied'?'Уведомления запрещены браузером. Разрешите их для сайта в настройках браузера.':'Разрешение на уведомления не предоставлено.');
+    }
+    if(permission!=='granted')return null;
+    const cfg=await getPushConfig();
+    if(!cfg.enabled||!cfg.publicKey)return fail('Push-уведомления сейчас недоступны на сервере.');
+    try{
+      const registration=await navigator.serviceWorker.ready;
+      let subscription=await registration.pushManager.getSubscription();
+      if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8Array(cfg.publicKey)});
+      return subscription;
+    }catch(error){
+      console.warn('Push subscription failed',error);
+      return fail('Не удалось включить push-уведомления. Попробуйте ещё раз.');
+    }
+  };
+  const pending=run();
+  pushSetupInFlight=pending;
+  try{return await pending;}finally{if(pushSetupInFlight===pending)pushSetupInFlight=null;}
+}
+function serializePushSubscription(subscription){if(!subscription)return null;try{return typeof subscription.toJSON==='function'?subscription.toJSON():subscription;}catch{return null;}}
+async function syncRoomPushSubscription(roomId,{requestPermission=false,showErrors=false,subscription=null}={}){
+  if(!state.notif.enabled||state.roomMute[roomId])return false;
+  const persisted=STORAGE.get(STORAGE.roomState(roomId));
+  if(!persisted?.deviceId)return false;
+  const pushSubscription=subscription||await ensurePushSubscription({requestPermission,showErrors});
+  const serialized=serializePushSubscription(pushSubscription);
+  if(!serialized)return false;
+  try{
+    const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:persisted.deviceId,subscription:serialized,settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});
+    if(!response.ok&&showErrors)alert('Не удалось сохранить подписку на уведомления для этого чата.');
+    return response.ok;
+  }catch{
+    if(showErrors)alert('Не удалось подключиться для сохранения уведомлений.');
+    return false;
+  }
+}
 function getLocalRoomDevicePairs(){const unique=new Map();for(const chat of state.chats){const roomId=chat?.roomId;if(!roomId)continue;const st=STORAGE.get(STORAGE.roomState(roomId));const deviceId=st?.deviceId;if(!deviceId)continue;unique.set(`${roomId}::${deviceId}`,{roomId,deviceId});}return [...unique.values()];}
-async function syncAllPushSubscriptions(){if(!state.notif.enabled)return;const sub=await ensurePushSubscription();if(!sub)return;for(const {roomId,deviceId} of getLocalRoomDevicePairs()){if(state.roomMute[roomId])continue;await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId,subscription:sub.toJSON(),settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});}}
-async function updateAllPushSettings(){for(const {roomId,deviceId} of getLocalRoomDevicePairs()){await fetch('/api/push/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId,showText:state.notif.showText,hideSender:state.notif.hideSender})});}}
-async function unsubscribeAllPushDevices(){const deviceIds=[...new Set(getLocalRoomDevicePairs().map((p)=>p.deviceId))];for(const deviceId of deviceIds){await fetch('/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId})});}}
+async function syncAllPushSubscriptions({requestPermission=false,showErrors=false,subscription=null}={}){
+  if(!state.notif.enabled)return false;
+  const pushSubscription=subscription||await ensurePushSubscription({requestPermission,showErrors});
+  const serialized=serializePushSubscription(pushSubscription);
+  if(!serialized)return false;
+  let synced=false;
+  for(const {roomId,deviceId} of getLocalRoomDevicePairs()){
+    if(state.roomMute[roomId])continue;
+    try{
+      const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId,subscription:serialized,settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});
+      if(response.ok)synced=true;
+      else if(showErrors)console.warn('Push subscription sync failed',roomId,response.status);
+    }catch(error){
+      if(showErrors)console.warn('Push subscription sync failed',roomId,error);
+    }
+  }
+  return synced;
+}
+async function updateAllPushSettings({showErrors=false}={}){
+  let updated=false;
+  for(const {roomId,deviceId} of getLocalRoomDevicePairs()){
+    try{
+      const response=await fetch('/api/push/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId,showText:state.notif.showText,hideSender:state.notif.hideSender})});
+      if(response.ok)updated=true;
+      else if(showErrors)console.warn('Push settings update failed',roomId,response.status);
+    }catch(error){
+      if(showErrors)console.warn('Push settings update failed',roomId,error);
+    }
+  }
+  return updated;
+}
+async function unsubscribeAllPushDevices(){
+  const deviceIds=[...new Set(getLocalRoomDevicePairs().map((p)=>p.deviceId))];
+  let unsubscribed=false;
+  for(const deviceId of deviceIds){
+    try{
+      const response=await fetch('/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId})});
+      if(response.ok)unsubscribed=true;
+    }catch{}
+  }
+  return unsubscribed;
+}
+function notificationsAppEnabled(){const checkbox=document.getElementById('nEnabled');return checkbox?checkbox.checked:state.notif.enabled;}
+function updateNotificationOptionControls(){const enabled=notificationsAppEnabled();['nText','nSender','nSound'].forEach((id)=>{const option=document.getElementById(id);if(option)option.disabled=!enabled;});}
+function notificationPermissionStatusText(){const appEnabled=notificationsAppEnabled();const permission=getNotificationPermission();if(!appEnabled)return'Уведомления выключены в настройках FPChat.';if(permission==='unsupported')return'Этот браузер или устройство не поддерживает push-уведомления.';if(pushConfigCache&&!pushConfigCache.enabled)return'Push-уведомления сейчас недоступны на сервере.';if(permission==='granted')return'Разрешение браузера выдано. Push будет работать для доступных чатов.';if(permission==='denied')return'Браузер заблокировал уведомления. Разрешите их в настройках сайта браузера.';return'Уведомления включены в FPChat. Разрешите их в браузере, чтобы получать сообщения вне открытой вкладки.';}
+function renderNotificationPermissionStatus(){const status=document.getElementById('notificationPermissionStatus');const button=document.getElementById('requestNotificationsBtn');const permission=getNotificationPermission();const appEnabled=notificationsAppEnabled();if(status)status.textContent=notificationPermissionStatusText();if(!button)return;button.classList.toggle('hidden',permission==='unsupported'||(permission==='granted'&&appEnabled));if(!appEnabled)button.textContent='Включить уведомления';else if(permission==='denied')button.textContent='Как разрешить уведомления';else button.textContent='Разрешить уведомления';}
+async function enableNotificationsFromSettings(){const checkbox=document.getElementById('nEnabled');if(checkbox)checkbox.checked=true;state.notif={...normalizeNotificationSettings(state.notif),enabled:true};STORAGE.set(STORAGE.notif,state.notif);updateNotificationOptionControls();const subscription=await ensurePushSubscription({requestPermission:true,showErrors:true});if(subscription){await syncAllPushSubscriptions({subscription});await updateAllPushSettings();}renderNotificationPermissionStatus();}
+async function initializeNotifications(){if(!state.notif.enabled||getNotificationPermission()!=='granted')return false;return syncAllPushSubscriptions();}
+async function maybeRequestNotificationsFromUserGesture({force=false}={}){
+  if(!state.notif.enabled||!canUsePushNotifications())return null;
+  const permission=Notification.permission;
+  if(permission==='granted')return null;
+  if(permission!=='default')return null;
+  if(!force&&localStorage.getItem(NOTIFICATION_PROMPTED_KEY)==='1')return null;
+  if(!force)localStorage.setItem(NOTIFICATION_PROMPTED_KEY,'1');
+  const subscription=await ensurePushSubscription({requestPermission:true});
+  if(subscription)await syncAllPushSubscriptions({subscription});
+  renderNotificationPermissionStatus();
+  return subscription;
+}
 async function updatePushBadge(){const unread=state.chats.reduce((a,c)=>a+(c.unread||0),0);if(unread===0&&navigator.clearAppBadge){try{await navigator.clearAppBadge();}catch{}}else if(unread>0&&navigator.setAppBadge){try{await navigator.setAppBadge(unread);}catch{}}}
 async function updateUnreadPresentation(){const unread=state.chats.reduce((a,c)=>a+(c.unread||0),0);document.title=unread>0?`(${unread}) FPChat`:'FPChat';await updatePushBadge();}
 if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('message',async(event)=>{const data=event.data||{};if(data.type!=='open-chat')return;const roomId=data.roomId;if(!roomId){showChatsList();return;}const hasRoom=STORAGE.get(STORAGE.roomState(roomId));if(hasRoom){upsertChat(roomId,{});await openChat(roomId);}else{showChatsList();alert('Нет локального доступа к этому чату. Восстановите доступ по recovery-коду или invite-ссылке.');}});}
