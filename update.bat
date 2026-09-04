@@ -3,7 +3,7 @@ setlocal EnableExtensions DisableDelayedExpansion
 chcp 65001 >nul
 title FPChat Safe Updater
 
-set "SRC=D:\FPChat"
+set "SRC="
 set "DST=C:\_BOTS\FPChat"
 set "BACKUP_ROOT=C:\_BOTS\FPChat_backups"
 set "SERVER_WAS_RUNNING=0"
@@ -13,6 +13,14 @@ set "STAGE="
 set "STAMP="
 set "APP_PORT=3010"
 
+rem Prefer the folder that contains this updater. This keeps working when
+rem Windows assigns the flash drive a letter other than D:.
+for %%I in ("%~dp0.") do set "SCRIPT_DIR=%%~fI"
+if /I not "%SCRIPT_DIR%"=="%DST%" if exist "%SCRIPT_DIR%\package.json" set "SRC=%SCRIPT_DIR%"
+if not defined SRC if /I not "%SCRIPT_DIR%"=="%DST%" if exist "%SCRIPT_DIR%\FPChat\package.json" set "SRC=%SCRIPT_DIR%\FPChat"
+if not defined SRC if exist "D:\FPChat\package.json" set "SRC=D:\FPChat"
+if not defined SRC for %%D in (D E F G H I J K L M N O P Q R S T U V W X Y Z) do if not defined SRC if exist "%%D:\FPChat\package.json" set "SRC=%%D:\FPChat"
+
 for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set "STAMP=%%I"
 if not defined STAMP set "STAMP=%RANDOM%"
 
@@ -21,11 +29,17 @@ set "STAGE=%BACKUP_ROOT%\_stage_%STAMP%"
 
 echo.
 echo ========================================
-echo        FPChat safe update, build 55
+echo        FPChat safe update, build 56
 echo ========================================
 echo.
 
 echo [1/7] Checking paths and tools...
+if not defined SRC (
+    echo [ERROR] FPChat project source was not found.
+    echo Put update.bat in the project folder on the flash drive.
+    echo Expected structure: ^<flash-drive^>:\FPChat\package.json
+    goto :fail
+)
 if not exist "%SRC%\" (
     echo [ERROR] Source folder not found: %SRC%
     goto :fail
