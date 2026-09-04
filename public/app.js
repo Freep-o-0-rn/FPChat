@@ -45,7 +45,7 @@ let mediaPreviewState=null;
 let mediaViewerState=null;
 const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
-let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let appWsSeq=0;let activeAppWsSeq=0;let appWsConnectInFlight=null;let chatViewReadyRoomId=null;let chatOpenToken=0;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;
+let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let appWsSeq=0;let activeAppWsSeq=0;let appWsConnectInFlight=null;let chatViewReadyRoomId=null;let chatOpenToken=0;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;
 let appVersionCheckInFlight=false;
 let deferredInstallPrompt=null;
 function setBootSplashText(title, text) {
@@ -108,7 +108,8 @@ function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId==
 function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));}
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
-function setView(v){if(state.roomId){state.roomId=null;activeChatDeviceId=null;chatViewReadyRoomId=null;sendClientState();}state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void ensureStableWsConnected(deviceId);return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
+function leaveActiveChat(){if(!state.roomId)return;if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}void saveViewStateNow({keepalive:true});state.roomId=null;activeChatDeviceId=null;activeChatHistory=null;chatViewReadyRoomId=null;sendClientState();}
+function setView(v){if(state.roomId)leaveActiveChat();state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void ensureStableWsConnected(deviceId);return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
 function isBackGestureBlockedTarget(target){
   if(!target)return true;
@@ -174,7 +175,7 @@ function setupChatBackSwipe(chatView){
   chatView.addEventListener('touchend',endSwipe,{passive:true});
   chatView.addEventListener('touchcancel',endSwipe,{passive:true});
 }
-function showChatsList(){state.roomId=null;activeChatDeviceId=null;chatViewReadyRoomId=null;closeMobileMenu();els.appRoot?.classList.remove('mobile-chat');renderChats();setView('chats');sendClientState();const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void ensureStableWsConnected(deviceId);}
+function showChatsList(){leaveActiveChat();closeMobileMenu();els.appRoot?.classList.remove('mobile-chat');renderChats();setView('chats');sendClientState();const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void ensureStableWsConnected(deviceId);}
 function removeBrokenChat(roomId){
   state.chats=state.chats.filter(c=>c.roomId!==roomId);
   if(state.roomId===roomId){
@@ -230,8 +231,15 @@ function renderMainChatsPlaceholder(){els.content.innerHTML='';}
 function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16,64})$/i);if(!m)return null; if(location.hash){return {error:'legacy'};} return {inviteCode:m[1]};}
 function getKnownDeviceIds(){const ids=new Set();const stableDeviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(stableDeviceId)ids.add(stableDeviceId);for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key||!key.startsWith('fpchat:room:'))continue;const val=STORAGE.get(key);if(val?.deviceId)ids.add(String(val.deviceId));}return [...ids];}
 function parseChat(){const m=location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/); return m?m[1]:null;}
-async function hydrateHistoryForViewState(roomId,deviceId,data){
-  const anchorId=Number(data?.viewState?.anchorMessageId);
+function getInitialScrollTargetId(data){
+  const unreadCount=Number(data?.unreadCount);
+  const firstUnreadId=Number(data?.firstUnreadMessageId);
+  if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;
+  const savedAnchorId=Number(data?.viewState?.anchorMessageId);
+  return Number.isSafeInteger(savedAnchorId)&&savedAnchorId>0?savedAnchorId:null;
+}
+async function hydrateHistoryForInitialPosition(roomId,deviceId,data){
+  const anchorId=getInitialScrollTargetId(data);
   let messages=Array.isArray(data?.messages)?[...data.messages]:[];
   if(!Number.isSafeInteger(anchorId)||anchorId<=0||messages.some((message)=>Number(message?.id)===anchorId))return;
   let cursor=Number(data?.nextCursor);
@@ -267,7 +275,7 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   state.presence={};
   (data.participants||[]).forEach((item)=>{if(!item?.deviceId)return;state.presence[item.deviceId]={deviceId:item.deviceId,displayName:item.displayName,online:Boolean(item.online),lastSeenAt:item.lastSeenAt||null};});
   localStorage.setItem(STORAGE.lastSelectedRoomId,roomId);
-  await hydrateHistoryForViewState(roomId,deviceId,data).catch(()=>{});
+  await hydrateHistoryForInitialPosition(roomId,deviceId,data).catch(()=>{});
   if(openToken!==chatOpenToken)return;
   const initialMessages=Array.isArray(data.messages)?data.messages:[];
   const loadedUnreadCount=initialMessages.filter((message)=>message?.sender_device_id!==deviceId&&message?.status!=='read').length;
@@ -284,6 +292,7 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
     loading:false,
     unreadCount,
     unloadedUnreadCount:Math.max(0,unreadCount-loadedUnreadCount),
+    firstUnreadMessageId:Number.isSafeInteger(Number(data.firstUnreadMessageId))&&Number(data.firstUnreadMessageId)>0?Number(data.firstUnreadMessageId):null,
     loadedMessageIds:new Set(initialMessages.map((message)=>Number(message?.id)).filter((id)=>Number.isSafeInteger(id)&&id>0))
   };
   const last=initialMessages[initialMessages.length-1];
@@ -404,7 +413,8 @@ function renderNewMessagesPill(count){const pill=document.getElementById('newMes
 function recomputePendingUnread(){const unreadEls=[...document.querySelectorAll('.bubble-wrap[data-incoming="1"][data-read="0"]')];pendingIncomingReadIds=unreadEls.map(el=>Number(el.dataset.messageId||el.dataset.id)).filter(id=>Number.isInteger(id)&&id>0);pendingIncomingReadIds=[...new Set(pendingIncomingReadIds)];return pendingIncomingReadIds.length;}
 function markReplyTargetRead(messageId){markMessageRead(messageId);}
 function updateUnreadIndicators(){const box=document.getElementById('messages');if(!box||!state.roomId)return;const loadedCount=recomputePendingUnread();const unloadedCount=activeChatHistory?.roomId===state.roomId?Math.max(0,Number(activeChatHistory.unloadedUnreadCount)||0):0;const count=loadedCount+unloadedCount;const atBottom=isMessagesAtBottom();const visibleCount=unloadedCount>0?count:(atBottom?0:loadedCount);renderNewMessagesPill(visibleCount);upsertChat(state.roomId,{unread:visibleCount});renderChats();updateUnreadPresentation();}
-function observeUnreadMessage(el){if(!el||!unreadVisibleObserver)return;if(el.dataset.incoming!=='1'||el.dataset.read!=='0')return;unreadVisibleObserver.observe(el);}
+function observeUnreadMessage(el){if(initialMessagesScrollPending||!el||!unreadVisibleObserver)return;if(el.dataset.incoming!=='1'||el.dataset.read!=='0')return;unreadVisibleObserver.observe(el);}
+function resumeUnreadObservation(box){initialMessagesScrollPending=false;if(!box||!unreadVisibleObserver)return;unreadVisibleObserver.disconnect();box.querySelectorAll('.bubble-wrap[data-incoming="1"][data-read="0"]').forEach((el)=>observeUnreadMessage(el));}
 function markMessageRead(messageId){const id=Number(messageId);if(!id||!state.roomId||!activeChatDeviceId)return;if(document.visibilityState!=='visible')return;const box=document.getElementById('messages');const msgEl=box?.querySelector(`.msg[data-message-id="${id}"], .msg[data-id="${id}"]`);if(!msgEl)return;if(msgEl.dataset.incoming!=='1')return;if(msgEl.dataset.read==='1')return;msgEl.dataset.read='1';unreadVisibleObserver?.unobserve(msgEl);pendingIncomingReadIds=pendingIncomingReadIds.filter((x)=>Number(x)!==id);markIncomingMessagesRead(state.roomId,activeChatDeviceId,[id]);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();}
 let wsConnectStartedAt=0;let wsConnectInFlight=null;
 function sendClientState(){
@@ -412,14 +422,31 @@ function sendClientState(){
   state.ws.send(JSON.stringify({type:'client:state',activeRoomId:state.roomId||null,visible:document.visibilityState==='visible'}));
 }
 function ensureWsConnected(deviceId,timeoutMs=1800){if(!deviceId)return Promise.resolve(false);const hasCorrectOpenWs=state.ws&&state.ws.readyState===WebSocket.OPEN&&state.ws.deviceId===deviceId;if(hasCorrectOpenWs){setLocalConnectionState('connected');return Promise.resolve(true);}const hasWrongDeviceWs=state.ws&&state.ws.readyState===WebSocket.OPEN&&state.ws.deviceId!==deviceId;const hasWrongConnectingWs=state.ws&&state.ws.readyState===WebSocket.CONNECTING&&state.ws.deviceId!==deviceId;const isStaleConnecting=state.ws&&state.ws.readyState===WebSocket.CONNECTING&&Date.now()-wsConnectStartedAt>timeoutMs;if(!state.ws||state.ws.readyState===WebSocket.CLOSING||state.ws.readyState===WebSocket.CLOSED||hasWrongDeviceWs||hasWrongConnectingWs||isStaleConnecting){setLocalConnectionState('connecting');if(state.ws){try{state.ws.close();}catch{}}connectWs(deviceId);}if(wsConnectInFlight)return wsConnectInFlight;wsConnectInFlight=new Promise((resolve)=>{const ws=state.ws;if(!ws){wsConnectInFlight=null;resolve(false);return;}if(ws.readyState===WebSocket.OPEN){wsConnectInFlight=null;resolve(state.ws===ws&&ws.deviceId===deviceId);return;}const done=(ok)=>{clearTimeout(timer);ws.removeEventListener('open',onOpen);ws.removeEventListener('error',onFail);ws.removeEventListener('close',onFail);if(wsConnectInFlight===promiseRef)wsConnectInFlight=null;resolve(ok&&state.ws===ws&&ws.readyState===WebSocket.OPEN&&ws.deviceId===deviceId);};const onOpen=()=>done(true);const onFail=()=>done(false);const timer=setTimeout(()=>done(false),timeoutMs);const promiseRef=wsConnectInFlight;ws.addEventListener('open',onOpen,{once:true});ws.addEventListener('error',onFail,{once:true});ws.addEventListener('close',onFail,{once:true});});return wsConnectInFlight;}
-function scrollMessagesToBottom(box){if(!box)return;requestAnimationFrame(()=>{requestAnimationFrame(()=>{box.scrollTop=box.scrollHeight;});});}
-function scrollToFirstUnread(){const firstUnread=document.querySelector('.bubble-wrap[data-incoming="1"][data-read="0"]');if(firstUnread){requestAnimationFrame(()=>{requestAnimationFrame(()=>{firstUnread.scrollIntoView({behavior:'auto',block:'center'});});});return true;}return false;}
+function waitForNextAnimationFrame(){return new Promise((resolve)=>requestAnimationFrame(resolve));}
+function isCurrentMessagesBox(box){return Boolean(box&&document.getElementById('messages')===box&&activeChatHistory?.roomId===state.roomId);}
+function getFirstUnreadMessageElement(box){return box?.querySelector('.bubble-wrap[data-incoming="1"][data-read="0"]')||null;}
+function getViewStateMessageElement(box,viewState){const anchorId=Number(viewState?.anchorMessageId);if(!box||!Number.isInteger(anchorId)||anchorId<=0)return null;return box.querySelector(`.msg[data-message-id="${anchorId}"], .msg[data-id="${anchorId}"]`);}
+function scrollMessagesToBottom(box){if(!box)return;requestAnimationFrame(()=>{requestAnimationFrame(()=>{if(isCurrentMessagesBox(box))box.scrollTop=box.scrollHeight;});});}
+function scrollToFirstUnread(box=document.getElementById('messages')){const firstUnread=getFirstUnreadMessageElement(box);if(!firstUnread||!isCurrentMessagesBox(box))return false;const boxRect=box.getBoundingClientRect();const targetRect=firstUnread.getBoundingClientRect();const targetOffset=targetRect.top-boxRect.top-(box.clientHeight-targetRect.height)/2;box.scrollTop=Math.max(0,box.scrollTop+targetOffset);return true;}
 
 let viewStateSaveTimer=null;
 function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[...box.querySelectorAll('.msg[data-message-id]')];if(!messages.length)return null;const boxTop=box.getBoundingClientRect().top;let fallback=null;for(const el of messages){const rect=el.getBoundingClientRect();const id=Number(el.dataset.messageId||el.dataset.id);if(!Number.isInteger(id)||id<=0)continue;if(!fallback)fallback={anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};if(rect.bottom>=boxTop){return {anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};}}return fallback;}
 function scheduleViewStateSave(){if(!state.roomId)return;clearTimeout(viewStateSaveTimer);viewStateSaveTimer=setTimeout(()=>{void saveViewStateNow();},VIEW_STATE_SAVE_DEBOUNCE_MS);}
-async function saveViewStateNow(){const roomId=state.roomId;const persisted=STORAGE.get(STORAGE.roomState(roomId));const box=document.getElementById('messages');if(!roomId||!persisted?.deviceId||!box)return;const anchor=getFirstVisibleMessageAnchor(box);if(!anchor?.anchorMessageId)return;await fetch(`/api/rooms/${roomId}/view-state`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,anchorMessageId:anchor.anchorMessageId,anchorOffsetPx:anchor.anchorOffsetPx})}).catch(()=>{});}
-function restoreMessagesViewState(box,viewState){const anchorId=Number(viewState?.anchorMessageId);if(!box||!Number.isInteger(anchorId)||anchorId<=0)return false;const target=box.querySelector(`.msg[data-message-id="${anchorId}"], .msg[data-id="${anchorId}"]`);if(!target)return false;const offset=Number(viewState?.anchorOffsetPx)||0;requestAnimationFrame(()=>{requestAnimationFrame(()=>{const boxTop=box.getBoundingClientRect().top;const targetTop=target.getBoundingClientRect().top;box.scrollTop+=targetTop-boxTop-offset;});});return true;}
+async function saveViewStateNow({keepalive=false}={}){const roomId=state.roomId;const persisted=STORAGE.get(STORAGE.roomState(roomId));const box=document.getElementById('messages');if(!roomId||!persisted?.deviceId||!box)return;const anchor=getFirstVisibleMessageAnchor(box);if(!anchor?.anchorMessageId)return;await fetch(`/api/rooms/${roomId}/view-state`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,anchorMessageId:anchor.anchorMessageId,anchorOffsetPx:anchor.anchorOffsetPx}),keepalive:Boolean(keepalive)}).catch(()=>{});}
+let lastLifecycleViewStateSaveAt=0;
+function saveViewStateForLifecycle(){const now=Date.now();if(now-lastLifecycleViewStateSaveAt<500)return;lastLifecycleViewStateSaveAt=now;if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}void saveViewStateNow({keepalive:true});}
+function restoreMessagesViewState(box,viewState){const target=getViewStateMessageElement(box,viewState);if(!target||!isCurrentMessagesBox(box))return false;const offset=Number(viewState?.anchorOffsetPx)||0;const boxTop=box.getBoundingClientRect().top;const targetTop=target.getBoundingClientRect().top;box.scrollTop+=targetTop-boxTop-offset;return true;}
+async function applyInitialMessagesScroll(box,viewState){
+  if(!isCurrentMessagesBox(box))return 'cancelled';
+  await waitForNextAnimationFrame();
+  await waitForNextAnimationFrame();
+  if(!isCurrentMessagesBox(box))return 'cancelled';
+  const hasUnread=recomputePendingUnread()>0||Number(activeChatHistory?.unloadedUnreadCount)>0;
+  if(hasUnread&&scrollToFirstUnread(box))return 'unread';
+  if(!hasUnread&&restoreMessagesViewState(box,viewState))return 'restored';
+  box.scrollTop=box.scrollHeight;
+  return 'bottom';
+}
 
 function getHistoryMessageId(message){const id=Number(message?.id);return Number.isSafeInteger(id)&&id>0?id:null;}
 function setHistoryLoader(loading,message=''){const loader=document.getElementById('historyLoader');if(!loader)return;loader.textContent=loading?'Загрузка истории…':message;loader.classList.toggle('hidden',!loading&&!message);}
@@ -430,7 +457,7 @@ async function loadOlderMessages(){const history=activeChatHistory;const box=doc
 async function loadHistoryUntilMessage(messageId){const wanted=Number(messageId);if(!Number.isSafeInteger(wanted)||wanted<=0)return null;let target=findMessageElement(wanted);while(!target&&activeChatHistory?.roomId===state.roomId&&activeChatHistory.hasMore){const cursorBefore=activeChatHistory.nextCursor;const added=await loadOlderMessages();target=findMessageElement(wanted);if(!added&&activeChatHistory.nextCursor===cursorBefore)break;}return target;}
 
 function autoResizeMessageInput(input){if(!input)return;const lineHeight=parseFloat(getComputedStyle(input).lineHeight)||22;const maxHeight=lineHeight*4;input.style.height=`${lineHeight}px`;const nextHeight=Math.min(input.scrollHeight,maxHeight);input.style.height=`${Math.max(lineHeight,nextHeight)}px`;input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';}
-async function renderChatView(messages,deviceId,viewState=null){messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8s2.5-.6 3.5-1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>showChatsList()); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{if(document.visibilityState!=='visible')return;if(!state.roomId)return;entries.forEach((entry)=>{if(!entry.isIntersecting)return;const el=entry.target;if(el.dataset.incoming!=='1')return;if(el.dataset.read==='1')return;markMessageRead(el.dataset.messageId||el.dataset.id);unreadVisibleObserver?.unobserve(el);});},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); for(const m of messages){appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext).catch(()=>"[cannot decrypt]"); appendMessage(box,m,txt,mine,false);}if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();const restoredViewState=restoreMessagesViewState(box,viewState);const hasUnread=pendingIncomingReadIds.length>0;if(restoredViewState){renderNewMessagesPill(hasUnread?pendingIncomingReadIds.length:0);}else if(hasUnread){scrollToFirstUnread();renderNewMessagesPill(pendingIncomingReadIds.length);}else{scrollMessagesToBottom(box);renderNewMessagesPill(0);}updateUnreadIndicators();updateReplyComposerBar();
+async function renderChatView(messages,deviceId,viewState=null){messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8s2.5-.6 3.5-1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>showChatsList()); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{if(document.visibilityState!=='visible')return;if(!state.roomId)return;entries.forEach((entry)=>{if(!entry.isIntersecting)return;const el=entry.target;if(el.dataset.incoming!=='1')return;if(el.dataset.read==='1')return;markMessageRead(el.dataset.messageId||el.dataset.id);unreadVisibleObserver?.unobserve(el);});},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); for(const m of messages){appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext).catch(()=>"[cannot decrypt]"); appendMessage(box,m,txt,mine,false);}if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
 box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();});
 document.getElementById('newMessagesPill').onclick=()=>{const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){firstUnread.scrollIntoView({behavior:'smooth',block:'center'});return;}scrollMessagesToBottom(document.getElementById('messages'));};
 renderPresenceStatus();
@@ -445,17 +472,18 @@ renderChatView=async function renderChatViewWithLazyHistory(messages,deviceId,vi
   await renderChatViewWithoutLazyHistory(messages,deviceId,viewState);
   const box=document.getElementById('messages');
   if(!box||activeChatHistory?.roomId!==state.roomId)return;
-  const previousTop=box.scrollTop;
-  const previousHeight=box.scrollHeight;
   const loader=document.createElement('div');
   loader.id='historyLoader';
   loader.className='history-loader hidden';
   loader.setAttribute('role','status');
   loader.setAttribute('aria-live','polite');
   box.insertBefore(loader,box.firstChild||null);
-  const currentHeight=box.scrollHeight;
-  if(previousTop+box.clientHeight>=previousHeight-40)scrollMessagesToBottom(box);
-  else box.scrollTop=previousTop+(currentHeight-previousHeight);
+  const initialScrollMode=await applyInitialMessagesScroll(box,viewState);
+  if(initialScrollMode!=='cancelled'){
+    resumeUnreadObservation(box);
+    updateUnreadIndicators();
+    updateReplyComposerBar();
+  }
   box.addEventListener('scroll',()=>{if(box.scrollTop<=CHAT_HISTORY_LOAD_THRESHOLD_PX)void loadOlderMessages();},{passive:true});
 };
 const MESSAGE_STATUS_RANK=Object.freeze({sending:0,sent:1,delivered:2,read:3});
@@ -808,8 +836,9 @@ document.addEventListener('touchend',()=>{edgeSwipe.tracking=false;},{passive:tr
 document.addEventListener('touchcancel',()=>{edgeSwipe.tracking=false;},{passive:true});
 const restoreWsOnResume=()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||activeChatDeviceId||'').trim();if(!deviceId||(!state.chats.length&&!state.roomId))return;ensureStableWsConnected(deviceId).then(()=>{if(state.roomId&&activeChatDeviceId)flushPendingReads(state.roomId,activeChatDeviceId);}).catch(()=>{});};const handleAppResume=()=>{restoreWsOnResume();checkAppVersionOnEntry();};
 window.addEventListener('focus',handleAppResume);
-window.addEventListener('beforeunload',()=>{if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}void saveViewStateNow();});
-document.addEventListener('visibilitychange',()=>{sendClientState();if(document.visibilityState==='visible'){handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);}});window.addEventListener('focus',sendClientState);window.addEventListener('pageshow',()=>{sendClientState();flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
+window.addEventListener('beforeunload',saveViewStateForLifecycle);
+window.addEventListener('pagehide',saveViewStateForLifecycle);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveViewStateForLifecycle();sendClientState();if(document.visibilityState==='visible'){handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);}});window.addEventListener('focus',sendClientState);window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState();flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
 
 window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
 

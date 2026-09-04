@@ -59,6 +59,7 @@ const q = {
   listMessagesBefore: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT ?`),
   listMessagesAfter: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? AND m.id > ? ORDER BY m.id ASC LIMIT ?`),
   countUnreadForParticipant: db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE room_id = ? AND sender_id != ? AND status != 'read'`),
+  findFirstUnreadForParticipant: db.prepare(`SELECT id FROM messages WHERE room_id = ? AND sender_id != ? AND status != 'read' ORDER BY id ASC LIMIT 1`),
   createMessage: db.prepare(`INSERT INTO messages (room_id, sender_id, ciphertext, iv, type, client_message_id, status, reply_to_message_id) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?)`),
   findMessageInRoom: db.prepare('SELECT id FROM messages WHERE id = ? AND room_id = ?'),
   findMessageById: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.id = ? AND m.room_id = ?`),
@@ -169,6 +170,14 @@ function normalizeViewState(row) {
     anchorMessageId: row.anchor_message_id ? Number(row.anchor_message_id) : null,
     anchorOffsetPx: Number(row.anchor_offset_px || 0),
     updatedAt: toIsoUtc(row.updated_at)
+  };
+}
+function getUnreadState(roomId, participantId) {
+  const unreadCount = Number(q.countUnreadForParticipant.get(roomId, participantId)?.count || 0);
+  const firstUnreadMessageId = Number(q.findFirstUnreadForParticipant.get(roomId, participantId)?.id || 0);
+  return {
+    unreadCount,
+    firstUnreadMessageId: Number.isSafeInteger(firstUnreadMessageId) && firstUnreadMessageId > 0 ? firstUnreadMessageId : null
   };
 }
 function toIsoUtc(value) {
@@ -396,7 +405,7 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
     lastSeenAt: toIsoUtc(item.last_seen_at)
   }));
   const history = getMessageHistoryPage(room.id);
-  const unreadCount = Number(q.countUnreadForParticipant.get(room.id, participant.id)?.count || 0);
+  const unread = getUnreadState(room.id, participant.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
   return res.json({
     ok: true,
@@ -405,7 +414,8 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
     participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id },
     participants,
     ...history,
-    unreadCount,
+    unreadCount: unread.unreadCount,
+    firstUnreadMessageId: unread.firstUnreadMessageId,
     viewState
   });
 });
@@ -429,13 +439,14 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
     lastSeenAt: toIsoUtc(item.last_seen_at)
   }));
   const history = getMessageHistoryPage(room.id);
-  const unreadCount = Number(q.countUnreadForParticipant.get(room.id, updated.id)?.count || 0);
+  const unread = getUnreadState(room.id, updated.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
   return res.json({
     participant: { id: updated.id, displayName: updated.display_name, deviceId: updated.device_id },
     participants,
     ...history,
-    unreadCount,
+    unreadCount: unread.unreadCount,
+    firstUnreadMessageId: unread.firstUnreadMessageId,
     viewState
   });
 });
@@ -453,13 +464,13 @@ app.get('/api/rooms/:publicId/messages', (req, res) => {
       return res.status(400).json({ ok: false, error: 'invalid after cursor' });
     }
     const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit);
-    const unreadCount = Number(q.countUnreadForParticipant.get(room.id, participant.id)?.count || 0);
-    return res.json({ ok: true, ...sync, unreadCount });
+    const unread = getUnreadState(room.id, participant.id);
+    return res.json({ ok: true, ...sync, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId });
   }
   const beforeCursor = normalizeHistoryCursor(req.query?.before);
   const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit);
-  const unreadCount = Number(q.countUnreadForParticipant.get(room.id, participant.id)?.count || 0);
-  return res.json({ ok: true, ...history, unreadCount });
+  const unread = getUnreadState(room.id, participant.id);
+  return res.json({ ok: true, ...history, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId });
 });
 
 app.get('/api/rooms/:publicId/view-state', (req, res) => {
