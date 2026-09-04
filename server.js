@@ -79,7 +79,7 @@ const q = {
         delivered_at = CASE WHEN delivered_at IS NULL THEN datetime('now') ELSE delivered_at END,
         read_at = CASE WHEN read_at IS NULL THEN datetime('now') ELSE read_at END
     WHERE room_id = ? AND id = ? AND sender_id != ? AND status != 'read'`),
-  upsertPushSub: db.prepare(`INSERT INTO push_subscriptions (room_id, device_id, endpoint, p256dh, auth, muted, show_text, hide_sender, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT muted FROM push_subscriptions WHERE room_id=? AND device_id=? AND endpoint=?),0), ?, ?, datetime('now')) ON CONFLICT(room_id, device_id, endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, show_text=excluded.show_text, hide_sender=excluded.hide_sender, updated_at=datetime('now')`),
+  upsertPushSub: db.prepare(`INSERT INTO push_subscriptions (room_id, device_id, endpoint, p256dh, auth, muted, show_text, hide_sender, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT muted FROM push_subscriptions WHERE room_id=? AND device_id=?),0), ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET endpoint=excluded.endpoint, p256dh=excluded.p256dh, auth=excluded.auth, show_text=excluded.show_text, hide_sender=excluded.hide_sender, updated_at=datetime('now')`),
   deletePushByRoomEndpointOtherDevice: db.prepare('DELETE FROM push_subscriptions WHERE room_id = ? AND endpoint = ? AND device_id != ?'),
   updatePushSettings: db.prepare(`UPDATE push_subscriptions SET show_text=?, hide_sender=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
   mutePushRoom: db.prepare(`UPDATE push_subscriptions SET muted=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
@@ -202,7 +202,7 @@ app.post('/api/push/subscribe', (req, res) => {
   const auth = subscription?.keys?.auth;
   if (!endpoint || !p256dh || !auth) return res.status(400).json({ ok: false, error: 'invalid subscription' });
   q.deletePushByRoomEndpointOtherDevice.run(room.id, endpoint, safeDeviceId);
-  q.upsertPushSub.run(room.id, safeDeviceId, endpoint, p256dh, auth, room.id, safeDeviceId, endpoint, settings?.showText ? 1 : 0, settings?.hideSender ? 1 : 0);
+  q.upsertPushSub.run(room.id, safeDeviceId, endpoint, p256dh, auth, room.id, safeDeviceId, settings?.showText ? 1 : 0, settings?.hideSender ? 1 : 0);
   res.json({ ok: true });
 });
 

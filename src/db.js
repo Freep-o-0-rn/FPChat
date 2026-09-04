@@ -148,6 +148,8 @@ function createDb(databasePath) {
   if (!messageColumns.some((column) => column.name === 'client_message_id')) db.exec('ALTER TABLE messages ADD COLUMN client_message_id TEXT');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_room_sender_client_id ON messages(room_id, sender_id, client_message_id) WHERE client_message_id IS NOT NULL');
   if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
+  db.exec(`DELETE FROM push_subscriptions WHERE id NOT IN (SELECT MAX(id) FROM push_subscriptions GROUP BY room_id, device_id)`);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_room_device ON push_subscriptions(room_id, device_id)');
   if (!participantColumns.some((column) => column.name === 'updated_at')) {
   db.exec("ALTER TABLE participants ADD COLUMN updated_at TEXT");
   db.exec("UPDATE participants SET updated_at = datetime('now') WHERE updated_at IS NULL");
