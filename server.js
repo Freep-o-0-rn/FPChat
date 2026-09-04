@@ -36,6 +36,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const socketsByDevice = new Map();
 const HISTORY_PAGE_SIZE = 100;
+const WS_MAX_PAYLOAD = 256 * 1024;
+const WS_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const MESSAGE_SELECT = `SELECT m.id, m.type, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id`;
 
 const q = {
@@ -55,13 +57,14 @@ const q = {
   listParticipantRoomsByDevice: db.prepare(`SELECT p.room_id, p.device_id, p.display_name, p.online, p.last_seen_at, r.public_id AS room_public_id FROM participants p JOIN rooms r ON r.id = p.room_id WHERE p.device_id = ?`),
   listMessagesLatest: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? ORDER BY m.id DESC LIMIT ?`),
   listMessagesBefore: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT ?`),
+  listMessagesAfter: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? AND m.id > ? ORDER BY m.id ASC LIMIT ?`),
   countUnreadForParticipant: db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE room_id = ? AND sender_id != ? AND status != 'read'`),
   createMessage: db.prepare(`INSERT INTO messages (room_id, sender_id, ciphertext, iv, type, client_message_id, status, reply_to_message_id) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?)`),
   findMessageInRoom: db.prepare('SELECT id FROM messages WHERE id = ? AND room_id = ?'),
   findMessageById: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.id = ? AND m.room_id = ?`),
   findMessageByClientId: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.room_id = ? AND m.sender_id = ? AND m.client_message_id = ?`),
   findMessageForRead: db.prepare('SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id = ? AND room_id = ?'),
-  listSentTextMessagesForParticipant: db.prepare(`SELECT id, client_message_id FROM messages WHERE room_id = ? AND sender_id != ? AND type = 'text' AND status = 'sent' ORDER BY id ASC`),
+  listSentMessagesForParticipant: db.prepare(`SELECT id, client_message_id FROM messages WHERE room_id = ? AND sender_id != ? AND status = 'sent' ORDER BY id ASC`),
   findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id = ? AND device_id = ?`),
   findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, updated_at FROM chat_view_state WHERE room_id = ? AND device_id = ?`),
   upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, updated_at) VALUES (?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, updated_at=datetime('now')`),
@@ -146,6 +149,18 @@ function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE
     messages,
     hasMore,
     nextCursor: messages.length ? Number(messages[0].id) : null
+  };
+}
+function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE) {
+  const safeLimit = normalizeHistoryLimit(limit);
+  const rows = q.listMessagesAfter.all(roomId, afterCursor, safeLimit + 1);
+  const hasMore = rows.length > safeLimit;
+  const pageRows = rows.slice(0, safeLimit);
+  const messages = serializeMessages(pageRows);
+  return {
+    messages,
+    hasMore,
+    nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor
   };
 }
 function normalizeViewState(row) {
@@ -372,7 +387,7 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
   });
   if (!tx()) return res.status(410).json({ error: 'invite expired or used' });
   const participant = q.findParticipant.get(room.id, safeDeviceId);
-  markSentTextMessagesDelivered(room, participant.id);
+  markSentMessagesDelivered(room, participant.id);
   const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
     deviceId: item.device_id,
     displayName: item.display_name,
@@ -406,7 +421,7 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   if (!participant) return res.status(403).json({ error: 'forbidden' });
   q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId);
   const updated = q.findParticipant.get(room.id, safeDeviceId);
-  markSentTextMessagesDelivered(room, updated.id);
+  markSentMessagesDelivered(room, updated.id);
   const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
     deviceId: item.device_id,
     displayName: item.display_name,
@@ -432,9 +447,19 @@ app.get('/api/rooms/:publicId/messages', (req, res) => {
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   const participant = q.findParticipant.get(room.id, safeDeviceId);
   if (!participant) return res.status(403).json({ ok: false, error: 'forbidden' });
+  if (req.query?.after !== undefined) {
+    const afterCursor = Number.parseInt(req.query.after, 10);
+    if (!Number.isSafeInteger(afterCursor) || afterCursor < 0) {
+      return res.status(400).json({ ok: false, error: 'invalid after cursor' });
+    }
+    const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit);
+    const unreadCount = Number(q.countUnreadForParticipant.get(room.id, participant.id)?.count || 0);
+    return res.json({ ok: true, ...sync, unreadCount });
+  }
   const beforeCursor = normalizeHistoryCursor(req.query?.before);
   const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit);
-  return res.json({ ok: true, ...history });
+  const unreadCount = Number(q.countUnreadForParticipant.get(room.id, participant.id)?.count || 0);
+  return res.json({ ok: true, ...history, unreadCount });
 });
 
 app.get('/api/rooms/:publicId/view-state', (req, res) => {
@@ -497,13 +522,12 @@ function sendToRoomParticipants(roomPublicId, payload, exceptDeviceId = null) {
   const room = q.findRoomByPublicId.get(roomPublicId);
   if (!room) return;
   const participants = q.listParticipantsByRoom.all(room.id);
-  const event = JSON.stringify(payload);
   for (const participant of participants) {
     if (exceptDeviceId && participant.device_id === exceptDeviceId) continue;
     const sockets = socketsByDevice.get(participant.device_id);
     if (!sockets) continue;
     for (const client of sockets) {
-      if (client.readyState === WebSocket.OPEN) client.send(event);
+      sendWsJson(client, payload);
     }
   }
 }
@@ -614,15 +638,15 @@ function broadcastDeliveredStatus(room, message) {
   });
 }
 
-function markSentTextMessagesDelivered(room, recipientParticipantId) {
-  const pending = q.listSentTextMessagesForParticipant.all(room.id, recipientParticipantId);
+function markSentMessagesDelivered(room, recipientParticipantId) {
+  const pending = q.listSentMessagesForParticipant.all(room.id, recipientParticipantId);
   for (const message of pending) {
     const info = q.markDelivered.run(message.id);
     if (info.changes) broadcastDeliveredStatus(room, message);
   }
 }
 
-function broadcastTextMessage(room, message, sourceDeviceId) {
+function broadcastRoomMessage(room, message, sourceDeviceId) {
   const event = { type: 'message:new', roomId: room.public_id, message };
   const eventJson = JSON.stringify(event);
   let deliveredToRecipient = false;
@@ -640,9 +664,14 @@ function broadcastTextMessage(room, message, sourceDeviceId) {
   if (!deliveredToRecipient) return false;
   const info = q.markDelivered.run(message.id);
   if (info.changes) {
-    broadcastDeliveredStatus(room, message);
+    const updated = q.findMessageById.get(message.id, room.id);
+    broadcastDeliveredStatus(room, updated || message);
   }
   return true;
+}
+
+function broadcastTextMessage(room, message, sourceDeviceId) {
+  return broadcastRoomMessage(room, message, sourceDeviceId);
 }
 
 async function handleTextMessage(ws, payload) {
@@ -688,12 +717,46 @@ async function handleTextMessage(ws, payload) {
   await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
 }
 
-const server = http.createServer(app); const wss = new WebSocket.Server({ server });
-wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`); const deviceId = url.searchParams.get('device'); if (!deviceId) return ws.close(); ws.deviceId = deviceId; ws.deviceIds = new Set([deviceId]); ws.visible = false; ws.activeRoomId = null; ws.subscribedRooms = new Set(); const participantRooms = q.listParticipantRoomsByDevice.all(ws.deviceId); for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id); const set = getDeviceSockets(deviceId); set.add(ws);
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server, maxPayload: WS_MAX_PAYLOAD });
+const heartbeatTimer = setInterval(() => {
+  for (const client of wss.clients) {
+    if (client.isAlive === false) {
+      client.terminate();
+      continue;
+    }
+    client.isAlive = false;
+    try { client.ping(); } catch { client.terminate(); }
+  }
+}, WS_HEARTBEAT_INTERVAL_MS);
+heartbeatTimer.unref?.();
+wss.on('close', () => clearInterval(heartbeatTimer));
+
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, `http://${APP_HOST}:${APP_PORT}`);
+  const deviceId = String(url.searchParams.get('device') || '').trim().slice(0, 64);
+  if (!deviceId) {
+    ws.close(1008, 'device required');
+    return;
+  }
+
+  ws.deviceId = deviceId;
+  ws.deviceIds = new Set([deviceId]);
+  ws.visible = false;
+  ws.activeRoomId = null;
+  ws.subscribedRooms = new Set();
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('error', () => {});
+
+  const participantRooms = q.listParticipantRoomsByDevice.all(ws.deviceId);
+  for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id);
+  getDeviceSockets(deviceId).add(ws);
+
   for (const participant of participantRooms) {
     q.setParticipantOnline.run(participant.room_id, ws.deviceId);
     const connectedParticipant = q.findParticipant.get(participant.room_id, ws.deviceId);
-    if (connectedParticipant) markSentTextMessagesDelivered(q.findRoomById.get(participant.room_id), connectedParticipant.id);
+    if (connectedParticipant) markSentMessagesDelivered(q.findRoomById.get(participant.room_id), connectedParticipant.id);
     broadcastPresenceUpdate(participant.room_public_id, {
       deviceId: participant.device_id,
       displayName: participant.display_name,
@@ -701,45 +764,106 @@ wss.on('connection', (ws, req) => { const url = new URL(req.url, `http://${APP_H
       lastSeenAt: toIsoUtc(participant.last_seen_at)
     });
   }
-  ws.on('message', async (raw) => { let payload; try { payload = JSON.parse(raw.toString()); } catch { return; }
-    if (payload.type === 'client:state') { ws.activeRoomId = payload.activeRoomId || null; ws.visible = Boolean(payload.visible); return; }
-    if (payload.type === 'message:send') { await handleTextMessage(ws, payload); return; }
-    if (payload.type === 'message:new') { const room = q.findRoomByPublicId.get(String(payload.roomId || '')); if (!room) return; const sender = q.findParticipant.get(room.id, ws.deviceId); if (!sender || !payload.ciphertext || !payload.iv) return; const rawReplyId = payload.replyToMessageId ?? payload.reply_to_message_id; let replyToMessageId = Number(rawReplyId); if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0 || !q.findMessageInRoom.get(replyToMessageId, room.id)) replyToMessageId = null; const msgType = payload.messageType === 'media' ? 'media' : 'text'; let mediaItems = []; if (msgType === 'media') { const ids = Array.isArray(payload.mediaIds) ? payload.mediaIds.map(Number).filter(Boolean) : []; if (!ids.length) return; mediaItems = q.listPendingMediaByIds.all(room.id, JSON.stringify(ids)); if (mediaItems.length !== ids.length || mediaItems.some((m) => m.status !== 'pending' || m.message_id !== null)) return; } const result = q.createMessage.run(room.id, sender.id, payload.ciphertext, payload.iv, msgType, null, replyToMessageId); const event = { type: 'message:new', roomId: room.public_id, message: { id: result.lastInsertRowid, ciphertext: payload.ciphertext, iv: payload.iv, reply_to_message_id: replyToMessageId, status: 'sent', created_at: new Date().toISOString(), delivered_at: null, read_at: null, sender_name: sender.display_name, sender_device_id: sender.device_id, type: msgType, media: [] } }; if (msgType === 'media') { for (const media of mediaItems) { q.attachMediaToMessage.run(result.lastInsertRowid, media.id, room.id); } event.message.media = q.listMediaByMessageId.all(result.lastInsertRowid).map((m) => ({ ...m, thumbnail_url: `${PUBLIC_BASE_URL || ''}/api/media/${m.public_id}/thumb` })); } let deliveredNotified = false; const participants = q.listParticipantsByRoom.all(room.id); for (const p of participants) { const sockets = socketsByDevice.get(p.device_id); if (!sockets) continue; for (const client of sockets) { if (client.readyState === WebSocket.OPEN) { client.send(JSON.stringify(event)); if (client.deviceId !== ws.deviceId) { const info = q.markDelivered.run(result.lastInsertRowid); if (info.changes && !deliveredNotified) { deliveredNotified = true; ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: 'message:status', roomId: room.public_id, messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() })); } } } } }
-      // notificationPreview is intentionally plaintext for push preview: privacy/usability tradeoff.
-      const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
-            const pushDelivered = await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
-      if (pushDelivered && !deliveredNotified) {
-        const info = q.markDelivered.run(result.lastInsertRowid);
-        if (info.changes && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'message:status', roomId: room.public_id, messageId: result.lastInsertRowid, status: 'delivered', deliveredAt: new Date().toISOString() }));
-        }
-      }
+
+  ws.on('message', async (raw) => {
+    let payload;
+    try { payload = JSON.parse(raw.toString()); } catch { return; }
+    if (!payload || typeof payload !== 'object') return;
+
+    if (payload.type === 'client:state') {
+      ws.activeRoomId = typeof payload.activeRoomId === 'string' ? payload.activeRoomId.slice(0, 64) : null;
+      ws.visible = payload.visible === true;
+      return;
     }
-    if (payload.type === 'message:read:bulk' && Array.isArray(payload.messageIds)) {
-      const room = q.findRoomByPublicId.get(String(payload.roomId || '')); if (!room) return;
+
+    if (payload.type === 'message:send') {
+      await handleTextMessage(ws, payload);
+      return;
+    }
+
+    if (payload.type === 'message:new') {
+      const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
+      if (!room) return;
       const sender = q.findParticipant.get(room.id, ws.deviceId);
       if (!sender) return;
-      const ids = payload.messageIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
-      if (!ids.length) return;
+      const ciphertext = String(payload.ciphertext || '');
+      const iv = String(payload.iv || '');
+      if (!ciphertext || !iv) return;
+
+      const rawReplyId = payload.replyToMessageId ?? payload.reply_to_message_id;
+      let replyToMessageId = Number(rawReplyId);
+      if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0 || !q.findMessageInRoom.get(replyToMessageId, room.id)) replyToMessageId = null;
+
+      const msgType = payload.messageType === 'media' ? 'media' : 'text';
+      let mediaItems = [];
+      let mediaIds = [];
+      if (msgType === 'media') {
+        mediaIds = Array.isArray(payload.mediaIds) ? [...new Set(payload.mediaIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))] : [];
+        if (!mediaIds.length) return;
+        mediaItems = q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds));
+        if (mediaItems.length !== mediaIds.length || mediaItems.some((media) => media.status !== 'pending' || media.message_id !== null)) return;
+      }
+
+      let messageId;
+      try {
+        const createMessage = db.transaction(() => {
+          const result = q.createMessage.run(room.id, sender.id, ciphertext, iv, msgType, null, replyToMessageId);
+          for (const media of mediaItems) q.attachMediaToMessage.run(result.lastInsertRowid, media.id, room.id);
+          return Number(result.lastInsertRowid);
+        });
+        messageId = createMessage();
+      } catch {
+        return;
+      }
+
+      const row = q.findMessageById.get(messageId, room.id);
+      if (!row) return;
+      const message = messageToDto(row);
+      if (msgType === 'media') {
+        message.media = q.listMediaByMessageId.all(messageId).map((media) => ({
+          ...media,
+          thumbnail_url: `${PUBLIC_BASE_URL || ''}/api/media/${media.public_id}/thumb`
+        }));
+      }
+      broadcastRoomMessage(room, message, ws.deviceId);
+
+      // Push wakes the recipient but is not proof that the message reached the app.
+      const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
+      await sendPushForMessage({ roomId: room.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
+      return;
+    }
+
+    if (payload.type === 'message:read:bulk' && Array.isArray(payload.messageIds)) {
+      const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
+      if (!room) return;
+      const reader = q.findParticipant.get(room.id, ws.deviceId);
+      if (!reader) return;
+      const ids = [...new Set(payload.messageIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
       for (const id of ids) {
         const target = q.findMessageForRead.get(id, room.id);
-        if (!target || target.sender_id === sender.id) continue;
-        q.markReadBulk.run(room.id, id, sender.id);
-        const event = { type: 'message:status', roomId: room.public_id, messageId: id, clientMessageId: target.client_message_id || null, status: 'read', readAt: target.read_at ? toIsoUtc(target.read_at) : new Date().toISOString() };
-        sendToRoomParticipants(room.public_id, event);
+        if (!target || target.sender_id === reader.id) continue;
+        const info = q.markReadBulk.run(room.id, id, reader.id);
+        if (!info.changes) continue;
+        const readAt = new Date().toISOString();
+        sendToRoomParticipants(room.public_id, {
+          type: 'message:status',
+          roomId: room.public_id,
+          messageId: id,
+          clientMessageId: target.client_message_id || null,
+          status: 'read',
+          readAt
+        });
       }
     }
   });
 
-
   ws.on('close', () => {
     unregisterWsFromAllDevices(ws);
     const stillOnline = socketsByDevice.has(ws.deviceId) && [...socketsByDevice.get(ws.deviceId)].some((sock) => sock.readyState === WebSocket.OPEN);
-    if (!stillOnline) {
-      const participantRoomsOnClose = q.listParticipantRoomsByDevice.all(ws.deviceId);
-      for (const participant of participantRoomsOnClose) q.setParticipantOffline.run(participant.room_id, ws.deviceId);
-      broadcastPresenceOfflineToParticipantRooms(ws.deviceId);
-    }
+    if (stillOnline) return;
+    const participantRoomsOnClose = q.listParticipantRoomsByDevice.all(ws.deviceId);
+    for (const participant of participantRoomsOnClose) q.setParticipantOffline.run(participant.room_id, ws.deviceId);
+    broadcastPresenceOfflineToParticipantRooms(ws.deviceId);
   });
 });
 
