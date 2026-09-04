@@ -17,6 +17,7 @@ const VIEW_STATE_SAVE_DEBOUNCE_MS=900;
 const CHAT_HISTORY_PAGE_SIZE=100;
 const CHAT_HISTORY_LOAD_THRESHOLD_PX=220;
 const ROOM_SYNC_REQUEST_TIMEOUT_MS=8000;
+const APP_SYNC_WATCHDOG_INTERVAL_MS=15000;
 
 const els={content:document.getElementById('contentPane'),rows:document.getElementById('chatRows'),search:document.getElementById('chatSearch'),empty:document.getElementById('emptyChats'),sidebar:document.getElementById('sidebar'),sidebarOverlay:document.getElementById('sidebarOverlay'),context:document.getElementById('contextMenu'),appRoot:document.getElementById('appRoot')};
 const b64={encode:(buf)=>btoa(String.fromCharCode(...new Uint8Array(buf))),decode:(str)=>Uint8Array.from(atob(str),c=>c.charCodeAt(0))};
@@ -46,7 +47,7 @@ let mediaPreviewState=null;
 let mediaViewerState=null;
 const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
-let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let appWsSeq=0;let activeAppWsSeq=0;let appWsConnectInFlight=null;let chatViewReadyRoomId=null;let chatOpenToken=0;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;let unreadRefreshPromise=null;
+let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let chatViewReadyRoomId=null;let chatOpenToken=0;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;let unreadRefreshPromise=null;let appSyncWatchdogTimer=null;let unreadEventSequence=0;const unreadEventSequenceByRoom=new Map();let unreadSyncSequence=0;const unreadSyncSequenceByRoom=new Map();
 let appVersionCheckInFlight=false;
 let deferredInstallPrompt=null;
 function setBootSplashText(title, text) {
@@ -107,7 +108,10 @@ async function findAndFocusReplyMessage(messageId){let target=document.querySele
 function getMessageReplyMeta(messageId){const cached=messageCache.get(Number(messageId));if(cached)return{messageId:Number(messageId),author:cached.author||'Неизвестно',preview:cached.preview||'Сообщение недоступно',kind:cached.kind||'text'};return{messageId:Number(messageId),author:'Неизвестно',preview:'Сообщение недоступно',kind:'text'};}
 function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId===roomId);const existing=i>=0?state.chats[i]:null;const next={...(existing||{roomId,unread:0}),...patch,roomId};if(!next.lastActivity){next.lastActivity=existing?.lastActivity||new Date().toISOString();}if(i>=0)state.chats[i]=next; else state.chats.push(next); state.chats.sort((a,b)=>new Date(b.lastActivity)-new Date(a.lastActivity)); saveChats(); renderChats();}
 function normalizeUnreadCount(value){const count=Number(value);return Number.isFinite(count)&&count>=0?Math.floor(count):null;}
-function applyRemoteUnreadState(roomId,unreadValue,firstUnreadMessageId=null){const unread=normalizeUnreadCount(unreadValue);if(!roomId||unread===null)return false;const first=Number(firstUnreadMessageId);const firstId=Number.isSafeInteger(first)&&first>0?first:null;if(state.roomId===roomId&&activeChatHistory?.roomId===roomId){activeChatHistory.unreadCount=unread;activeChatHistory.firstUnreadMessageId=firstId;const loadedCount=recomputePendingUnread();activeChatHistory.unloadedUnreadCount=Math.max(0,unread-loadedCount);updateUnreadIndicators();}else{upsertChat(roomId,{unread});updateUnreadPresentation();}return true;}
+function noteUnreadEvent(roomId){const key=String(roomId||'');if(!key)return 0;const sequence=++unreadEventSequence;unreadEventSequenceByRoom.set(key,sequence);return sequence;}
+function beginUnreadSync(roomId){const key=String(roomId||'');if(!key)return null;const meta={eventSequence:Number(unreadEventSequenceByRoom.get(key)||0),syncSequence:++unreadSyncSequence};unreadSyncSequenceByRoom.set(key,meta.syncSequence);return meta;}
+function canApplyUnreadSync(roomId,meta){const key=String(roomId||'');if(!key||!meta)return false;return Number(unreadSyncSequenceByRoom.get(key)||0)===Number(meta.syncSequence||0)&&Number(unreadEventSequenceByRoom.get(key)||0)===Number(meta.eventSequence||0);}
+function applyRemoteUnreadState(roomId,unreadValue,firstUnreadMessageId=null,meta=null){const unread=normalizeUnreadCount(unreadValue);if(!roomId||unread===null)return false;const source=meta?.source||'ws';if(source==='api'){if(!canApplyUnreadSync(roomId,meta))return false;}else noteUnreadEvent(roomId);const first=Number(firstUnreadMessageId);const firstId=Number.isSafeInteger(first)&&first>0?first:null;if(state.roomId===roomId&&activeChatHistory?.roomId===roomId){activeChatHistory.unreadCount=unread;activeChatHistory.firstUnreadMessageId=firstId;const loadedCount=recomputePendingUnread();activeChatHistory.unloadedUnreadCount=Math.max(0,unread-loadedCount);updateUnreadIndicators();}else{upsertChat(roomId,{unread});updateUnreadPresentation();}return true;}
 function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));}
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
@@ -272,6 +276,7 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   const openToken=++chatOpenToken;
   chatViewReadyRoomId=null;
   state.roomId=roomId;
+  updateAppSyncWatchdog();
   state.secret=secret;
   if(key)state.key=key;
   if(state.key)roomKeyCache.set(roomId,{secret,key:state.key});
@@ -419,13 +424,7 @@ function markReplyTargetRead(messageId){markMessageRead(messageId);}
 function updateUnreadIndicators(){const box=document.getElementById('messages');if(!box||!state.roomId)return;const loadedCount=recomputePendingUnread();const unloadedCount=activeChatHistory?.roomId===state.roomId?Math.max(0,Number(activeChatHistory.unloadedUnreadCount)||0):0;const count=loadedCount+unloadedCount;const atBottom=isMessagesAtBottom();const visibleCount=unloadedCount>0?count:(atBottom?0:loadedCount);renderNewMessagesPill(visibleCount);upsertChat(state.roomId,{unread:visibleCount});renderChats();updateUnreadPresentation();}
 function observeUnreadMessage(el){if(initialMessagesScrollPending||!el||!unreadVisibleObserver)return;if(el.dataset.incoming!=='1'||el.dataset.read!=='0')return;unreadVisibleObserver.observe(el);}
 function resumeUnreadObservation(box){initialMessagesScrollPending=false;if(!box||!unreadVisibleObserver)return;unreadVisibleObserver.disconnect();box.querySelectorAll('.bubble-wrap[data-incoming="1"][data-read="0"]').forEach((el)=>observeUnreadMessage(el));}
-function markMessageRead(messageId){const id=Number(messageId);if(!id||!state.roomId||!activeChatDeviceId)return;if(document.visibilityState!=='visible')return;const box=document.getElementById('messages');const msgEl=box?.querySelector(`.msg[data-message-id="${id}"], .msg[data-id="${id}"]`);if(!msgEl)return;if(msgEl.dataset.incoming!=='1')return;if(msgEl.dataset.read==='1')return;msgEl.dataset.read='1';unreadVisibleObserver?.unobserve(msgEl);pendingIncomingReadIds=pendingIncomingReadIds.filter((x)=>Number(x)!==id);markIncomingMessagesRead(state.roomId,activeChatDeviceId,[id]);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();}
-let wsConnectStartedAt=0;let wsConnectInFlight=null;
-function sendClientState(){
-  if(!state.ws||state.ws.readyState!==WebSocket.OPEN)return;
-  state.ws.send(JSON.stringify({type:'client:state',activeRoomId:state.roomId||null,visible:document.visibilityState==='visible'}));
-}
-function ensureWsConnected(deviceId,timeoutMs=1800){if(!deviceId)return Promise.resolve(false);const hasCorrectOpenWs=state.ws&&state.ws.readyState===WebSocket.OPEN&&state.ws.deviceId===deviceId;if(hasCorrectOpenWs){setLocalConnectionState('connected');return Promise.resolve(true);}const hasWrongDeviceWs=state.ws&&state.ws.readyState===WebSocket.OPEN&&state.ws.deviceId!==deviceId;const hasWrongConnectingWs=state.ws&&state.ws.readyState===WebSocket.CONNECTING&&state.ws.deviceId!==deviceId;const isStaleConnecting=state.ws&&state.ws.readyState===WebSocket.CONNECTING&&Date.now()-wsConnectStartedAt>timeoutMs;if(!state.ws||state.ws.readyState===WebSocket.CLOSING||state.ws.readyState===WebSocket.CLOSED||hasWrongDeviceWs||hasWrongConnectingWs||isStaleConnecting){setLocalConnectionState('connecting');if(state.ws){try{state.ws.close();}catch{}}connectWs(deviceId);}if(wsConnectInFlight)return wsConnectInFlight;wsConnectInFlight=new Promise((resolve)=>{const ws=state.ws;if(!ws){wsConnectInFlight=null;resolve(false);return;}if(ws.readyState===WebSocket.OPEN){wsConnectInFlight=null;resolve(state.ws===ws&&ws.deviceId===deviceId);return;}const done=(ok)=>{clearTimeout(timer);ws.removeEventListener('open',onOpen);ws.removeEventListener('error',onFail);ws.removeEventListener('close',onFail);if(wsConnectInFlight===promiseRef)wsConnectInFlight=null;resolve(ok&&state.ws===ws&&ws.readyState===WebSocket.OPEN&&ws.deviceId===deviceId);};const onOpen=()=>done(true);const onFail=()=>done(false);const timer=setTimeout(()=>done(false),timeoutMs);const promiseRef=wsConnectInFlight;ws.addEventListener('open',onOpen,{once:true});ws.addEventListener('error',onFail,{once:true});ws.addEventListener('close',onFail,{once:true});});return wsConnectInFlight;}
+function markMessageRead(messageId){const id=Number(messageId);if(!id||!state.roomId||!activeChatDeviceId)return;if(document.visibilityState!=='visible')return;const box=document.getElementById('messages');const msgEl=box?.querySelector(`.msg[data-message-id="${id}"], .msg[data-id="${id}"]`);if(!msgEl)return;if(msgEl.dataset.incoming!=='1')return;if(msgEl.dataset.read==='1')return;noteUnreadEvent(state.roomId);msgEl.dataset.read='1';unreadVisibleObserver?.unobserve(msgEl);pendingIncomingReadIds=pendingIncomingReadIds.filter((x)=>Number(x)!==id);markIncomingMessagesRead(state.roomId,activeChatDeviceId,[id]);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();}
 function waitForNextAnimationFrame(){return new Promise((resolve)=>requestAnimationFrame(resolve));}
 const INITIAL_MEDIA_LAYOUT_WAIT_MS=1500;
 async function waitForInitialMediaLayout(box){
@@ -545,7 +544,6 @@ function handleWsPresenceUpdate(payload){if(payload?.type!=='presence:update'||!
 function handleWsMessageAck(payload){if(payload?.type!=='message:ack')return false;const roomId=String(payload.roomId||state.roomId||'');const clientMessageId=payload.clientMessageId||payload.message?.client_message_id||null;if(payload.accepted===false){clearPendingText(clientMessageId);return true;}const messageId=payload.messageId??payload.message?.id??null;const status=rememberMessageStatus(roomId,messageId,payload.status||payload.message?.status||'sent',clientMessageId);promoteMessageElement(roomId,messageId,clientMessageId,status,payload.message?.created_at||null);if(messageStatusRank(status)>=messageStatusRank('delivered'))clearPendingText(clientMessageId);return true;}
 function handleWsMessageStatus(payload){if(payload?.type!=='message:status')return false;const roomId=String(payload.roomId||state.roomId||'');const status=rememberMessageStatus(roomId,payload.messageId,payload.status||'sent',payload.clientMessageId||null);if(status==='read')acknowledgeRead(roomId,payload.messageId);if(messageStatusRank(status)>=messageStatusRank('delivered')){clearPendingText(payload.clientMessageId||null);clearReceivedMessageIds(roomId,[payload.messageId]);}const el=findMessageElement(payload.messageId,payload.clientMessageId||null);if(el)updateMessageStatusElement(el,status);if(roomId===state.roomId){recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();}return true;}
 function handleWsUnreadState(payload){if(payload?.type!=='chat:unread'||!payload.roomId)return false;applyRemoteUnreadState(String(payload.roomId),payload.unreadCount,payload.firstUnreadMessageId);return true;}
-function connectWs(deviceId){setLocalConnectionState('connecting');if(state.ws){try{state.ws.close();}catch{}}const p=location.protocol==='https:'?'wss':'ws';const currentSeq=++appWsSeq;activeAppWsSeq=currentSeq;const ws=new WebSocket(p+'://'+location.host+'?device='+encodeURIComponent(deviceId));ws.deviceId=deviceId;state.ws=ws;const isCurrentWs=()=>state.ws===ws&&activeAppWsSeq===currentSeq;wsConnectStartedAt=Date.now();ws.onopen=()=>{if(!isCurrentWs())return;setLocalConnectionState('connected');sendClientState();flushPendingReads(state.roomId,ws.deviceId||activeChatDeviceId);resendPendingTextMessages();};ws.onerror=()=>{if(!isCurrentWs())return;resetPendingReadAttempts();setLocalConnectionState('disconnected');};ws.onclose=()=>{if(!isCurrentWs())return;resetPendingReadAttempts();setLocalConnectionState('disconnected');};ws.onmessage=async(ev)=>{if(!isCurrentWs())return;let payload;try{payload=JSON.parse(ev.data);}catch{return;}if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload)||handleWsUnreadState(payload))return;if(payload.type!=='message:new'||!payload.message)return;const roomId=payload.roomId;if(!roomId)return;const incomingMessage=payload.message;const message={...incomingMessage,status:getEffectiveMessageStatus(roomId,incomingMessage)};const messageId=message.id;const clientMessageId=message.client_message_id||null;if(messageId!==null&&messageId!==undefined){rememberMessageStatus(roomId,messageId,message.status,clientMessageId);promoteMessageElement(roomId,messageId,clientMessageId,message.status,message.created_at||null);if(clientMessageId&&messageStatusRank(message.status)>=messageStatusRank('delivered'))clearPendingText(clientMessageId);}const chat=state.chats.find((c)=>c.roomId===roomId)||{};const txt=await decryptText(message.iv,message.ciphertext).catch(()=>'[cannot decrypt]');const mine=message.sender_device_id===deviceId;const box=document.getElementById('messages');const inActiveChat=state.roomId===roomId&&box;const nearBottom=inActiveChat?isMessagesAtBottom():false;const hasMessageInDom=Boolean(findMessageElement(messageId,clientMessageId));let upsertResult={isDuplicate:false};if(mine){upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:chat.unread||0});if(inActiveChat&&!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,txt,true,true);scrollMessagesToBottom(box);}}else if(inActiveChat){if(!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,txt,false,nearBottom);}if(nearBottom){markMessageRead(messageId);upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:0});scrollMessagesToBottom(box);}else{const incomingId=Number(messageId);if(Number.isInteger(incomingId)&&incomingId>0)pendingIncomingReadIds=[...new Set([...pendingIncomingReadIds,incomingId])];const unreadCount=pendingIncomingReadIds.length;upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:unreadCount});renderNewMessagesPill(unreadCount);}}else{upsertResult=upsertRoomMessage(roomId,message,{text:txt});const unread=upsertResult.isDuplicate?(chat.unread||0):((chat.unread||0)+1);upsertChat(roomId,{unread});updateUnreadPresentation();}if(!mine&&!upsertResult.isDuplicate)notifyIncoming(message.sender_name,txt,roomId,false);updateReplyComposerBar();};}
 function rememberLastKnownMessageId(roomId,messageId){const id=Number(messageId);if(!Number.isSafeInteger(id)||id<=0)return;const current=Number(lastKnownMessageIdByRoom.get(roomId)||0);if(id>current)lastKnownMessageIdByRoom.set(roomId,id);}
 function bufferRoomMessage(roomId,message,notify){const queue=bufferedRoomMessages.get(roomId)||[];const id=String(message?.id??message?.client_message_id??'');if(id&&!queue.some((item)=>String(item.message?.id??item.message?.client_message_id??'')===id))queue.push({message,notify});bufferedRoomMessages.set(roomId,queue);}
 async function flushBufferedRoomMessages(roomId,deviceId){const queue=bufferedRoomMessages.get(roomId);if(!queue?.length)return;bufferedRoomMessages.delete(roomId);for(const item of queue)await processStableIncomingMessage(roomId,item.message,deviceId,{notify:item.notify});if(bufferedRoomMessages.has(roomId))await flushBufferedRoomMessages(roomId,deviceId);}
@@ -599,7 +597,8 @@ async function processStableIncomingMessage(roomId,incomingMessage,deviceId,{not
   if(!mine&&!upsertResult.isDuplicate&&notify)notifyIncoming(message.sender_name,text,roomId,false);
   updateReplyComposerBar();
 }
-async function fetchRoomMessagesPage(roomId,deviceId,params){
+async function fetchRoomMessagesPage(roomId,deviceId,params={},options={}){
+  const unreadSyncMeta=options.trackUnread?beginUnreadSync(roomId):null;
   const query=new URLSearchParams({deviceId:String(deviceId),limit:String(CHAT_HISTORY_PAGE_SIZE),...params});
   const controller=typeof AbortController==='function'?new AbortController():null;
   const timeout=controller?setTimeout(()=>controller.abort(),ROOM_SYNC_REQUEST_TIMEOUT_MS):null;
@@ -610,10 +609,13 @@ async function fetchRoomMessagesPage(roomId,deviceId,params){
     if(!response.ok)throw new Error(`sync request failed: ${response.status}`);
     const data=await response.json();
     if(!data||!Array.isArray(data.messages))throw new Error('invalid sync response');
+    if(unreadSyncMeta)data.__unreadSyncMeta=unreadSyncMeta;
     return data;
   }finally{if(timeout)clearTimeout(timeout);}
 }
-async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId);}catch{return false;}}
+function getUnreadSyncMeta(data){const meta=data?.__unreadSyncMeta;if(!meta)return null;return {...meta,source:'api'};}
+async function refreshChatPreviewFromSync(roomId,data){const latest=Array.isArray(data?.messages)?data.messages[data.messages.length-1]:null;if(!latest?.created_at)return false;const chat=state.chats.find((item)=>item.roomId===roomId);const latestTime=parseServerTime(latest.created_at)?.getTime()||0;const currentTime=parseServerTime(chat?.lastActivity)?.getTime()||0;if(chat?.lastActivity&&currentTime>=latestTime)return false;const text=await decryptRoomText(roomId,latest).catch(()=>latest.type==='media'?'':'[cannot decrypt]');upsertChat(roomId,{lastMessage:text,lastSender:latest.sender_name||'',lastActivity:latest.created_at});rememberLastKnownMessageId(roomId,latest.id);return true;}
+async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'},{trackUnread:true});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId,getUnreadSyncMeta(data));}catch{return false;}}
 const UNREAD_REFRESH_RETRY_DELAYS_MS=[750,2000];
 async function refreshKnownChatsUnread(){
   if(unreadRefreshPromise)return unreadRefreshPromise;
@@ -626,8 +628,10 @@ async function refreshKnownChatsUnread(){
     for(let attempt=0;attempt<=UNREAD_REFRESH_RETRY_DELAYS_MS.length&&pending.length;attempt+=1){
       const results=await Promise.all(pending.map(async(pair)=>{
         try{
-          const data=await fetchRoomMessagesPage(pair.roomId,pair.deviceId,{limit:'1'});
-          const ok=applyRemoteUnreadState(pair.roomId,data.unreadCount,data.firstUnreadMessageId);
+          const data=await fetchRoomMessagesPage(pair.roomId,pair.deviceId,{limit:'1'},{trackUnread:true});
+          const previewPromise=refreshChatPreviewFromSync(pair.roomId,data).catch(()=>false);
+          const ok=applyRemoteUnreadState(pair.roomId,data.unreadCount,data.firstUnreadMessageId,getUnreadSyncMeta(data));
+          if(ok)await previewPromise;
           return {pair,ok};
         }catch{return {pair,ok:false};}
       }));
@@ -643,7 +647,7 @@ async function refreshKnownChatsUnread(){
 async function syncRoomAfterReconnect(roomId,deviceId){
   let known=Number(lastKnownMessageIdByRoom.get(roomId)||0);
   let snapshot=null;
-  try{snapshot=await fetchRoomMessagesPage(roomId,deviceId,{limit:String(CHAT_HISTORY_PAGE_SIZE)});}catch{return false;}
+  try{snapshot=await fetchRoomMessagesPage(roomId,deviceId,{limit:String(CHAT_HISTORY_PAGE_SIZE)},{trackUnread:true});}catch{return false;}
   const snapshotMessages=snapshot.messages;
   const receivedIds=[];
   for(const message of snapshotMessages){
@@ -657,7 +661,7 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   if(receivedIds.length)markMessagesReceived(roomId,deviceId,receivedIds);
   const serverUnreadCount=Number(snapshot.unreadCount);
   if(Number.isFinite(serverUnreadCount)&&serverUnreadCount>=0){
-    applyRemoteUnreadState(roomId,serverUnreadCount,snapshot.firstUnreadMessageId);
+    applyRemoteUnreadState(roomId,serverUnreadCount,snapshot.firstUnreadMessageId,getUnreadSyncMeta(snapshot));
   }
   const latest=snapshotMessages[snapshotMessages.length-1];
   if(latest&&(!state.chats.find((item)=>item.roomId===roomId)?.lastActivity||new Date(latest.created_at)>new Date(state.chats.find((item)=>item.roomId===roomId)?.lastActivity||0))){
@@ -681,7 +685,7 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   }
   rememberLastKnownMessageId(roomId,cursor);
   const refreshed=await refreshRoomUnreadAfterSync(roomId,deviceId);
-  if(!refreshed)applyRemoteUnreadState(roomId,snapshot.unreadCount,snapshot.firstUnreadMessageId);
+  if(!refreshed)applyRemoteUnreadState(roomId,snapshot.unreadCount,snapshot.firstUnreadMessageId,getUnreadSyncMeta(snapshot));
   return syncComplete;
 }
 async function syncAllRoomsAfterReconnect(deviceId){
@@ -692,21 +696,43 @@ async function syncAllRoomsAfterReconnect(deviceId){
 }
 async function reconcileKnownChats(deviceId){
   if(!deviceId)return false;
-  try{
-    await ensureStableWsConnected(deviceId);
+  updateAppSyncWatchdog();
+  const unreadPromise=refreshKnownChatsUnread().catch(()=>false);
+  const wsPromise=ensureStableWsConnected(deviceId).catch(()=>false);
+  const wsReady=await wsPromise;
+  const unreadComplete=await unreadPromise;
+  if(wsReady){
     if(state.roomId&&activeChatDeviceId)flushPendingReads(state.roomId,activeChatDeviceId);
-    const syncComplete=await syncAllRoomsAfterReconnect(deviceId);
+    const syncComplete=await syncAllRoomsAfterReconnect(deviceId).catch(()=>false);
     if(syncComplete)return true;
-  }catch{}
+  }
+  if(unreadComplete)return true;
   return refreshKnownChatsUnread().catch(()=>false);
 }
 function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&(state.chats.length||state.roomId));}
 function clearStableWsReconnect(){if(stableWsReconnectTimer){clearTimeout(stableWsReconnectTimer);stableWsReconnectTimer=null;}}
 function scheduleStableWsReconnect(){
-  if(stableWsReconnectTimer||stableWsManualClose||!stableWsShouldRun())return;
+  if(stableWsReconnectTimer||stableWsManualClose||!stableWsShouldRun()||navigator.onLine===false)return;
   const attempt=stableWsReconnectAttempt++;
   const delay=Math.min(15000,500*2**Math.min(attempt,5))+Math.floor(Math.random()*250);
   stableWsReconnectTimer=setTimeout(()=>{stableWsReconnectTimer=null;if(stableWsDesiredDeviceId)void ensureStableWsConnected(stableWsDesiredDeviceId);},delay);
+}
+function shouldRunAppSyncWatchdog(){return document.visibilityState==='visible'&&Boolean(state.chats.length||state.roomId);}
+function stopAppSyncWatchdog(){if(appSyncWatchdogTimer){clearInterval(appSyncWatchdogTimer);appSyncWatchdogTimer=null;}}
+function runAppSyncWatchdog(){
+  if(!shouldRunAppSyncWatchdog()){stopAppSyncWatchdog();return;}
+  const deviceId=String(localStorage.getItem(STORAGE.deviceId)||activeChatDeviceId||'').trim();
+  if(!deviceId){stopAppSyncWatchdog();return;}
+  if(navigator.onLine===false){setLocalConnectionState('disconnected');return;}
+  const ws=state.ws;
+  if(!ws||ws.readyState!==WebSocket.OPEN||ws.deviceId!==deviceId){void reconcileKnownChats(deviceId);return;}
+  if(!sendStableClientState()){try{ws.close();}catch{}return;}
+  setLocalConnectionState('connected');
+  void refreshKnownChatsUnread().catch(()=>{});
+}
+function updateAppSyncWatchdog(){
+  if(!shouldRunAppSyncWatchdog()){stopAppSyncWatchdog();return;}
+  if(!appSyncWatchdogTimer)appSyncWatchdogTimer=setInterval(runAppSyncWatchdog,APP_SYNC_WATCHDOG_INTERVAL_MS);
 }
 function sendStableClientState(){
   const ws=state.ws;
@@ -715,7 +741,7 @@ function sendStableClientState(){
 }
 function handleStableWsPayload(payload,deviceId){
   if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload)||handleWsUnreadState(payload))return Promise.resolve();
-  if(payload?.type==='message:new'&&payload.message&&payload.roomId)return processStableIncomingMessage(payload.roomId,payload.message,deviceId,{notify:true});
+  if(payload?.type==='message:new'&&payload.message&&payload.roomId){noteUnreadEvent(payload.roomId);return processStableIncomingMessage(payload.roomId,payload.message,deviceId,{notify:true});}
   return Promise.resolve();
 }
 function connectStableWs(deviceId,timeoutMs=8000){
@@ -741,7 +767,7 @@ function connectStableWs(deviceId,timeoutMs=8000){
     const finish=(ok)=>{if(settled)return;settled=true;clearTimeout(timer);if(stableWsConnectPromise===promise)stableWsConnectPromise=null;resolve(Boolean(ok&&ws.isFpCurrent()&&ws.readyState===WebSocket.OPEN));};
     let incomingChain=Promise.resolve();
     ws.onopen=()=>{if(!ws.isFpCurrent())return;stableWsReconnectAttempt=0;stableWsManualClose=false;setLocalConnectionState('connected');sendStableClientState();resetPendingReadAttempts();flushPendingReads(state.roomId,safeDeviceId);resendPendingTextMessages();finish(true);void syncAllRoomsAfterReconnect(safeDeviceId);};
-    ws.onerror=()=>{if(ws.isFpCurrent())setLocalConnectionState('disconnected');};
+    ws.onerror=()=>{if(!ws.isFpCurrent())return;setLocalConnectionState('disconnected');try{ws.close();}catch{}};
     ws.onclose=()=>{if(!ws.isFpCurrent()){finish(false);return;}state.ws=null;resetPendingReadAttempts();setLocalConnectionState('disconnected');finish(false);if(!stableWsManualClose&&stableWsShouldRun())scheduleStableWsReconnect();};
     ws.onmessage=(event)=>{if(!ws.isFpCurrent())return;incomingChain=incomingChain.then(async()=>{let payload;try{payload=JSON.parse(event.data);}catch{return;}await handleStableWsPayload(payload,safeDeviceId);}).catch(()=>{});};
   });
@@ -761,7 +787,7 @@ function ensureStableWsConnected(deviceId,timeoutMs=8000){
 function sendClientState(){return sendStableClientState();}
 function ensureWsConnected(deviceId,timeoutMs=8000){return ensureStableWsConnected(deviceId,timeoutMs);}
 function connectWs(deviceId){return ensureStableWsConnected(deviceId);}
-window.addEventListener('online',()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(!deviceId||!state.chats.length)return;void reconcileKnownChats(deviceId);});
+window.addEventListener('online',()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(!deviceId||(!state.chats.length&&!state.roomId))return;void reconcileKnownChats(deviceId);});
 window.addEventListener('offline',()=>{if(state.roomId)setLocalConnectionState('disconnected');});
 
 function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){if(state.ws)state.ws.close();state.ws=null;state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
@@ -917,7 +943,7 @@ const restoreWsOnResume=()=>{const deviceId=String(localStorage.getItem(STORAGE.
 window.addEventListener('focus',handleAppResume);
 window.addEventListener('beforeunload',saveViewStateForLifecycle);
 window.addEventListener('pagehide',saveViewStateForLifecycle);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveViewStateForLifecycle();sendClientState();if(document.visibilityState==='visible'){handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);}});window.addEventListener('focus',sendClientState);window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState();flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){stopAppSyncWatchdog();saveViewStateForLifecycle();}sendClientState();if(document.visibilityState==='visible'){handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();}});window.addEventListener('focus',sendClientState);window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState();flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
 
 window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
 
