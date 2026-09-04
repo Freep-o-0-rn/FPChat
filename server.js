@@ -66,8 +66,8 @@ const q = {
   findMessageByClientId: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.room_id = ? AND m.sender_id = ? AND m.client_message_id = ?`),
   findMessageForRead: db.prepare('SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id = ? AND room_id = ?'),
   findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id = ? AND device_id = ?`),
-  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, updated_at FROM chat_view_state WHERE room_id = ? AND device_id = ?`),
-  upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, updated_at) VALUES (?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, updated_at=datetime('now')`),
+  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, at_bottom, updated_at FROM chat_view_state WHERE room_id = ? AND device_id = ?`),
+  upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, at_bottom, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, at_bottom=excluded.at_bottom, updated_at=datetime('now')`),
   upsertDraft: db.prepare(`INSERT INTO drafts (room_id, device_id, ciphertext, iv, reply_to_message_id, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET ciphertext=excluded.ciphertext, iv=excluded.iv, reply_to_message_id=excluded.reply_to_message_id, updated_at=datetime('now')`),
   deleteDraftByRoomDevice: db.prepare(`DELETE FROM drafts WHERE room_id = ? AND device_id = ?`),
   markDelivered: db.prepare(`UPDATE messages
@@ -169,6 +169,7 @@ function normalizeViewState(row) {
   return {
     anchorMessageId: row.anchor_message_id ? Number(row.anchor_message_id) : null,
     anchorOffsetPx: Number(row.anchor_offset_px || 0),
+    atBottom: Boolean(row.at_bottom),
     updatedAt: toIsoUtc(row.updated_at)
   };
 }
@@ -490,7 +491,8 @@ app.put('/api/rooms/:publicId/view-state', (req, res) => {
   let anchorMessageId = Number(req.body?.anchorMessageId ?? req.body?.anchor_message_id);
   if (!Number.isInteger(anchorMessageId) || anchorMessageId <= 0 || !q.findMessageInRoom.get(anchorMessageId, room.id)) anchorMessageId = null;
   const anchorOffsetPx = Math.max(-100000, Math.min(100000, Number.parseInt(req.body?.anchorOffsetPx ?? req.body?.anchor_offset_px ?? 0, 10) || 0));
-  q.upsertViewState.run(room.id, safeDeviceId, anchorMessageId, anchorOffsetPx);
+  const atBottom = req.body?.atBottom === true || req.body?.at_bottom === 1 ? 1 : 0;
+  q.upsertViewState.run(room.id, safeDeviceId, anchorMessageId, anchorOffsetPx, atBottom);
   return res.json({ ok: true });
 });
 

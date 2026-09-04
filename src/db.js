@@ -63,6 +63,7 @@ function createDb(databasePath) {
       device_id TEXT NOT NULL,
       anchor_message_id INTEGER,
       anchor_offset_px INTEGER NOT NULL DEFAULT 0,
+      at_bottom INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(room_id, device_id),
       FOREIGN KEY(room_id) REFERENCES rooms(id),
@@ -143,9 +144,11 @@ function createDb(databasePath) {
 
   const participantColumns = db.prepare('PRAGMA table_info(participants)').all();
   const messageColumns = db.prepare('PRAGMA table_info(messages)').all();
+  const viewStateColumns = db.prepare('PRAGMA table_info(chat_view_state)').all();
   if (!messageColumns.some((column) => column.name === 'reply_to_message_id')) db.exec('ALTER TABLE messages ADD COLUMN reply_to_message_id INTEGER');
   if (!messageColumns.some((column) => column.name === 'type')) db.exec("ALTER TABLE messages ADD COLUMN type TEXT NOT NULL DEFAULT 'text'");
   if (!messageColumns.some((column) => column.name === 'client_message_id')) db.exec('ALTER TABLE messages ADD COLUMN client_message_id TEXT');
+  if (!viewStateColumns.some((column) => column.name === 'at_bottom')) db.exec('ALTER TABLE chat_view_state ADD COLUMN at_bottom INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_room_sender_client_id ON messages(room_id, sender_id, client_message_id) WHERE client_message_id IS NOT NULL');
   if (!participantColumns.some((column) => column.name === 'online')) db.exec("ALTER TABLE participants ADD COLUMN online INTEGER NOT NULL DEFAULT 0");
   db.exec(`DELETE FROM push_subscriptions WHERE id NOT IN (SELECT MAX(id) FROM push_subscriptions GROUP BY room_id, device_id)`);
