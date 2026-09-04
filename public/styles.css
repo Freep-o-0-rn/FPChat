@@ -37,6 +37,7 @@
 .chat-view .chat-header{flex:0 0 auto}
 .chat-view .new-messages-pill{flex:0 0 auto}
 .chat-view .messages{flex:1 1 auto;min-height:0;overflow-y:auto}
+.history-loader{padding:8px 0;text-align:center;color:var(--muted);font-size:12px;line-height:20px;user-select:none}.history-loader.hidden{display:none}
 .composer{display:flex;align-items:center;gap:8px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:transparent;border-top:none;box-shadow:none;flex:0 0 auto}
 .composer-icon,.composer-emoji,.composer-send{flex:0 0 auto;width:42px;height:42px;border:0;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;align-self:flex-end;font-size:18px;cursor:pointer;user-select:none}
 .composer-icon{background:transparent;color:var(--muted)}
