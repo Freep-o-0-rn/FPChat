@@ -45,7 +45,7 @@ let mediaPreviewState=null;
 let mediaViewerState=null;
 const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
-let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let appWsSeq=0;let activeAppWsSeq=0;let appWsConnectInFlight=null;let chatViewReadyRoomId=null;let chatOpenToken=0;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;
+let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let appWsSeq=0;let activeAppWsSeq=0;let appWsConnectInFlight=null;let chatViewReadyRoomId=null;let chatOpenToken=0;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;let unreadRefreshPromise=null;
 let appVersionCheckInFlight=false;
 let deferredInstallPrompt=null;
 function setBootSplashText(title, text) {
@@ -111,7 +111,7 @@ function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.clas
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
 function leaveActiveChat(){if(!state.roomId)return;const wasOpening=scrollCoordinator.isOpening();if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}if(!wasOpening)void saveViewStateNow({keepalive:true});scrollCoordinator.stop();state.roomId=null;activeChatDeviceId=null;activeChatHistory=null;chatViewReadyRoomId=null;sendClientState();}
-function setView(v){if(state.roomId)leaveActiveChat();state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void ensureStableWsConnected(deviceId);return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
+function setView(v){if(state.roomId)leaveActiveChat();state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void reconcileKnownChats(deviceId);return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
 function isBackGestureBlockedTarget(target){
   if(!target)return true;
@@ -607,6 +607,32 @@ async function fetchRoomMessagesPage(roomId,deviceId,params){
   return data;
 }
 async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId);}catch{return false;}}
+const UNREAD_REFRESH_RETRY_DELAYS_MS=[750,2000];
+async function refreshKnownChatsUnread(){
+  if(unreadRefreshPromise)return unreadRefreshPromise;
+  const pairs=getLocalRoomDevicePairs();
+  if(state.roomId&&activeChatDeviceId&&!pairs.some((pair)=>pair.roomId===state.roomId&&pair.deviceId===activeChatDeviceId))pairs.push({roomId:state.roomId,deviceId:activeChatDeviceId});
+  if(!pairs.length)return false;
+  const run=(async()=>{
+    let pending=pairs;
+    let refreshed=false;
+    for(let attempt=0;attempt<=UNREAD_REFRESH_RETRY_DELAYS_MS.length&&pending.length;attempt+=1){
+      const results=await Promise.all(pending.map(async(pair)=>{
+        try{
+          const data=await fetchRoomMessagesPage(pair.roomId,pair.deviceId,{limit:'1'});
+          const ok=applyRemoteUnreadState(pair.roomId,data.unreadCount,data.firstUnreadMessageId);
+          return {pair,ok};
+        }catch{return {pair,ok:false};}
+      }));
+      refreshed=results.some((result)=>result.ok)||refreshed;
+      pending=results.filter((result)=>!result.ok).map((result)=>result.pair);
+      if(pending.length&&attempt<UNREAD_REFRESH_RETRY_DELAYS_MS.length)await new Promise((resolve)=>setTimeout(resolve,UNREAD_REFRESH_RETRY_DELAYS_MS[attempt]));
+    }
+    return pending.length===0&&refreshed;
+  })().finally(()=>{unreadRefreshPromise=null;});
+  unreadRefreshPromise=run;
+  return run;
+}
 async function syncRoomAfterReconnect(roomId,deviceId){
   let known=Number(lastKnownMessageIdByRoom.get(roomId)||0);
   let snapshot=null;
@@ -654,6 +680,16 @@ async function syncAllRoomsAfterReconnect(deviceId){
   const rooms=[...new Set([...state.chats.map((chat)=>chat.roomId),state.roomId].filter(Boolean))];
   stableWsSyncPromise=Promise.all(rooms.map((roomId)=>syncRoomAfterReconnect(roomId,STORAGE.get(STORAGE.roomState(roomId))?.deviceId||deviceId).catch(()=>{}))).finally(()=>{stableWsSyncPromise=null;});
   return stableWsSyncPromise;
+}
+async function reconcileKnownChats(deviceId){
+  if(!deviceId)return false;
+  const initialRefreshComplete=await refreshKnownChatsUnread();
+  try{
+    await ensureStableWsConnected(deviceId);
+    if(state.roomId&&activeChatDeviceId)flushPendingReads(state.roomId,activeChatDeviceId);
+    await syncAllRoomsAfterReconnect(deviceId);
+  }catch{}
+  return initialRefreshComplete||refreshKnownChatsUnread();
 }
 function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&(state.chats.length||state.roomId));}
 function clearStableWsReconnect(){if(stableWsReconnectTimer){clearTimeout(stableWsReconnectTimer);stableWsReconnectTimer=null;}}
@@ -716,7 +752,7 @@ function ensureStableWsConnected(deviceId,timeoutMs=8000){
 function sendClientState(){return sendStableClientState();}
 function ensureWsConnected(deviceId,timeoutMs=8000){return ensureStableWsConnected(deviceId,timeoutMs);}
 function connectWs(deviceId){return ensureStableWsConnected(deviceId);}
-window.addEventListener('online',()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(!deviceId||!state.chats.length)return;void ensureStableWsConnected(deviceId).then(()=>syncAllRoomsAfterReconnect(deviceId)).catch(()=>{});});
+window.addEventListener('online',()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(!deviceId||!state.chats.length)return;void reconcileKnownChats(deviceId);});
 window.addEventListener('offline',()=>{if(state.roomId)setLocalConnectionState('disconnected');});
 
 function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){if(state.ws)state.ws.close();state.ws=null;state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
@@ -868,7 +904,7 @@ document.addEventListener('touchmove',(e)=>{
 },{passive:true});
 document.addEventListener('touchend',()=>{edgeSwipe.tracking=false;},{passive:true});
 document.addEventListener('touchcancel',()=>{edgeSwipe.tracking=false;},{passive:true});
-const restoreWsOnResume=()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||activeChatDeviceId||'').trim();if(!deviceId||(!state.chats.length&&!state.roomId))return;ensureStableWsConnected(deviceId).then(()=>{if(state.roomId&&activeChatDeviceId)flushPendingReads(state.roomId,activeChatDeviceId);return syncAllRoomsAfterReconnect(deviceId);}).catch(()=>{});};const handleAppResume=()=>{restoreWsOnResume();checkAppVersionOnEntry();};
+const restoreWsOnResume=()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||activeChatDeviceId||'').trim();if(!deviceId||(!state.chats.length&&!state.roomId))return;void reconcileKnownChats(deviceId);};const handleAppResume=()=>{restoreWsOnResume();checkAppVersionOnEntry();};
 window.addEventListener('focus',handleAppResume);
 window.addEventListener('beforeunload',saveViewStateForLifecycle);
 window.addEventListener('pagehide',saveViewStateForLifecycle);
