@@ -554,6 +554,31 @@ function sendToRoomParticipants(roomPublicId, payload, exceptDeviceId = null) {
   }
 }
 
+function sendUnreadStateToDevice(roomPublicId, deviceId) {
+  const room = q.findRoomByPublicId.get(roomPublicId);
+  if (!room || !deviceId) return false;
+  const participant = q.findParticipant.get(room.id, deviceId);
+  const sockets = socketsByDevice.get(deviceId);
+  if (!participant || !sockets) return false;
+  const unread = getUnreadState(room.id, participant.id);
+  const payload = {
+    type: 'chat:unread',
+    roomId: room.public_id,
+    unreadCount: unread.unreadCount,
+    firstUnreadMessageId: unread.firstUnreadMessageId
+  };
+  let sent = false;
+  for (const client of sockets) sent = sendWsJson(client, payload) || sent;
+  return sent;
+}
+
+function broadcastUnreadState(room) {
+  if (!room) return;
+  for (const participant of q.listParticipantsByRoom.all(room.id)) {
+    sendUnreadStateToDevice(room.public_id, participant.device_id);
+  }
+}
+
 function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', ...payload }); }
 function hasVisibleSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);
@@ -728,6 +753,7 @@ async function handleTextMessage(ws, payload) {
   const message = messageToDto(row);
   sendTextMessageAck(ws, room, message);
   if (message.status === 'sent') broadcastTextMessage(room, message, ws.deviceId);
+  broadcastUnreadState(room);
 
   // Push wakes the recipient but is not proof that the message reached the app.
   const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
@@ -778,6 +804,7 @@ wss.on('connection', (ws, req) => {
       online: true,
       lastSeenAt: toIsoUtc(participant.last_seen_at)
     });
+    sendUnreadStateToDevice(participant.room_public_id, ws.deviceId);
   }
 
   ws.on('message', async (raw) => {
@@ -841,6 +868,7 @@ wss.on('connection', (ws, req) => {
         }));
       }
       broadcastRoomMessage(room, message, ws.deviceId);
+      broadcastUnreadState(room);
 
       // Push wakes the recipient but is not proof that the message reached the app.
       const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
@@ -880,6 +908,7 @@ wss.on('connection', (ws, req) => {
           readAt
         });
       }
+      sendUnreadStateToDevice(room.public_id, ws.deviceId);
     }
   });
 

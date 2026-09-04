@@ -105,6 +105,8 @@ function hideMessageReplyMenu(){document.querySelector('.message-reply-menu')?.r
 async function findAndFocusReplyMessage(messageId){let target=document.querySelector(`.msg[data-message-id="${messageId}"]`);if(!target)target=await loadHistoryUntilMessage(messageId);if(!target){alert('Сообщение не найдено');return;}scrollCoordinator.focus(target);if(target.dataset.incoming==='1'&&target.dataset.read!=='1'){markMessageRead(messageId);}target.classList.add('reply-highlight');setTimeout(()=>target.classList.remove('reply-highlight'),1400);}
 function getMessageReplyMeta(messageId){const cached=messageCache.get(Number(messageId));if(cached)return{messageId:Number(messageId),author:cached.author||'Неизвестно',preview:cached.preview||'Сообщение недоступно',kind:cached.kind||'text'};return{messageId:Number(messageId),author:'Неизвестно',preview:'Сообщение недоступно',kind:'text'};}
 function upsertChat(roomId,patch={}){const i=state.chats.findIndex(x=>x.roomId===roomId);const existing=i>=0?state.chats[i]:null;const next={...(existing||{roomId,unread:0}),...patch,roomId};if(!next.lastActivity){next.lastActivity=existing?.lastActivity||new Date().toISOString();}if(i>=0)state.chats[i]=next; else state.chats.push(next); state.chats.sort((a,b)=>new Date(b.lastActivity)-new Date(a.lastActivity)); saveChats(); renderChats();}
+function normalizeUnreadCount(value){const count=Number(value);return Number.isFinite(count)&&count>=0?Math.floor(count):null;}
+function applyRemoteUnreadState(roomId,unreadValue,firstUnreadMessageId=null){const unread=normalizeUnreadCount(unreadValue);if(!roomId||unread===null)return false;const first=Number(firstUnreadMessageId);const firstId=Number.isSafeInteger(first)&&first>0?first:null;if(state.roomId===roomId&&activeChatHistory?.roomId===roomId){activeChatHistory.unreadCount=unread;activeChatHistory.firstUnreadMessageId=firstId;const loadedCount=recomputePendingUnread();activeChatHistory.unloadedUnreadCount=Math.max(0,unread-loadedCount);updateUnreadIndicators();}else{upsertChat(roomId,{unread});updateUnreadPresentation();}return true;}
 function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));}
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
@@ -521,6 +523,7 @@ renderChatView=async function renderChatViewWithLazyHistory(messages,deviceId,vi
 };
 const MESSAGE_STATUS_RANK=Object.freeze({sending:0,sent:1,delivered:2,read:3});
 const liveMessageKeys=new Set();
+function rememberLiveMessage(roomId,message){const ids=[message?.id,message?.client_message_id].filter((value)=>value!==null&&value!==undefined&&String(value)!=='').map(String);ids.map((id)=>String(roomId)+':'+id).forEach((key)=>liveMessageKeys.add(key));while(liveMessageKeys.size>600)liveMessageKeys.delete(liveMessageKeys.values().next().value);}
 function normalizeMessageStatus(value){const status=String(value||'sent');return Object.prototype.hasOwnProperty.call(MESSAGE_STATUS_RANK,status)?status:'sent';}
 function messageStatusRank(value){return MESSAGE_STATUS_RANK[normalizeMessageStatus(value)];}
 function strongerMessageStatus(current,next){const a=normalizeMessageStatus(current);const b=normalizeMessageStatus(next);return messageStatusRank(b)>messageStatusRank(a)?b:a;}
@@ -540,7 +543,8 @@ function upsertRoomMessage(roomId,message,patch={}){const ids=[message?.id,messa
 function handleWsPresenceUpdate(payload){if(payload?.type!=='presence:update'||!payload.deviceId)return false;state.presence[payload.deviceId]={deviceId:payload.deviceId,displayName:payload.displayName,online:Boolean(payload.online),lastSeenAt:payload.lastSeenAt||null};renderPresenceStatus();return true;}
 function handleWsMessageAck(payload){if(payload?.type!=='message:ack')return false;const roomId=String(payload.roomId||state.roomId||'');const clientMessageId=payload.clientMessageId||payload.message?.client_message_id||null;if(payload.accepted===false){clearPendingText(clientMessageId);return true;}const messageId=payload.messageId??payload.message?.id??null;const status=rememberMessageStatus(roomId,messageId,payload.status||payload.message?.status||'sent',clientMessageId);promoteMessageElement(roomId,messageId,clientMessageId,status,payload.message?.created_at||null);if(messageStatusRank(status)>=messageStatusRank('delivered'))clearPendingText(clientMessageId);return true;}
 function handleWsMessageStatus(payload){if(payload?.type!=='message:status')return false;const roomId=String(payload.roomId||state.roomId||'');const status=rememberMessageStatus(roomId,payload.messageId,payload.status||'sent',payload.clientMessageId||null);if(status==='read')acknowledgeRead(roomId,payload.messageId);if(messageStatusRank(status)>=messageStatusRank('delivered')){clearPendingText(payload.clientMessageId||null);clearReceivedMessageIds(roomId,[payload.messageId]);}const el=findMessageElement(payload.messageId,payload.clientMessageId||null);if(el)updateMessageStatusElement(el,status);if(roomId===state.roomId){recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();}return true;}
-function connectWs(deviceId){setLocalConnectionState('connecting');if(state.ws){try{state.ws.close();}catch{}}const p=location.protocol==='https:'?'wss':'ws';const currentSeq=++appWsSeq;activeAppWsSeq=currentSeq;const ws=new WebSocket(p+'://'+location.host+'?device='+encodeURIComponent(deviceId));ws.deviceId=deviceId;state.ws=ws;const isCurrentWs=()=>state.ws===ws&&activeAppWsSeq===currentSeq;wsConnectStartedAt=Date.now();ws.onopen=()=>{if(!isCurrentWs())return;setLocalConnectionState('connected');sendClientState();flushPendingReads(state.roomId,ws.deviceId||activeChatDeviceId);resendPendingTextMessages();};ws.onerror=()=>{if(!isCurrentWs())return;resetPendingReadAttempts();setLocalConnectionState('disconnected');};ws.onclose=()=>{if(!isCurrentWs())return;resetPendingReadAttempts();setLocalConnectionState('disconnected');};ws.onmessage=async(ev)=>{if(!isCurrentWs())return;let payload;try{payload=JSON.parse(ev.data);}catch{return;}if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload))return;if(payload.type!=='message:new'||!payload.message)return;const roomId=payload.roomId;if(!roomId)return;const incomingMessage=payload.message;const message={...incomingMessage,status:getEffectiveMessageStatus(roomId,incomingMessage)};const messageId=message.id;const clientMessageId=message.client_message_id||null;if(messageId!==null&&messageId!==undefined){rememberMessageStatus(roomId,messageId,message.status,clientMessageId);promoteMessageElement(roomId,messageId,clientMessageId,message.status,message.created_at||null);if(clientMessageId&&messageStatusRank(message.status)>=messageStatusRank('delivered'))clearPendingText(clientMessageId);}const chat=state.chats.find((c)=>c.roomId===roomId)||{};const txt=await decryptText(message.iv,message.ciphertext).catch(()=>'[cannot decrypt]');const mine=message.sender_device_id===deviceId;const box=document.getElementById('messages');const inActiveChat=state.roomId===roomId&&box;const nearBottom=inActiveChat?isMessagesAtBottom():false;const hasMessageInDom=Boolean(findMessageElement(messageId,clientMessageId));let upsertResult={isDuplicate:false};if(mine){upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:chat.unread||0});if(inActiveChat&&!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,txt,true,true);scrollMessagesToBottom(box);}}else if(inActiveChat){if(!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,txt,false,nearBottom);}if(nearBottom){markMessageRead(messageId);upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:0});scrollMessagesToBottom(box);}else{const incomingId=Number(messageId);if(Number.isInteger(incomingId)&&incomingId>0)pendingIncomingReadIds=[...new Set([...pendingIncomingReadIds,incomingId])];const unreadCount=pendingIncomingReadIds.length;upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:unreadCount});renderNewMessagesPill(unreadCount);}}else{upsertResult=upsertRoomMessage(roomId,message,{text:txt});const unread=upsertResult.isDuplicate?(chat.unread||0):((chat.unread||0)+1);upsertChat(roomId,{unread});updateUnreadPresentation();}if(!mine&&!upsertResult.isDuplicate)notifyIncoming(message.sender_name,txt,roomId,false);updateReplyComposerBar();};}
+function handleWsUnreadState(payload){if(payload?.type!=='chat:unread'||!payload.roomId)return false;applyRemoteUnreadState(String(payload.roomId),payload.unreadCount,payload.firstUnreadMessageId);return true;}
+function connectWs(deviceId){setLocalConnectionState('connecting');if(state.ws){try{state.ws.close();}catch{}}const p=location.protocol==='https:'?'wss':'ws';const currentSeq=++appWsSeq;activeAppWsSeq=currentSeq;const ws=new WebSocket(p+'://'+location.host+'?device='+encodeURIComponent(deviceId));ws.deviceId=deviceId;state.ws=ws;const isCurrentWs=()=>state.ws===ws&&activeAppWsSeq===currentSeq;wsConnectStartedAt=Date.now();ws.onopen=()=>{if(!isCurrentWs())return;setLocalConnectionState('connected');sendClientState();flushPendingReads(state.roomId,ws.deviceId||activeChatDeviceId);resendPendingTextMessages();};ws.onerror=()=>{if(!isCurrentWs())return;resetPendingReadAttempts();setLocalConnectionState('disconnected');};ws.onclose=()=>{if(!isCurrentWs())return;resetPendingReadAttempts();setLocalConnectionState('disconnected');};ws.onmessage=async(ev)=>{if(!isCurrentWs())return;let payload;try{payload=JSON.parse(ev.data);}catch{return;}if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload)||handleWsUnreadState(payload))return;if(payload.type!=='message:new'||!payload.message)return;const roomId=payload.roomId;if(!roomId)return;const incomingMessage=payload.message;const message={...incomingMessage,status:getEffectiveMessageStatus(roomId,incomingMessage)};const messageId=message.id;const clientMessageId=message.client_message_id||null;if(messageId!==null&&messageId!==undefined){rememberMessageStatus(roomId,messageId,message.status,clientMessageId);promoteMessageElement(roomId,messageId,clientMessageId,message.status,message.created_at||null);if(clientMessageId&&messageStatusRank(message.status)>=messageStatusRank('delivered'))clearPendingText(clientMessageId);}const chat=state.chats.find((c)=>c.roomId===roomId)||{};const txt=await decryptText(message.iv,message.ciphertext).catch(()=>'[cannot decrypt]');const mine=message.sender_device_id===deviceId;const box=document.getElementById('messages');const inActiveChat=state.roomId===roomId&&box;const nearBottom=inActiveChat?isMessagesAtBottom():false;const hasMessageInDom=Boolean(findMessageElement(messageId,clientMessageId));let upsertResult={isDuplicate:false};if(mine){upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:chat.unread||0});if(inActiveChat&&!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,txt,true,true);scrollMessagesToBottom(box);}}else if(inActiveChat){if(!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,txt,false,nearBottom);}if(nearBottom){markMessageRead(messageId);upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:0});scrollMessagesToBottom(box);}else{const incomingId=Number(messageId);if(Number.isInteger(incomingId)&&incomingId>0)pendingIncomingReadIds=[...new Set([...pendingIncomingReadIds,incomingId])];const unreadCount=pendingIncomingReadIds.length;upsertResult=upsertRoomMessage(roomId,message,{text:txt,unread:unreadCount});renderNewMessagesPill(unreadCount);}}else{upsertResult=upsertRoomMessage(roomId,message,{text:txt});const unread=upsertResult.isDuplicate?(chat.unread||0):((chat.unread||0)+1);upsertChat(roomId,{unread});updateUnreadPresentation();}if(!mine&&!upsertResult.isDuplicate)notifyIncoming(message.sender_name,txt,roomId,false);updateReplyComposerBar();};}
 function rememberLastKnownMessageId(roomId,messageId){const id=Number(messageId);if(!Number.isSafeInteger(id)||id<=0)return;const current=Number(lastKnownMessageIdByRoom.get(roomId)||0);if(id>current)lastKnownMessageIdByRoom.set(roomId,id);}
 function bufferRoomMessage(roomId,message,notify){const queue=bufferedRoomMessages.get(roomId)||[];const id=String(message?.id??message?.client_message_id??'');if(id&&!queue.some((item)=>String(item.message?.id??item.message?.client_message_id??'')===id))queue.push({message,notify});bufferedRoomMessages.set(roomId,queue);}
 async function flushBufferedRoomMessages(roomId,deviceId){const queue=bufferedRoomMessages.get(roomId);if(!queue?.length)return;bufferedRoomMessages.delete(roomId);for(const item of queue)await processStableIncomingMessage(roomId,item.message,deviceId,{notify:item.notify});if(bufferedRoomMessages.has(roomId))await flushBufferedRoomMessages(roomId,deviceId);}
@@ -602,6 +606,7 @@ async function fetchRoomMessagesPage(roomId,deviceId,params){
   if(!data||!Array.isArray(data.messages))throw new Error('invalid sync response');
   return data;
 }
+async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId);}catch{return false;}}
 async function syncRoomAfterReconnect(roomId,deviceId){
   let known=Number(lastKnownMessageIdByRoom.get(roomId)||0);
   let snapshot=null;
@@ -609,6 +614,7 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   const snapshotMessages=snapshot.messages;
   const receivedIds=[];
   for(const message of snapshotMessages){
+    rememberLiveMessage(roomId,message);
     rememberLastKnownMessageId(roomId,message.id);
     const status=getEffectiveMessageStatus(roomId,message);
     rememberMessageStatus(roomId,message.id,status,message.client_message_id||null);
@@ -618,14 +624,7 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   if(receivedIds.length)markMessagesReceived(roomId,deviceId,receivedIds);
   const serverUnreadCount=Number(snapshot.unreadCount);
   if(Number.isFinite(serverUnreadCount)&&serverUnreadCount>=0){
-    const unread=Math.floor(serverUnreadCount);
-    if(state.roomId===roomId&&activeChatHistory?.roomId===roomId){
-      activeChatHistory.unreadCount=unread;
-      activeChatHistory.unloadedUnreadCount=Math.max(0,unread-recomputePendingUnread());
-      updateUnreadIndicators();
-    }else{
-      upsertChat(roomId,{unread});
-    }
+    applyRemoteUnreadState(roomId,serverUnreadCount,snapshot.firstUnreadMessageId);
   }
   const latest=snapshotMessages[snapshotMessages.length-1];
   if(latest&&(!state.chats.find((item)=>item.roomId===roomId)?.lastActivity||new Date(latest.created_at)>new Date(state.chats.find((item)=>item.roomId===roomId)?.lastActivity||0))){
@@ -636,7 +635,7 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   let cursor=known;
   for(let pageIndex=0;pageIndex<100;pageIndex+=1){
     let page;
-    try{page=await fetchRoomMessagesPage(roomId,deviceId,{after:String(cursor)});}catch{return;}
+    try{page=await fetchRoomMessagesPage(roomId,deviceId,{after:String(cursor)});}catch{break;}
     if(!page.messages.length)break;
     for(const message of page.messages)await processStableIncomingMessage(roomId,message,deviceId,{notify:false});
     const ids=page.messages.map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>cursor);
@@ -647,6 +646,8 @@ async function syncRoomAfterReconnect(roomId,deviceId){
     if(!page.hasMore)break;
   }
   rememberLastKnownMessageId(roomId,cursor);
+  const refreshed=await refreshRoomUnreadAfterSync(roomId,deviceId);
+  if(!refreshed)applyRemoteUnreadState(roomId,snapshot.unreadCount,snapshot.firstUnreadMessageId);
 }
 async function syncAllRoomsAfterReconnect(deviceId){
   if(stableWsSyncPromise)return stableWsSyncPromise;
@@ -668,7 +669,7 @@ function sendStableClientState(){
   try{ws.send(JSON.stringify({type:'client:state',activeRoomId:state.roomId||null,visible:document.visibilityState==='visible'}));return true;}catch{return false;}
 }
 function handleStableWsPayload(payload,deviceId){
-  if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload))return Promise.resolve();
+  if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload)||handleWsUnreadState(payload))return Promise.resolve();
   if(payload?.type==='message:new'&&payload.message&&payload.roomId)return processStableIncomingMessage(payload.roomId,payload.message,deviceId,{notify:true});
   return Promise.resolve();
 }
