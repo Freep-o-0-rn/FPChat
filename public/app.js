@@ -16,6 +16,7 @@ const DRAFT_SAVE_DEBOUNCE_MS=700;
 const VIEW_STATE_SAVE_DEBOUNCE_MS=900;
 const CHAT_HISTORY_PAGE_SIZE=100;
 const CHAT_HISTORY_LOAD_THRESHOLD_PX=220;
+const ROOM_SYNC_REQUEST_TIMEOUT_MS=8000;
 
 const els={content:document.getElementById('contentPane'),rows:document.getElementById('chatRows'),search:document.getElementById('chatSearch'),empty:document.getElementById('emptyChats'),sidebar:document.getElementById('sidebar'),sidebarOverlay:document.getElementById('sidebarOverlay'),context:document.getElementById('contextMenu'),appRoot:document.getElementById('appRoot')};
 const b64={encode:(buf)=>btoa(String.fromCharCode(...new Uint8Array(buf))),decode:(str)=>Uint8Array.from(atob(str),c=>c.charCodeAt(0))};
@@ -600,11 +601,17 @@ async function processStableIncomingMessage(roomId,incomingMessage,deviceId,{not
 }
 async function fetchRoomMessagesPage(roomId,deviceId,params){
   const query=new URLSearchParams({deviceId:String(deviceId),limit:String(CHAT_HISTORY_PAGE_SIZE),...params});
-  const response=await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${query.toString()}`,{cache:'no-store'});
-  if(!response.ok)throw new Error(`sync request failed: ${response.status}`);
-  const data=await response.json();
-  if(!data||!Array.isArray(data.messages))throw new Error('invalid sync response');
-  return data;
+  const controller=typeof AbortController==='function'?new AbortController():null;
+  const timeout=controller?setTimeout(()=>controller.abort(),ROOM_SYNC_REQUEST_TIMEOUT_MS):null;
+  try{
+    const options={cache:'no-store'};
+    if(controller)options.signal=controller.signal;
+    const response=await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${query.toString()}`,options);
+    if(!response.ok)throw new Error(`sync request failed: ${response.status}`);
+    const data=await response.json();
+    if(!data||!Array.isArray(data.messages))throw new Error('invalid sync response');
+    return data;
+  }finally{if(timeout)clearTimeout(timeout);}
 }
 async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId);}catch{return false;}}
 const UNREAD_REFRESH_RETRY_DELAYS_MS=[750,2000];
@@ -636,7 +643,7 @@ async function refreshKnownChatsUnread(){
 async function syncRoomAfterReconnect(roomId,deviceId){
   let known=Number(lastKnownMessageIdByRoom.get(roomId)||0);
   let snapshot=null;
-  try{snapshot=await fetchRoomMessagesPage(roomId,deviceId,{limit:String(CHAT_HISTORY_PAGE_SIZE)});}catch{return;}
+  try{snapshot=await fetchRoomMessagesPage(roomId,deviceId,{limit:String(CHAT_HISTORY_PAGE_SIZE)});}catch{return false;}
   const snapshotMessages=snapshot.messages;
   const receivedIds=[];
   for(const message of snapshotMessages){
@@ -657,11 +664,12 @@ async function syncRoomAfterReconnect(roomId,deviceId){
     const text=await decryptRoomText(roomId,latest).catch(()=>latest.type==='media'?'':'[cannot decrypt]');
     upsertChat(roomId,{lastMessage:text,lastSender:latest.sender_name||'',lastActivity:latest.created_at});
   }
-  if(!Number.isSafeInteger(known)||known<=0){rememberLastKnownMessageId(roomId,latest?.id);return;}
+  if(!Number.isSafeInteger(known)||known<=0){rememberLastKnownMessageId(roomId,latest?.id);return true;}
   let cursor=known;
+  let syncComplete=true;
   for(let pageIndex=0;pageIndex<100;pageIndex+=1){
     let page;
-    try{page=await fetchRoomMessagesPage(roomId,deviceId,{after:String(cursor)});}catch{break;}
+    try{page=await fetchRoomMessagesPage(roomId,deviceId,{after:String(cursor)});}catch{syncComplete=false;break;}
     if(!page.messages.length)break;
     for(const message of page.messages)await processStableIncomingMessage(roomId,message,deviceId,{notify:false});
     const ids=page.messages.map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>cursor);
@@ -674,22 +682,23 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   rememberLastKnownMessageId(roomId,cursor);
   const refreshed=await refreshRoomUnreadAfterSync(roomId,deviceId);
   if(!refreshed)applyRemoteUnreadState(roomId,snapshot.unreadCount,snapshot.firstUnreadMessageId);
+  return syncComplete;
 }
 async function syncAllRoomsAfterReconnect(deviceId){
   if(stableWsSyncPromise)return stableWsSyncPromise;
   const rooms=[...new Set([...state.chats.map((chat)=>chat.roomId),state.roomId].filter(Boolean))];
-  stableWsSyncPromise=Promise.all(rooms.map((roomId)=>syncRoomAfterReconnect(roomId,STORAGE.get(STORAGE.roomState(roomId))?.deviceId||deviceId).catch(()=>{}))).finally(()=>{stableWsSyncPromise=null;});
+  stableWsSyncPromise=Promise.all(rooms.map(async(roomId)=>{try{return await syncRoomAfterReconnect(roomId,STORAGE.get(STORAGE.roomState(roomId))?.deviceId||deviceId);}catch{return false;}})).then((results)=>results.every(Boolean)).finally(()=>{stableWsSyncPromise=null;});
   return stableWsSyncPromise;
 }
 async function reconcileKnownChats(deviceId){
   if(!deviceId)return false;
-  const initialRefreshComplete=await refreshKnownChatsUnread();
   try{
     await ensureStableWsConnected(deviceId);
     if(state.roomId&&activeChatDeviceId)flushPendingReads(state.roomId,activeChatDeviceId);
-    await syncAllRoomsAfterReconnect(deviceId);
+    const syncComplete=await syncAllRoomsAfterReconnect(deviceId);
+    if(syncComplete)return true;
   }catch{}
-  return initialRefreshComplete||refreshKnownChatsUnread();
+  return refreshKnownChatsUnread().catch(()=>false);
 }
 function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&(state.chats.length||state.roomId));}
 function clearStableWsReconnect(){if(stableWsReconnectTimer){clearTimeout(stableWsReconnectTimer);stableWsReconnectTimer=null;}}
