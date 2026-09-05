@@ -201,6 +201,26 @@ function removeBrokenChat(roomId){
     updateUnreadPresentation();
   }
 }
+function removeStaleRoomFromSync(roomId){
+  const isActive=state.roomId===roomId;
+  state.chats=state.chats.filter(c=>c.roomId!==roomId);
+  try{
+    localStorage.removeItem(STORAGE.roomState(roomId));
+  }catch{}
+  saveChats();
+  if(isActive){
+    try{state.ws?.close(1000,'room not found');}catch{}
+    state.ws=null;
+    state.roomId=null;
+    activeChatDeviceId=null;
+    activeChatHistory=null;
+    chatViewReadyRoomId=null;
+    setView('chats');
+  }else{
+    renderChats();
+    if(typeof updateUnreadPresentation==='function')updateUnreadPresentation();
+  }
+}
 function openMobileMenu(){if(!isMobileViewport())return; els.sidebar?.classList.add('open'); els.sidebarOverlay?.classList.add('open','active'); els.appRoot?.classList.add('menu-open'); document.body.classList.add('menu-open');}
 function closeMobileMenu(){els.sidebar?.classList.remove('open'); els.sidebarOverlay?.classList.remove('open','active'); els.appRoot?.classList.remove('menu-open'); document.body.classList.remove('menu-open');}
 function toggleMobileMenu(){if(els.sidebar?.classList.contains('open')) closeMobileMenu(); else openMobileMenu();}
@@ -687,6 +707,12 @@ async function fetchRoomMessagesPage(roomId,deviceId,params={},options={}){
     const options={cache:'no-store'};
     if(controller)options.signal=controller.signal;
     const response=await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${query.toString()}`,options);
+    if(response.status===404){
+      const error=new Error('room not found');
+      error.code='ROOM_NOT_FOUND';
+      error.status=404;
+      throw error;
+    }
     if(!response.ok)throw new Error(`sync request failed: ${response.status}`);
     const data=await response.json();
     if(!data||!Array.isArray(data.messages))throw new Error('invalid sync response');
@@ -696,7 +722,7 @@ async function fetchRoomMessagesPage(roomId,deviceId,params={},options={}){
 }
 function getUnreadSyncMeta(data){const meta=data?.__unreadSyncMeta;if(!meta)return null;return {...meta,source:'api'};}
 async function refreshChatPreviewFromSync(roomId,data){const latest=Array.isArray(data?.messages)?data.messages[data.messages.length-1]:null;if(!latest?.created_at)return false;const chat=state.chats.find((item)=>item.roomId===roomId);const latestTime=parseServerTime(latest.created_at)?.getTime()||0;const currentTime=parseServerTime(chat?.lastActivity)?.getTime()||0;if(chat?.lastActivity&&currentTime>=latestTime)return false;const text=await decryptRoomText(roomId,latest).catch(()=>latest.type==='media'?'':'[cannot decrypt]');upsertChat(roomId,{lastMessage:text,lastSender:latest.sender_name||'',lastActivity:latest.created_at});rememberLastKnownMessageId(roomId,latest.id);return true;}
-async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'},{trackUnread:true});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId,getUnreadSyncMeta(data));}catch{return false;}}
+async function refreshRoomUnreadAfterSync(roomId,deviceId){try{const data=await fetchRoomMessagesPage(roomId,deviceId,{limit:'1'},{trackUnread:true});return applyRemoteUnreadState(roomId,data.unreadCount,data.firstUnreadMessageId,getUnreadSyncMeta(data));}catch(error){if(error?.code==='ROOM_NOT_FOUND'){removeStaleRoomFromSync(roomId);return true;}return false;}}
 const UNREAD_REFRESH_RETRY_DELAYS_MS=[750,2000];
 async function refreshKnownChatsUnread(){
   if(unreadRefreshPromise)return unreadRefreshPromise;
@@ -714,7 +740,13 @@ async function refreshKnownChatsUnread(){
           const ok=applyRemoteUnreadState(pair.roomId,data.unreadCount,data.firstUnreadMessageId,getUnreadSyncMeta(data));
           if(ok)await previewPromise;
           return {pair,ok};
-        }catch{return {pair,ok:false};}
+        }catch(error){
+          if(error?.code==='ROOM_NOT_FOUND'){
+            removeStaleRoomFromSync(pair.roomId);
+            return {pair,ok:true,removed:true};
+          }
+          return {pair,ok:false};
+        }
       }));
       refreshed=results.some((result)=>result.ok)||refreshed;
       pending=results.filter((result)=>!result.ok).map((result)=>result.pair);
@@ -728,7 +760,7 @@ async function refreshKnownChatsUnread(){
 async function syncRoomAfterReconnect(roomId,deviceId){
   let known=Number(lastKnownMessageIdByRoom.get(roomId)||0);
   let snapshot=null;
-  try{snapshot=await fetchRoomMessagesPage(roomId,deviceId,{limit:String(CHAT_HISTORY_PAGE_SIZE)},{trackUnread:true});}catch{return false;}
+  try{snapshot=await fetchRoomMessagesPage(roomId,deviceId,{limit:String(CHAT_HISTORY_PAGE_SIZE)},{trackUnread:true});}catch(error){if(error?.code==='ROOM_NOT_FOUND'){removeStaleRoomFromSync(roomId);return true;}return false;}
   const snapshotMessages=snapshot.messages;
   const receivedIds=[];
   for(const message of snapshotMessages){
@@ -754,7 +786,7 @@ async function syncRoomAfterReconnect(roomId,deviceId){
   let syncComplete=true;
   for(let pageIndex=0;pageIndex<100;pageIndex+=1){
     let page;
-    try{page=await fetchRoomMessagesPage(roomId,deviceId,{after:String(cursor)});}catch{syncComplete=false;break;}
+    try{page=await fetchRoomMessagesPage(roomId,deviceId,{after:String(cursor)});}catch(error){if(error?.code==='ROOM_NOT_FOUND'){removeStaleRoomFromSync(roomId);return true;}syncComplete=false;break;}
     if(!page.messages.length)break;
     for(const message of page.messages)await processStableIncomingMessage(roomId,message,deviceId,{notify:false});
     const ids=page.messages.map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>cursor);
