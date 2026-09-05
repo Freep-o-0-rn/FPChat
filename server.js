@@ -579,7 +579,7 @@ function broadcastUnreadState(room) {
   }
 }
 
-function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', ...payload }); }
+function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload }); }
 function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);
   if (!sockets) return false;
