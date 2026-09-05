@@ -253,7 +253,7 @@ async function sendPushForMessage({ roomId, messageId, roomPublicId, senderDevic
   let delivered = false;
   for (const sub of subs) {
     if (sub.device_id === senderDeviceId || sub.muted) continue;
-    if (hasVisibleSocketForDevice(sub.device_id, roomPublicId)) continue;
+    if (hasVisibleRoomSocketForDevice(sub.device_id, roomPublicId)) continue;
     const claim = q.claimPushDelivery.run(roomId, safeMessageId, sub.device_id);
     if (!claim.changes) continue;
     const privateBody = sub.hide_sender ? 'Новое сообщение' : `${senderName}: новое сообщение`;
@@ -580,13 +580,40 @@ function broadcastUnreadState(room) {
 }
 
 function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', ...payload }); }
-function hasVisibleSocketForDevice(deviceId, roomPublicId) {
+function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);
   if (!sockets) return false;
   for (const client of sockets) {
     if (client.readyState === WebSocket.OPEN && client.visible === true && client.activeRoomId === roomPublicId) return true;
   }
   return false;
+}
+
+function hasVisibleSocketForDevice(deviceId) {
+  const sockets = socketsByDevice.get(deviceId);
+  if (!sockets) return false;
+  for (const client of sockets) {
+    if (client.readyState === WebSocket.OPEN && client.visible === true) return true;
+  }
+  return false;
+}
+
+function syncDevicePresence(deviceId) {
+  if (!deviceId) return;
+  const online = hasVisibleSocketForDevice(deviceId);
+  const participantRooms = q.listParticipantRoomsByDevice.all(deviceId);
+  for (const participant of participantRooms) {
+    if (Boolean(participant.online) === online) continue;
+    if (online) q.setParticipantOnline.run(participant.room_id, deviceId);
+    else q.setParticipantOffline.run(participant.room_id, deviceId);
+    const updated = q.findParticipant.get(participant.room_id, deviceId);
+    broadcastPresenceUpdate(participant.room_public_id, {
+      deviceId: participant.device_id,
+      displayName: participant.display_name,
+      online,
+      lastSeenAt: toIsoUtc(updated?.last_seen_at)
+    });
+  }
 }
 
 function unregisterWsFromAllDevices(ws) {
@@ -596,18 +623,6 @@ function unregisterWsFromAllDevices(ws) {
     if (!bucket) continue;
     bucket.delete(ws);
     if (bucket.size === 0) socketsByDevice.delete(boundDeviceId);
-  }
-}
-
-function broadcastPresenceOfflineToParticipantRooms(deviceId) {
-  const participantRooms = q.listParticipantRoomsByDevice.all(deviceId);
-  for (const participant of participantRooms) {
-    broadcastPresenceUpdate(participant.room_public_id, {
-      deviceId: participant.device_id,
-      displayName: participant.display_name,
-      online: false,
-      lastSeenAt: toIsoUtc(participant.last_seen_at)
-    });
   }
 }
 
@@ -796,16 +811,8 @@ wss.on('connection', (ws, req) => {
   for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id);
   getDeviceSockets(deviceId).add(ws);
 
-  for (const participant of participantRooms) {
-    q.setParticipantOnline.run(participant.room_id, ws.deviceId);
-    broadcastPresenceUpdate(participant.room_public_id, {
-      deviceId: participant.device_id,
-      displayName: participant.display_name,
-      online: true,
-      lastSeenAt: toIsoUtc(participant.last_seen_at)
-    });
-    sendUnreadStateToDevice(participant.room_public_id, ws.deviceId);
-  }
+  for (const participant of participantRooms) sendUnreadStateToDevice(participant.room_public_id, ws.deviceId);
+  syncDevicePresence(ws.deviceId);
 
   ws.on('message', async (raw) => {
     let payload;
@@ -815,6 +822,7 @@ wss.on('connection', (ws, req) => {
     if (payload.type === 'client:state') {
       ws.activeRoomId = typeof payload.activeRoomId === 'string' ? payload.activeRoomId.slice(0, 64) : null;
       ws.visible = payload.visible === true;
+      syncDevicePresence(ws.deviceId);
       return;
     }
 
@@ -914,11 +922,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     unregisterWsFromAllDevices(ws);
-    const stillOnline = socketsByDevice.has(ws.deviceId) && [...socketsByDevice.get(ws.deviceId)].some((sock) => sock.readyState === WebSocket.OPEN);
-    if (stillOnline) return;
-    const participantRoomsOnClose = q.listParticipantRoomsByDevice.all(ws.deviceId);
-    for (const participant of participantRoomsOnClose) q.setParticipantOffline.run(participant.room_id, ws.deviceId);
-    broadcastPresenceOfflineToParticipantRooms(ws.deviceId);
+    syncDevicePresence(ws.deviceId);
   });
 });
 

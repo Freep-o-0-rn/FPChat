@@ -116,7 +116,10 @@ function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.clas
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.appRoot?.setAttribute('data-pane','content');}
 function leaveActiveChat(){if(!state.roomId)return;const wasOpening=scrollCoordinator.isOpening();if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}if(!wasOpening)void saveViewStateNow({keepalive:true});scrollCoordinator.stop();state.roomId=null;activeChatDeviceId=null;activeChatHistory=null;chatViewReadyRoomId=null;sendClientState();}
-function setView(v){if(state.roomId)leaveActiveChat();state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void reconcileKnownChats(deviceId);return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
+function getSessionDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(current)return current;return getLocalRoomDevicePairs()[0]?.deviceId||'';}
+function hasKnownSessionRooms(){return Boolean(state.roomId||getLocalRoomDevicePairs().length);}
+function startAppSessionSync(){if(document.visibilityState!=='visible'||!hasKnownSessionRooms())return;const deviceId=getSessionDeviceId();if(deviceId)void reconcileKnownChats(deviceId);}
+function setView(v){if(state.roomId)leaveActiveChat();state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); startAppSessionSync();return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
 function isBackGestureBlockedTarget(target){
   if(!target)return true;
@@ -182,7 +185,7 @@ function setupChatBackSwipe(chatView){
   chatView.addEventListener('touchend',endSwipe,{passive:true});
   chatView.addEventListener('touchcancel',endSwipe,{passive:true});
 }
-function showChatsList(){leaveActiveChat();closeMobileMenu();els.appRoot?.classList.remove('mobile-chat');renderChats();setView('chats');sendClientState();const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(deviceId&&state.chats.length)void ensureStableWsConnected(deviceId);}
+function showChatsList(){leaveActiveChat();closeMobileMenu();els.appRoot?.classList.remove('mobile-chat');renderChats();setView('chats');sendClientState();}
 function removeBrokenChat(roomId){
   state.chats=state.chats.filter(c=>c.roomId!==roomId);
   if(state.roomId===roomId){
@@ -690,12 +693,12 @@ async function syncRoomAfterReconnect(roomId,deviceId){
 }
 async function syncAllRoomsAfterReconnect(deviceId){
   if(stableWsSyncPromise)return stableWsSyncPromise;
-  const rooms=[...new Set([...state.chats.map((chat)=>chat.roomId),state.roomId].filter(Boolean))];
+  const rooms=[...new Set([...state.chats.map((chat)=>chat.roomId),...getLocalRoomDevicePairs().map((pair)=>pair.roomId),state.roomId].filter(Boolean))];
   stableWsSyncPromise=Promise.all(rooms.map(async(roomId)=>{try{return await syncRoomAfterReconnect(roomId,STORAGE.get(STORAGE.roomState(roomId))?.deviceId||deviceId);}catch{return false;}})).then((results)=>results.every(Boolean)).finally(()=>{stableWsSyncPromise=null;});
   return stableWsSyncPromise;
 }
 async function reconcileKnownChats(deviceId){
-  if(!deviceId)return false;
+  if(!deviceId||document.visibilityState!=='visible'||!hasKnownSessionRooms())return false;
   updateAppSyncWatchdog();
   const unreadPromise=refreshKnownChatsUnread().catch(()=>false);
   const wsPromise=ensureStableWsConnected(deviceId).catch(()=>false);
@@ -709,7 +712,7 @@ async function reconcileKnownChats(deviceId){
   if(unreadComplete)return true;
   return refreshKnownChatsUnread().catch(()=>false);
 }
-function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&(state.chats.length||state.roomId));}
+function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&hasKnownSessionRooms());}
 function clearStableWsReconnect(){if(stableWsReconnectTimer){clearTimeout(stableWsReconnectTimer);stableWsReconnectTimer=null;}}
 function scheduleStableWsReconnect(){
   if(stableWsReconnectTimer||stableWsManualClose||!stableWsShouldRun()||navigator.onLine===false)return;
@@ -717,11 +720,11 @@ function scheduleStableWsReconnect(){
   const delay=Math.min(15000,500*2**Math.min(attempt,5))+Math.floor(Math.random()*250);
   stableWsReconnectTimer=setTimeout(()=>{stableWsReconnectTimer=null;if(stableWsDesiredDeviceId)void ensureStableWsConnected(stableWsDesiredDeviceId);},delay);
 }
-function shouldRunAppSyncWatchdog(){return document.visibilityState==='visible'&&Boolean(state.chats.length||state.roomId);}
+function shouldRunAppSyncWatchdog(){return document.visibilityState==='visible'&&hasKnownSessionRooms();}
 function stopAppSyncWatchdog(){if(appSyncWatchdogTimer){clearInterval(appSyncWatchdogTimer);appSyncWatchdogTimer=null;}}
 function runAppSyncWatchdog(){
   if(!shouldRunAppSyncWatchdog()){stopAppSyncWatchdog();return;}
-  const deviceId=String(localStorage.getItem(STORAGE.deviceId)||activeChatDeviceId||'').trim();
+  const deviceId=getSessionDeviceId()||String(activeChatDeviceId||'').trim();
   if(!deviceId){stopAppSyncWatchdog();return;}
   if(navigator.onLine===false){setLocalConnectionState('disconnected');return;}
   const ws=state.ws;
@@ -734,10 +737,11 @@ function updateAppSyncWatchdog(){
   if(!shouldRunAppSyncWatchdog()){stopAppSyncWatchdog();return;}
   if(!appSyncWatchdogTimer)appSyncWatchdogTimer=setInterval(runAppSyncWatchdog,APP_SYNC_WATCHDOG_INTERVAL_MS);
 }
-function sendStableClientState(){
+function sendStableClientState(visibleOverride=null){
   const ws=state.ws;
   if(!ws||ws.readyState!==WebSocket.OPEN)return false;
-  try{ws.send(JSON.stringify({type:'client:state',activeRoomId:state.roomId||null,visible:document.visibilityState==='visible'}));return true;}catch{return false;}
+  const visible=visibleOverride===null?document.visibilityState==='visible':Boolean(visibleOverride);
+  try{ws.send(JSON.stringify({type:'client:state',activeRoomId:state.roomId||null,visible}));return true;}catch{return false;}
 }
 function handleStableWsPayload(payload,deviceId){
   if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payload)||handleWsMessageStatus(payload)||handleWsUnreadState(payload))return Promise.resolve();
@@ -784,11 +788,11 @@ function ensureStableWsConnected(deviceId,timeoutMs=8000){
   setLocalConnectionState('connecting');
   return connectStableWs(safeDeviceId,timeoutMs);
 }
-function sendClientState(){return sendStableClientState();}
+function sendClientState(visibleOverride=null){return sendStableClientState(visibleOverride);}
 function ensureWsConnected(deviceId,timeoutMs=8000){return ensureStableWsConnected(deviceId,timeoutMs);}
 function connectWs(deviceId){return ensureStableWsConnected(deviceId);}
-window.addEventListener('online',()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(!deviceId||(!state.chats.length&&!state.roomId))return;void reconcileKnownChats(deviceId);});
-window.addEventListener('offline',()=>{if(state.roomId)setLocalConnectionState('disconnected');});
+window.addEventListener('online',()=>{startAppSessionSync();});
+window.addEventListener('offline',()=>{if(hasKnownSessionRooms())setLocalConnectionState('disconnected');});
 
 function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){if(state.ws)state.ws.close();state.ws=null;state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
 function hideMenu(){els.context.classList.add('hidden')} document.addEventListener('click',hideMenu);
@@ -939,11 +943,11 @@ document.addEventListener('touchmove',(e)=>{
 },{passive:true});
 document.addEventListener('touchend',()=>{edgeSwipe.tracking=false;},{passive:true});
 document.addEventListener('touchcancel',()=>{edgeSwipe.tracking=false;},{passive:true});
-const restoreWsOnResume=()=>{const deviceId=String(localStorage.getItem(STORAGE.deviceId)||activeChatDeviceId||'').trim();if(!deviceId||(!state.chats.length&&!state.roomId))return;void reconcileKnownChats(deviceId);};const handleAppResume=()=>{restoreWsOnResume();checkAppVersionOnEntry();};
+const restoreWsOnResume=()=>{if(document.visibilityState!=='visible')return;startAppSessionSync();};const handleAppResume=()=>{sendClientState(true);restoreWsOnResume();checkAppVersionOnEntry();};
 window.addEventListener('focus',handleAppResume);
-window.addEventListener('beforeunload',saveViewStateForLifecycle);
-window.addEventListener('pagehide',saveViewStateForLifecycle);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){stopAppSyncWatchdog();saveViewStateForLifecycle();}sendClientState();if(document.visibilityState==='visible'){handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();}});window.addEventListener('focus',sendClientState);window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState();flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
+window.addEventListener('beforeunload',()=>{sendClientState(false);saveViewStateForLifecycle();});
+window.addEventListener('pagehide',()=>{sendClientState(false);saveViewStateForLifecycle();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){stopAppSyncWatchdog();saveViewStateForLifecycle();sendClientState(false);return;}sendClientState(true);handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();});window.addEventListener('focus',()=>sendClientState(true));window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState(true);flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
 
 window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
 
@@ -1103,7 +1107,7 @@ async function syncRoomPushSubscription(roomId,{requestPermission=false,showErro
     return false;
   }
 }
-function getLocalRoomDevicePairs(){const unique=new Map();for(const chat of state.chats){const roomId=chat?.roomId;if(!roomId)continue;const st=STORAGE.get(STORAGE.roomState(roomId));const deviceId=st?.deviceId;if(!deviceId)continue;unique.set(`${roomId}::${deviceId}`,{roomId,deviceId});}return [...unique.values()];}
+function getLocalRoomDevicePairs(){const unique=new Map();const add=(roomId,stored)=>{const safeRoomId=String(roomId||'').trim();const deviceId=String(stored?.deviceId||'').trim();if(!safeRoomId||!deviceId)return;unique.set(`${safeRoomId}::${deviceId}`,{roomId:safeRoomId,deviceId});};const read=(key)=>{try{return STORAGE.get(key);}catch{return null;}};for(const chat of state.chats){const roomId=chat?.roomId;if(roomId)add(roomId,read(STORAGE.roomState(roomId)));}const prefix='fpchat:room:';for(let index=0;index<localStorage.length;index+=1){const key=localStorage.key(index);if(!key||!key.startsWith(prefix))continue;add(key.slice(prefix.length),read(key));}return [...unique.values()];}
 async function syncAllPushSubscriptions({requestPermission=false,showErrors=false,subscription=null}={}){
   if(!state.notif.enabled)return false;
   const pushSubscription=subscription||await ensurePushSubscription({requestPermission,showErrors});
