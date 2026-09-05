@@ -955,4 +955,411 @@ const secret=crypto.randomUUID().replace(/-/g,'')+crypto.randomUUID().replace(/-
 const creatorDeviceId=getOrCreateDeviceId();const res=await fetch('/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId:creatorDeviceId,roomSecret:secret,recoverySalt:recSalt,recoveryVerifier:b64.encode(dig),recoverySecretIv:b64.encode(iv),recoverySecretCiphertext:b64.encode(c)})}); const data=await res.json(); STORAGE.set(STORAGE.roomState(data.publicId),{secret,deviceId:creatorDeviceId,recoveryCode:rec,inviteLink:data.inviteLink,inviteExpiresAt:data.inviteExpiresAt}); upsertChat(data.publicId,{}); if(state.notif.enabled)syncRoomPushSubscription(data.publicId).catch(()=>{});
 const inv=`${data.inviteLink}`; document.getElementById('createOut').innerHTML=`<label>Invite-ссылка</label><textarea readonly id='inv'>${inv}</textarea><p class='sys'>Важно: invite-ссылка действует 24 часа и только один раз. Если второй участник не присоединится за это время, чат будет автоматически удалён.</p><div class='panel-actions'><button id='copyInv' class='btn btn-secondary'>Скопировать ссылку</button><button id='shareInv' class='btn btn-secondary'>Поделиться</button></div><label>Recovery-код</label><textarea readonly id='rec'>${rec}</textarea><p class='sys'>Recovery-код помогает восстановить чат только на устройстве участника. Если очистить данные приложения или браузера, восстановление может быть невозможно. Храните recovery-код как пароль.</p><div class='panel-actions'><button id='saveRec' class='btn btn-secondary'>Сохранить recovery-код</button><button id='goChat' class='btn btn-primary'>Перейти в чат</button></div>`; document.getElementById('copyInv').onclick=()=>navigator.clipboard.writeText(inv); document.getElementById('shareInv').onclick=async()=>{if(navigator.share){try{await navigator.share({text:inv});}catch{}} else navigator.clipboard.writeText(inv)}; document.getElementById('saveRec').onclick=()=>{navigator.clipboard.writeText(rec);downloadRecoveryCode(rec);}; document.getElementById('goChat').onclick=()=>openChat(data.publicId);}catch(e){alert('Не удалось создать чат');createBtn.disabled=false;createBtn.classList.remove('btn-loading');createBtn.textContent=baseText;}}
 ;}
-function renderRestore(){els.content.innerHTML=`<div class='panel'><h2>Восстановить</h2><label>Ваш ник</label><input id="nickRestore" value="${safeText(state.nick)}"/><label>Recovery-код</label><input id='recCode'/><div class='panel-actions'><button id='restoreBtn' class='btn btn-primary'>Восстановить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div><div id='restoreOut'></div></div>`; document.getEl
+function renderRestore(){els.content.innerHTML=`<div class='panel'><h2>Восстановить</h2><label>Ваш ник</label><input id="nickRestore" value="${safeText(state.nick)}"/><label>Recovery-код</label><input id='recCode'/><div class='panel-actions'><button id='restoreBtn' class='btn btn-primary'>Восстановить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div><div id='restoreOut'></div></div>`; document.getElementById('backBtn').onclick=()=>setView('chats'); document.getElementById('restoreBtn').onclick=async()=>{const restoreBtn=document.getElementById('restoreBtn');const baseText='Восстановить';restoreBtn.disabled=true;restoreBtn.classList.add('btn-loading');restoreBtn.textContent='Восстановление...';try{const recoveryCode=document.getElementById('recCode').value.trim().toUpperCase(); state.nick=document.getElementById('nickRestore').value.trim()||state.nick; localStorage.setItem(STORAGE.nick,state.nick); const deviceIds=getKnownDeviceIds(); if(!deviceIds.length) throw new Error('Восстановление доступно только с устройства участника чата.'); const res=await fetch('/api/recover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recoveryCode,deviceIds})}); if(!res.ok){const msg=res.status===403?'Восстановление доступно только с устройства участника чата.':'Ошибка восстановления'; throw new Error(msg);} const d=await res.json(); if(!d.deviceId) throw new Error('Восстановление невозможно: отсутствует deviceId в recovery.'); const roomId=d.publicId; const mat=await crypto.subtle.importKey('raw',new TextEncoder().encode(recoveryCode),'PBKDF2',false,['deriveKey']); const rk=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64.decode(d.recoverySalt),iterations:250000,hash:'SHA-256'},mat,{name:'AES-GCM',length:256},false,['decrypt']); const pl=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(d.recoverySecretIv)},rk,b64.decode(d.recoverySecretCiphertext)); STORAGE.set(STORAGE.roomState(roomId),{secret:new TextDecoder().decode(pl),deviceId:d.deviceId,recoveryCode}); upsertChat(roomId,{}); if(state.notif.enabled)syncRoomPushSubscription(roomId).catch(()=>{}); document.getElementById('restoreOut').innerHTML=`<p>Чат восстановлен</p><button id='goRest' class='btn btn-primary'>Перейти в чат</button>`; document.getElementById('goRest').onclick=()=>openChat(roomId);}catch(e){alert(e.message||'Ошибка восстановления');restoreBtn.disabled=false;restoreBtn.classList.remove('btn-loading');restoreBtn.textContent=baseText;}};}
+async function fetchVersionInfo(){
+  try{
+    const response=await fetch('/version.json',{cache:'no-store'});
+    if(!response.ok)return 'Версия: —';
+    const payload=await response.json();
+    const version=typeof payload?.version==='string'?payload.version.trim():'';
+    const build=Number(payload?.build);
+    if(version&&Number.isFinite(build))return `Версия: ${version} / build ${build}`;
+    if(version)return `Версия: ${version}`;
+    return 'Версия: —';
+  }catch{
+    return 'Версия: —';
+  }
+}
+async function refreshSettingsVersionLine(){
+  settingsVersionInfo=await fetchVersionInfo();
+  const el=document.getElementById('settingsVersion');
+  if(el)el.textContent=settingsVersionInfo;
+}
+
+function isStandalonePwa(){
+  return window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone===true;
+}
+function isIosDevice(){
+  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+function getInstallHelpText(){
+  if(isStandalonePwa()){
+    return 'FPChat уже установлен и запущен как приложение.';
+  }
+  if(deferredInstallPrompt){
+    return 'Можно установить FPChat как отдельное приложение.';
+  }
+  if(isIosDevice()){
+    return 'Для установки на iPhone/iPad откройте меню «Поделиться» в Safari и выберите «На экран Домой».';
+  }
+  return 'Если кнопка установки недоступна, откройте меню браузера и выберите «Установить приложение» или «Добавить на главный экран».';
+}
+function updateInstallUi(){
+  const help=document.getElementById('installHelpText');
+  const btn=document.getElementById('installPwaBtn');
+  if(help){
+    help.textContent=getInstallHelpText();
+  }
+  if(!btn)return;
+  if(isStandalonePwa()){
+    btn.textContent='Приложение установлено';
+    btn.disabled=true;
+    return;
+  }
+  btn.textContent=deferredInstallPrompt?'Установить FPChat':'Как установить FPChat';
+  btn.disabled=false;
+}
+async function handleInstallClick(){
+  if(isStandalonePwa()){
+    alert('FPChat уже установлен.');
+    return;
+  }
+  if(!deferredInstallPrompt){
+    alert(getInstallHelpText());
+    return;
+  }
+  try{
+    deferredInstallPrompt.prompt();
+    const choice=await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt=null;
+    if(typeof updateInstallUi==='function'){
+      updateInstallUi();
+    }
+    if(choice?.outcome==='accepted'){
+      alert('FPChat устанавливается.');
+    }
+  }catch{
+    alert('Не удалось открыть установку. Попробуйте установить через меню браузера.');
+  }
+}
+function renderSettings(){els.content.innerHTML=`<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/> Включить уведомления</label><label><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/> Показывать текст сообщения</label><label><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/> Скрывать отправителя</label><label><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/> Звук нового сообщения</label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='save' class='btn btn-primary'>Сохранить</button><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;void refreshSettingsVersionLine(); document.getElementById('backBtn').onclick=()=>setView('chats'); const t=document.getElementById('theme'); t.value=localStorage.getItem(STORAGE.theme)||'auto'; t.onchange=()=>applyTheme(t.value); const toggle=()=>updateNotificationOptionControls(); document.getElementById('nEnabled').onchange=async()=>{if(document.getElementById('nEnabled').checked){await ensurePushSubscription({requestPermission:true,showErrors:true});}toggle();renderNotificationPermissionStatus();}; toggle();renderNotificationPermissionStatus();bindClick('requestNotificationsBtn',enableNotificationsFromSettings);bindClick('installPwaBtn',handleInstallClick);updateInstallUi(); document.getElementById('save').onclick=async()=>{state.nick=document.getElementById('nick').value.trim()||state.nick;localStorage.setItem(STORAGE.nick,state.nick);state.notif=normalizeNotificationSettings({enabled:document.getElementById('nEnabled').checked,showText:document.getElementById('nText').checked,hideSender:document.getElementById('nSender').checked,sound:document.getElementById('nSound').checked});STORAGE.set(STORAGE.notif,state.notif);let pushReady=true;if(!state.notif.enabled){await unsubscribeAllPushDevices();}else{const subscription=await ensurePushSubscription({requestPermission:true,showErrors:true});if(subscription){await syncAllPushSubscriptions({subscription});await updateAllPushSettings();}else pushReady=false;}renderNotificationPermissionStatus();alert(pushReady?'Сохранено':'Сохранено. Уведомления включены в FPChat, но разрешение браузера или push-подписка не выданы.');};}
+function applyTheme(v){localStorage.setItem(STORAGE.theme,v);const root=document.documentElement;if(v==='auto'){root.dataset.theme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';} else root.dataset.theme=v;}
+function buildNotificationText(sender,text,notif=state.notif){if(notif.showText){return notif.hideSender?text:`${sender}: ${text}`;}return notif.hideSender?'Новое сообщение':`${sender}: новое сообщение`;}
+let notificationAudio=null;
+function shouldShowInAppToast({roomId,mine}){if(mine)return false;if(!state.notif.enabled)return false;if(state.roomMute[roomId])return false;if(document.visibilityState!=='visible')return false;if(roomId===state.roomId)return false;return true;}
+function shouldPlayNotificationSound({roomId,mine}){if(mine)return false;if(!state.notif.enabled)return false;if(!state.notif.sound)return false;if(state.roomMute[roomId])return false;if(document.visibilityState!=='visible')return false;if(roomId===state.roomId)return false;return true;}
+function playNotificationSoundSafe(){if(!notificationAudio)notificationAudio=new Audio('data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YTAAAAABAQEB');notificationAudio.currentTime=0;notificationAudio.play().catch(()=>{});}
+function playNotificationSound({roomId,mine}){if(!shouldPlayNotificationSound({roomId,mine}))return;playNotificationSoundSafe();}
+function ensureToastRoot(){let root=document.getElementById('toastRoot');if(root)return root;root=document.createElement('div');root.id='toastRoot';document.body.appendChild(root);return root;}
+function showInAppToast({roomId,roomName,sender,text}){if(!state.notif.enabled||state.roomMute[roomId])return;const visible=document.visibilityState==='visible';if(visible&&state.roomId===roomId&&isMessagesAtBottom())return;const root=ensureToastRoot();while(root.children.length>=3){root.removeChild(root.firstElementChild);}const toast=document.createElement('button');toast.className='fp-toast';const t=document.createElement('strong');t.textContent=roomName||`Комната ${shortId(roomId)}`;const b=document.createElement('div');b.textContent=buildNotificationText(sender,text);toast.appendChild(t);toast.appendChild(b);toast.onclick=()=>{openChat(roomId);toast.remove();};root.appendChild(toast);setTimeout(()=>toast.remove(),4000);}
+function notifyIncoming(sender,text,roomId,mine=false){if(shouldShowInAppToast({roomId,mine})){showInAppToast({roomId,roomName:state.roomNames[roomId],sender,text});}playNotificationSound({roomId,mine});}
+
+function bindClick(id,handler){const el=document.getElementById(id); if(el) el.onclick=handler; return el;}
+window.addEventListener('beforeinstallprompt',(event)=>{
+  event.preventDefault();
+  deferredInstallPrompt=event;
+  if(typeof updateInstallUi==='function'){
+    updateInstallUi();
+  }
+});
+window.addEventListener('appinstalled',()=>{
+  deferredInstallPrompt=null;
+  localStorage.setItem('fpchat:pwa-installed','1');
+  if(typeof updateInstallUi==='function'){
+    updateInstallUi();
+  }
+});
+bindClick('emptyCreateBtn',()=>setView('create'));
+bindClick('emptyRestoreBtn',()=>setView('restore'));
+bindClick('emptyJoinBtn',()=>setView('join'));
+bindClick('mobileMenuBtn',toggleMobileMenu);
+bindClick('sidebarCloseBtn',closeMobileMenu);
+els.sidebarOverlay?.addEventListener('click',closeMobileMenu);
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape')closeMobileMenu();});
+window.addEventListener('resize',()=>{if(!isMobileViewport())closeMobileMenu();});
+document.addEventListener('touchstart',(e)=>{
+  if(!isMobileViewport())return;
+  if(els.sidebar?.classList.contains('open'))return;
+  if(!els.context?.classList.contains('hidden'))return;
+  const touch=e.touches?.[0];
+  if(!touch)return;
+  if(touch.clientX>32)return;
+  edgeSwipe={active:true,startX:touch.clientX,startY:touch.clientY,tracking:true};
+},{passive:true});
+document.addEventListener('touchmove',(e)=>{
+  if(!edgeSwipe.tracking)return;
+  const touch=e.touches?.[0];
+  if(!touch)return;
+  const dx=touch.clientX-edgeSwipe.startX;
+  const dy=touch.clientY-edgeSwipe.startY;
+  if(Math.abs(dy)>Math.abs(dx)&&Math.abs(dy)>16){
+    edgeSwipe.tracking=false;
+    return;
+  }
+  if(dx>70&&Math.abs(dy)<40){
+    openMobileMenu();
+    edgeSwipe.tracking=false;
+  }
+},{passive:true});
+document.addEventListener('touchend',()=>{edgeSwipe.tracking=false;},{passive:true});
+document.addEventListener('touchcancel',()=>{edgeSwipe.tracking=false;},{passive:true});
+const restoreWsOnResume=()=>{if(document.visibilityState!=='visible')return;startAppSessionSync();};const handleAppResume=()=>{sendClientState(true);restoreWsOnResume();checkAppVersionOnEntry();};
+window.addEventListener('focus',handleAppResume);
+window.addEventListener('beforeunload',()=>{sendClientState(false);saveViewStateForLifecycle();});
+window.addEventListener('pagehide',()=>{sendClientState(false);saveViewStateForLifecycle();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){stopAppSyncWatchdog();saveViewStateForLifecycle();sendClientState(false);return;}sendClientState(true);handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();});window.addEventListener('focus',()=>sendClientState(true));window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState(true);flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
+
+window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
+
+document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.dataset.view); closeMobileMenu();}); els.search.oninput=renderChats;
+document.addEventListener('click',(event)=>{const target=event.target?.closest?.('.chat-row,#createBtn,#joinBtn,#pasteJoinBtn,#restoreBtn');if(target)void maybeRequestNotificationsFromUserGesture();},true);
+pushAppHistoryState();
+(async()=>{
+  await registerServiceWorker();
+  const updateStarted=await checkAppVersionOnEntry();
+  if(updateStarted)return;
+  void getPushConfig().then(()=>{if(document.getElementById('notificationPermissionStatus'))renderNotificationPermissionStatus();});
+  void initializeNotifications();
+  applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
+  const inv=parseInvite();
+  const chat=parseChat();
+
+  if(inv){
+    if(inv.error==='legacy'){alert('Старая invite-ссылка больше не поддерживается. Попросите новую ссылку.');hideBootSplash();return;}
+    await joinByInviteText(`${location.origin}/i/${inv.inviteCode}`);
+    hideBootSplash();
+    return;
+  }
+
+  if(chat){
+    const hasAccess=STORAGE.get(STORAGE.roomState(chat));
+    if(hasAccess){
+      upsertChat(chat,{});
+      await openChat(chat);
+      hideBootSplash();
+      return;
+    }
+    els.content.innerHTML=`<div class='panel'><h2>Нет локального доступа к этому чату</h2><p>Восстановите доступ по recovery-коду или войдите по invite-ссылке</p><div class='panel-actions'><button id='goRestore' class='btn btn-primary'>Восстановить</button><button id='goJoinFromChat' class='btn btn-secondary'>Присоединиться по invite-ссылке</button><button id='goChatsList' class='btn btn-secondary'>К списку чатов</button></div></div>`;
+    bindClick('goRestore',()=>setView('restore'));bindClick('goJoinFromChat',()=>setView('join'));bindClick('goChatsList',()=>showChatsList());
+    showContentPane();
+    hideBootSplash();
+    return;
+  }
+
+  showChatsList();
+  if(!els.appRoot?.dataset.pane) showListPane();
+  hideBootSplash();
+})();
+function urlB64ToUint8Array(base64String){const padding='='.repeat((4-base64String.length%4)%4);const base64=(base64String+padding).replace(/-/g,'+').replace(/_/g,'/');const rawData=atob(base64);return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));}
+async function registerServiceWorker(){if(!('serviceWorker' in navigator))return null;try{return await navigator.serviceWorker.register('/sw.js');}catch{return null;}}
+
+async function applyAppUpdate(){
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const reg of regs){
+        try{await reg.update();}catch{}
+      }
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map((key)=>caches.delete(key)));
+    }
+  }finally{
+    location.reload();
+  }
+}
+async function checkAppVersionOnEntry(){
+  if(appVersionCheckInFlight)return false;
+  appVersionCheckInFlight=true;
+  try{
+    const response=await fetch('/version.json',{cache:'no-store'});
+    if(!response.ok)return false;
+    const payload=await response.json();
+    const serverBuild=Number(payload?.build);
+    if(!Number.isFinite(serverBuild))return false;
+    const localBuildRaw=localStorage.getItem(APP_BUILD_KEY);
+    const localBuild=localBuildRaw===null?null:Number(localBuildRaw);
+    const isReloading=sessionStorage.getItem(APP_UPDATE_RELOADING_KEY)==='1';
+    if(localBuild===null||!Number.isFinite(localBuild)){
+      localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
+      return false;
+    }
+    if(serverBuild>localBuild){
+      localStorage.setItem(APP_BUILD_KEY,String(serverBuild));
+      sessionStorage.setItem(APP_UPDATE_RELOADING_KEY,'1');
+      setBootSplashText('Обновление приложения...','Применяем новую версию');
+      await applyAppUpdate();
+      return true;
+    }
+    if(serverBuild<=localBuild&&isReloading){
+      sessionStorage.removeItem(APP_UPDATE_RELOADING_KEY);
+    }
+  }catch{
+    return false;
+  }finally{
+    appVersionCheckInFlight=false;
+  }
+}
+let pushSetupInFlight=null;
+let pushConfigCache=null;
+let pushConfigPromise=null;
+function canUsePushNotifications(){return typeof navigator!=='undefined'&&'serviceWorker' in navigator&&typeof window!=='undefined'&&'PushManager' in window&&typeof Notification!=='undefined';}
+function getNotificationPermission(){return canUsePushNotifications()?Notification.permission:'unsupported';}
+async function getPushConfig(){
+  if(pushConfigCache)return pushConfigCache;
+  if(pushConfigPromise)return pushConfigPromise;
+  pushConfigPromise=fetch('/api/push/vapid-public-key',{cache:'no-store'}).then(async(response)=>{
+    if(!response.ok)return {enabled:false};
+    const payload=await response.json();
+    return payload?.enabled&&typeof payload.publicKey==='string'&&payload.publicKey?{enabled:true,publicKey:payload.publicKey}:{enabled:false};
+  }).catch(()=>({enabled:false})).then((config)=>{pushConfigCache=config;return config;}).finally(()=>{pushConfigPromise=null;});
+  return pushConfigPromise;
+}
+async function ensurePushSubscription({requestPermission=false,showErrors=false}={}){
+  if(pushSetupInFlight)return pushSetupInFlight;
+  const run=async()=>{
+    const fail=(message)=>{if(showErrors&&message)alert(message);return null;};
+    if(!canUsePushNotifications())return fail('Push-уведомления недоступны в этом браузере или на этом устройстве.');
+    if(pushConfigCache&&!pushConfigCache.enabled)return fail('Push-уведомления сейчас недоступны на сервере.');
+    let permission=Notification.permission;
+    if(permission==='denied')return fail('Уведомления запрещены браузером. Разрешите их для сайта в настройках браузера.');
+    if(permission==='default'){
+      if(!requestPermission)return null;
+      try{
+        permission=await Notification.requestPermission();
+      }catch{
+        return fail('Не удалось запросить разрешение на уведомления.');
+      }
+      if(permission!=='granted')return fail(permission==='denied'?'Уведомления запрещены браузером. Разрешите их для сайта в настройках браузера.':'Разрешение на уведомления не предоставлено.');
+    }
+    if(permission!=='granted')return null;
+    const cfg=await getPushConfig();
+    if(!cfg.enabled||!cfg.publicKey)return fail('Push-уведомления сейчас недоступны на сервере.');
+    try{
+      const registration=await navigator.serviceWorker.ready;
+      let subscription=await registration.pushManager.getSubscription();
+      if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8Array(cfg.publicKey)});
+      return subscription;
+    }catch(error){
+      console.warn('Push subscription failed',error);
+      return fail('Не удалось включить push-уведомления. Попробуйте ещё раз.');
+    }
+  };
+  const pending=run();
+  pushSetupInFlight=pending;
+  try{return await pending;}finally{if(pushSetupInFlight===pending)pushSetupInFlight=null;}
+}
+function serializePushSubscription(subscription){if(!subscription)return null;try{return typeof subscription.toJSON==='function'?subscription.toJSON():subscription;}catch{return null;}}
+async function syncRoomPushSubscription(roomId,{requestPermission=false,showErrors=false,subscription=null}={}){
+  if(!state.notif.enabled||state.roomMute[roomId])return false;
+  const persisted=STORAGE.get(STORAGE.roomState(roomId));
+  if(!persisted?.deviceId)return false;
+  const pushSubscription=subscription||await ensurePushSubscription({requestPermission,showErrors});
+  const serialized=serializePushSubscription(pushSubscription);
+  if(!serialized)return false;
+  try{
+    const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:persisted.deviceId,subscription:serialized,settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});
+    if(!response.ok&&showErrors)alert('Не удалось сохранить подписку на уведомления для этого чата.');
+    return response.ok;
+  }catch{
+    if(showErrors)alert('Не удалось подключиться для сохранения уведомлений.');
+    return false;
+  }
+}
+function getLocalRoomDevicePairs(){const unique=new Map();const add=(roomId,stored)=>{const safeRoomId=String(roomId||'').trim();const deviceId=String(stored?.deviceId||'').trim();if(!safeRoomId||!deviceId)return;unique.set(`${safeRoomId}::${deviceId}`,{roomId:safeRoomId,deviceId});};const read=(key)=>{try{return STORAGE.get(key);}catch{return null;}};for(const chat of state.chats){const roomId=chat?.roomId;if(roomId)add(roomId,read(STORAGE.roomState(roomId)));}const prefix='fpchat:room:';for(let index=0;index<localStorage.length;index+=1){const key=localStorage.key(index);if(!key||!key.startsWith(prefix))continue;add(key.slice(prefix.length),read(key));}return [...unique.values()];}
+async function syncAllPushSubscriptions({requestPermission=false,showErrors=false,subscription=null}={}){
+  if(!state.notif.enabled)return false;
+  const pushSubscription=subscription||await ensurePushSubscription({requestPermission,showErrors});
+  const serialized=serializePushSubscription(pushSubscription);
+  if(!serialized)return false;
+  let synced=false;
+  for(const {roomId,deviceId} of getLocalRoomDevicePairs()){
+    if(state.roomMute[roomId])continue;
+    try{
+      const response=await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId,subscription:serialized,settings:{showText:state.notif.showText,hideSender:state.notif.hideSender}})});
+      if(response.ok)synced=true;
+      else if(showErrors)console.warn('Push subscription sync failed',roomId,response.status);
+    }catch(error){
+      if(showErrors)console.warn('Push subscription sync failed',roomId,error);
+    }
+  }
+  return synced;
+}
+async function updateAllPushSettings({showErrors=false}={}){
+  let updated=false;
+  for(const {roomId,deviceId} of getLocalRoomDevicePairs()){
+    try{
+      const response=await fetch('/api/push/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId,showText:state.notif.showText,hideSender:state.notif.hideSender})});
+      if(response.ok)updated=true;
+      else if(showErrors)console.warn('Push settings update failed',roomId,response.status);
+    }catch(error){
+      if(showErrors)console.warn('Push settings update failed',roomId,error);
+    }
+  }
+  return updated;
+}
+async function unsubscribeAllPushDevices(){
+  const deviceIds=[...new Set(getLocalRoomDevicePairs().map((p)=>p.deviceId))];
+  let unsubscribed=false;
+  for(const deviceId of deviceIds){
+    try{
+      const response=await fetch('/api/push/unsubscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId})});
+      if(response.ok)unsubscribed=true;
+    }catch{}
+  }
+  return unsubscribed;
+}
+function notificationsAppEnabled(){const checkbox=document.getElementById('nEnabled');return checkbox?checkbox.checked:state.notif.enabled;}
+function updateNotificationOptionControls(){const enabled=notificationsAppEnabled();['nText','nSender','nSound'].forEach((id)=>{const option=document.getElementById(id);if(option)option.disabled=!enabled;});}
+function notificationPermissionStatusText(){const appEnabled=notificationsAppEnabled();const permission=getNotificationPermission();if(!appEnabled)return'Уведомления выключены в настройках FPChat.';if(permission==='unsupported')return'Этот браузер или устройство не поддерживает push-уведомления.';if(pushConfigCache&&!pushConfigCache.enabled)return'Push-уведомления сейчас недоступны на сервере.';if(permission==='granted')return'Разрешение браузера выдано. Push будет работать для доступных чатов.';if(permission==='denied')return'Браузер заблокировал уведомления. Разрешите их в настройках сайта браузера.';return'Уведомления включены в FPChat. Разрешите их в браузере, чтобы получать сообщения вне открытой вкладки.';}
+function renderNotificationPermissionStatus(){const status=document.getElementById('notificationPermissionStatus');const button=document.getElementById('requestNotificationsBtn');const permission=getNotificationPermission();const appEnabled=notificationsAppEnabled();if(status)status.textContent=notificationPermissionStatusText();if(!button)return;button.classList.toggle('hidden',permission==='unsupported'||(permission==='granted'&&appEnabled));if(!appEnabled)button.textContent='Включить уведомления';else if(permission==='denied')button.textContent='Как разрешить уведомления';else button.textContent='Разрешить уведомления';}
+async function enableNotificationsFromSettings(){const checkbox=document.getElementById('nEnabled');if(checkbox)checkbox.checked=true;state.notif={...normalizeNotificationSettings(state.notif),enabled:true};STORAGE.set(STORAGE.notif,state.notif);updateNotificationOptionControls();const subscription=await ensurePushSubscription({requestPermission:true,showErrors:true});if(subscription){await syncAllPushSubscriptions({subscription});await updateAllPushSettings();}renderNotificationPermissionStatus();}
+async function initializeNotifications(){if(!state.notif.enabled||getNotificationPermission()!=='granted')return false;return syncAllPushSubscriptions();}
+async function maybeRequestNotificationsFromUserGesture({force=false}={}){
+  if(!state.notif.enabled||!canUsePushNotifications())return null;
+  const permission=Notification.permission;
+  if(permission==='granted')return null;
+  if(permission!=='default')return null;
+  if(!force&&localStorage.getItem(NOTIFICATION_PROMPTED_KEY)==='1')return null;
+  if(!force)localStorage.setItem(NOTIFICATION_PROMPTED_KEY,'1');
+  const subscription=await ensurePushSubscription({requestPermission:true});
+  if(subscription)await syncAllPushSubscriptions({subscription});
+  renderNotificationPermissionStatus();
+  return subscription;
+}
+async function updatePushBadge(){const unread=state.chats.reduce((a,c)=>a+(c.unread||0),0);if(unread===0&&navigator.clearAppBadge){try{await navigator.clearAppBadge();}catch{}}else if(unread>0&&navigator.setAppBadge){try{await navigator.setAppBadge(unread);}catch{}}}
+async function updateUnreadPresentation(){const unread=state.chats.reduce((a,c)=>a+(c.unread||0),0);document.title=unread>0?`(${unread}) FPChat`:'FPChat';await updatePushBadge();}
+if('serviceWorker' in navigator){navigator.serviceWorker.addEventListener('message',async(event)=>{const data=event.data||{};if(data.type!=='open-chat')return;const roomId=data.roomId;if(!roomId){showChatsList();return;}const hasRoom=STORAGE.get(STORAGE.roomState(roomId));if(hasRoom){upsertChat(roomId,{});await openChat(roomId);}else{showChatsList();alert('Нет локального доступа к этому чату. Восстановите доступ по recovery-коду или invite-ссылке.');}});}
+async function createImageBitmapFromFile(file){return new Promise((resolve,reject)=>{const img=new Image();const url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('image decode failed'));};img.src=url;});}
+function fitSize(w,h,maxSide){const scale=Math.min(1,maxSide/Math.max(w,h));return {w:Math.max(1,Math.round(w*scale)),h:Math.max(1,Math.round(h*scale))};}
+async function createImageThumbBlob(file){const img=await createImageBitmapFromFile(file);const d=fitSize(img.naturalWidth||img.width,img.naturalHeight||img.height,MEDIA_LIMITS.thumbMaxSide);const c=document.createElement('canvas');c.width=d.w;c.height=d.h;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,d.w,d.h);const blob=await new Promise(r=>c.toBlob(r,'image/webp',MEDIA_LIMITS.thumbQuality));return {thumbnailBlob:blob,width:img.naturalWidth||img.width,height:img.naturalHeight||img.height,durationSeconds:null};}
+async function compressImageFile(file){
+  const steps=[{maxSide:2560,quality:0.85},{maxSide:2200,quality:0.82},{maxSide:1920,quality:0.80}];
+  let source=file;
+  for(const step of steps){
+    const img=await createImageBitmapFromFile(source);
+    const d=fitSize(img.naturalWidth||img.width,img.naturalHeight||img.height,step.maxSide);
+    const c=document.createElement('canvas');c.width=d.w;c.height=d.h;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,d.w,d.h);
+    const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',step.quality));
+    if(!blob)continue;
+    source=new File([blob],file.name,{type:'image/jpeg',lastModified:file.lastModified||Date.now()});
+    if(source.size<=MEDIA_LIMITS.maxImageSize)return source;
+  }
+  alert('Не удалось сжать фото до 10 МБ без сильной потери качества.');
+  return null;
+}
+async function createVideoThumbBlob(file){
+  const objectUrl=URL.createObjectURL(file);
+  try{
+    const video=document.createElement('video');video.preload='metadata';video.src=objectUrl;video.muted=true;video.playsInline=true;
+    await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('video metadata failed'));});
+    const durationSeconds=Number.isFinite(video.duration)?video.duration:null;
+    const seekTime=durationSeconds&&durationSeconds>0.2?0.2:0;
+    await new Promise((resolve)=>{const done=()=>resolve();video.onseeked=done;try{video.currentTime=seekTime;}catch{resolve();}setTimeout(resolve,600);});
+    const d=fitSize(video.videoWidth||640,video.videoHeight||360,480);
+    const c=document.createElement('canvas');c.width=d.w;c.height=d.h;const ctx=c.getContext('2d');ctx.drawImage(video,0,0,d.w,d.h);
+    const thumbnailBlob=await new Promise(r=>c.toBlob(r,'image/webp',0.75));
+    return {thumbnailBlob:thumbnailBlob||new Blob([], {type:'image/webp'}),width:video.videoWidth||null,height:video.videoHeight||null,durationSeconds};
+  }finally{URL.revokeObjectURL(objectUrl);}
+}
+async function deleteUploadedPendingMedia(items){const persisted=STORAGE.get(STORAGE.roomState(state.roomId));if(!persisted?.deviceId||!state.roomId)return;const mediaIds=items.map((item)=>item.uploadedMedia?.id).filter(Boolean);if(!mediaIds.length)return;await fetch(`/api/rooms/${state.roomId}/media/pending`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,mediaIds})}).catch(()=>{});}
+async function openMediaPreviewFromFiles(rawFiles){let files=[...rawFiles];if(files.length>MEDIA_LIMITS.maxFiles){alert('Можно отправить максимум 10 файлов за раз.');files=files.slice(0,MEDIA_LIMITS.maxFiles);}const items=[];let total=0;for(const originalFile of files){let f=originalFile;const type=f.type||'';const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');const isVid=ALLOWED_VIDEO_TYPES.has(type)||type.startsWith('video/');if(!isImg&&!isVid)continue;if(isVid&&f.size>MEDIA_LIMITS.maxVideoSize){alert('Видео больше 100 МБ. Сожмите его перед отправкой.');continue;}if(isImg&&f.size>MEDIA_LIMITS.maxImageSize){const shouldCompress=confirm('Фото больше 10 МБ. Сжать перед отправкой?');if(!shouldCompress)continue;const compressed=await compressImageFile(f);if(!compressed)continue;f=compressed;}if(total+f.size>MEDIA_LIMITS.maxTotalSize)break;const objectUrl=URL.createObjectURL(f);let thumb;let meta={width:null,height:null,durationSeconds:null};if(isImg){const t=await createImageThumbBlob(f);thumb=t.thumbnailBlob;meta=t;}else{const t=await createVideoThumbBlob(f).catch(()=>null);if(t){thumb=t.thumbnailBlob;meta=t;}else{thumb=new Blob([],{type:'image/webp'});}}const thumbUrl=thumb.size?URL.createObjectURL(thumb):objectUrl;items.push({id:crypto.randomUUID(),file:f,kind:isVid?'video':'image',objectUrl,thumbnailBlob:thumb,thumbnailObjectUrl:thumbUrl,width:meta.width,height:meta.height,durationSeconds:meta.durationSeconds,uploadedMedia:null,uploadError:null});total+=f.size;}
+if(!items.length)return;mediaPreviewState={items,caption:'',sending:false,failedIndex:null};renderMediaPreviewModal();}
+function closeMediaPreviewModal(){if(!mediaPreviewState)return;mediaPreviewState.items.forEach((i)=>{try{URL.revokeObjectURL(i.objectUrl);}catch{}try{URL.revokeObjectURL(i.thumbnailObjectUrl);}catch{}});mediaPreviewState=null;const root=document.getElementById('mediaPreviewRoot');if(root)root.innerHTML='';}
+function renderMediaPreviewModal(){const root=document.getElementById('mediaPreviewRoot');if(!root||!mediaPreviewState)return;const items=mediaPreviewState.items;const gridClass=items.length===1?'one':(items.length<=4?'few':'many');root.innerHTML=`<div class="media-preview-overlay"><div class="media-preview-sheet"><div class="media-preview-header"><button class="media-preview-remove" type="button">×</button><div class="media-preview-count">${items.length>1?`✓ ${items.length}`:''}</div><strong>Выбрано ${items.length}</strong></div><div class="media-preview-grid ${gridClass}">${items.map((item,idx)=>`<div class="media-preview-item" data-idx="${idx}"><img src="${item.thumbnailObjectUrl||item.objectUrl}"><span class="media-preview-order">${idx+1}</span><button class="media-preview-remove media-item-remove" type="button" data-remove="${idx}">×</button>${item.kind==='video'?'<span class="media-video-play">▶</span>':''}</div>`).join('')}</div><div class="media-preview-footer"><textarea class="media-caption-input" placeholder="Добавить подпись...">${safeText(mediaPreviewState.caption||'')}</textarea><button class="media-send-btn" type="button">➤</button><div class="media-upload-progress"></div></div></div></div>`;
+root.querySelector('.media-preview-overlay').onclick=async(e)=>{if(e.target.classList.contains('media-preview-overlay')){await deleteUploadedPendingMedia(mediaPreviewState?.items||[]);closeMediaPreviewModal();}};root.querySelector('.media-preview-header .media-preview-remove').onclick=async()=>{await deleteUploadedPendingMedia(mediaPreviewState?.items||[]);closeMediaPreviewModal();};root.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{const idx=Number(btn.dataset.remove);const [x]=mediaPreviewState.items.splice(idx,1);if(x){URL.revokeObjectURL(x.objectUrl);URL.revokeObjectURL(x.thumbnailObjectUrl);}if(!mediaPreviewState.items.length)closeMediaPreviewModal();else renderMediaPreviewModal();});root.querySelector('.media-caption-input').oninput=(e)=>{mediaPreviewState.caption=e.target.value;};root.querySelector('.media-send-btn').onclick=()=>sendMediaFromPreview(root);
+}
+async function sendMediaFromPreview(root){if(!mediaPreviewState||mediaPreviewState.sending)return;mediaPreviewState.sending=true;const persisted=STORAGE.get(STORAGE.roomState(state.roomId));const btn=root.querySelector('.media-send-btn');const prog=root.querySelector('.media-upload-progress');const total=mediaPreviewState.items.length;for(let i=0;i<total;i++){const item=mediaPreviewState.items[i];if(item.uploadedMedia)continue;btn.textContent='…';prog.textContent=`Загрузка ${Math.round((i/total)*100)}%`;const encryptedFile=await encryptBlobWithIvPrefix(item.file);const encryptedThumb=await encryptBlobWithIvPrefix(item.thumbnailBlob);const nameEnc=await encryptText(item.file.name||'media');const fd=new FormData();fd.append('deviceId',persisted.deviceId);fd.append('encryptedFile',encryptedFile,'file.bin');fd.append('encryptedThumbnail',encryptedThumb,'thumb.bin');fd.append('originalNameCiphertext',nameEnc.ciphertext);fd.append('originalNameIv',nameEnc.iv);fd.append('mimeType',item.file.type);fd.append('mediaKind',item.kind);fd.append('sizeBytes',String(item.file.size));fd.append('encryptedSizeBytes',String(encryptedFile.size));fd.append('thumbSizeBytes',String(item.thumbnailBlob.size));fd.append('thumbEncryptedSizeBytes',String(encryptedThumb.size));fd.append('width',String(item.width||0));fd.append('height',String(item.height||0));fd.append('durationSeconds',String(item.durationSeconds||0));fd.append('fileOrder',String(i));try{item.uploadedMedia=await uploadEncryptedMediaXhr(state.roomId,persisted.deviceId,fd,(l,t)=>{if(t)prog.textContent=`Загрузка ${Math.round(((i+l/t)/total)*100)}%`;});}catch{const retry=confirm(`Не удалось загрузить файл ${i+1} из ${total}. Повторить?`);if(retry){i--;continue;}mediaPreviewState.sending=false;return;}}
+const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');mediaPreviewState.sending=false;return;}const caption=(mediaPreviewState.caption||'').trim();const enc=await encryptText(caption||'');const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const mediaIds=mediaPreviewState.items.map(x=>x.uploadedMedia?.id).filter(Boolean);const notificationPreview=caption?caption.slice(0,80):buildMediaFallbackText(mediaPreviewState.items.map(x=>({media_kind:x.kind})),caption);try{state.ws.send(JSON.stringify({type:'message:new',roomId:state.roomId,messageType:'media',ciphertext:enc.ciphertext,iv:enc.iv,notificationPreview,replyToMessageId,mediaIds}));}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');mediaPreviewState.sending=false;return;}draft.replyTo=null;await clearDraftOnServer(state.roomId);closeMediaPreviewModal();}
