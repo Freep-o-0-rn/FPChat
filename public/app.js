@@ -456,14 +456,53 @@ async function waitForInitialMediaLayout(box){
 }
 function isCurrentMessagesBox(box){return Boolean(box&&document.getElementById('messages')===box&&activeChatHistory?.roomId===state.roomId);}
 function getFirstUnreadMessageElement(box){return box?.querySelector('.bubble-wrap[data-incoming="1"][data-read="0"]')||null;}
-function getLastUnreadMessageElement(box){const unread=box?[...box.querySelectorAll('.bubble-wrap[data-incoming="1"][data-read="0"]')]:[];return unread[unread.length-1]||null;}
 function syncUnreadDivider(box=document.getElementById('messages')){if(!box)return;const firstUnread=getFirstUnreadMessageElement(box);const hasUnloadedUnread=activeChatHistory?.roomId===state.roomId&&Number(activeChatHistory.unloadedUnreadCount)>0;const target=firstUnread||(hasUnloadedUnread?box.querySelector('.bubble-wrap.msg[data-message-id]'):null);const current=box.querySelector('.new-messages-divider');if(!target){current?.remove();return;}const divider=current||document.createElement('div');divider.className='new-messages-divider';divider.setAttribute('role','separator');divider.setAttribute('aria-label','Новые сообщения');if(!divider.firstElementChild){divider.innerHTML='<span>Новые сообщения</span>';}if(divider.nextElementSibling!==target)box.insertBefore(divider,target);}
 function getViewStateMessageElement(box,viewState){const anchorId=Number(viewState?.anchorMessageId);if(!box||!Number.isInteger(anchorId)||anchorId<=0)return null;return box.querySelector(`.msg[data-message-id="${anchorId}"], .msg[data-id="${anchorId}"]`);}
 const scrollCoordinator={phase:'idle',roomId:null,box:null,generation:0,pendingBottom:false,
   isOpening(box=this.box){return this.phase==='opening'&&(!box||box===this.box);},
   write(box,top,behavior='auto'){if(!isCurrentMessagesBox(box))return false;const max=Math.max(0,box.scrollHeight-box.clientHeight);const next=Math.max(0,Math.min(Number(top)||0,max));if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;return true;},
   begin(box,roomId){this.stop();this.box=box;this.roomId=roomId;this.phase='opening';this.generation+=1;box.dataset.scrollPhase='opening';},
-  async applyInitial(viewState){const generation=this.generation;if(this.phase!=='opening')return 'cancelled';await waitForInitialMediaLayout(this.box);if(this.phase!=='opening'||generation!==this.generation||!isCurrentMessagesBox(this.box))return 'cancelled';const box=this.box;const firstUnread=getFirstUnreadMessageElement(box);const lastUnread=getLastUnreadMessageElement(box);const targetId=Number(activeChatHistory?.firstUnreadMessageId);const serverUnreadTarget=(Number.isSafeInteger(targetId)&&targetId>0?getViewStateMessageElement(box,{anchorMessageId:targetId}):null);const firstUnreadTarget=firstUnread||serverUnreadTarget;const divider=box.querySelector('.new-messages-divider');const hasUnreadState=Number(activeChatHistory?.unreadCount)>0||Number(activeChatHistory?.unloadedUnreadCount)>0;const unreadTarget=firstUnreadTarget||lastUnread||(hasUnreadState?divider:null);let mode='bottom';if(unreadTarget){const startTarget=divider||firstUnreadTarget||unreadTarget;const endTarget=lastUnread||unreadTarget;const startRect=startTarget.getBoundingClientRect();const endRect=endTarget.getBoundingClientRect();const boxRect=box.getBoundingClientRect();const unreadHeight=Math.max(0,endRect.bottom-startRect.top);const fitsInViewport=Boolean(lastUnread&&unreadHeight<=Math.max(0,box.clientHeight-16));if(fitsInViewport){this.write(box,box.scrollTop+endRect.bottom-boxRect.top-box.clientHeight+8,'auto');mode='unread-bottom';}else{this.write(box,box.scrollTop+startRect.top-boxRect.top-8,'auto');mode='unread-start';}}else if(!activeChatHistory?.unreadCount&&!activeChatHistory?.unloadedUnreadCount){if(viewState?.atBottom){this.write(box,box.scrollHeight,'auto');mode='bottom';}else{const target=getViewStateMessageElement(box,viewState);if(target){const rect=target.getBoundingClientRect();const boxRect=box.getBoundingClientRect();const offset=Number(viewState?.anchorOffsetPx)||0;this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');mode='restored';}else this.write(box,box.scrollHeight,'auto');}}else this.write(box,box.scrollHeight,'auto');this.phase='ready';delete box.dataset.scrollPhase;initialMessagesScrollPending=false;resumeUnreadObservation(box);updateUnreadIndicators();updateReplyComposerBar();return mode;},
+  async applyInitial(viewState){
+    const generation=this.generation;
+    if(this.phase!=='opening')return 'cancelled';
+    await waitForInitialMediaLayout(this.box);
+    if(this.phase!=='opening'||generation!==this.generation||!isCurrentMessagesBox(this.box))return 'cancelled';
+    const box=this.box;
+    const firstUnread=getFirstUnreadMessageElement(box);
+    const targetId=Number(activeChatHistory?.firstUnreadMessageId);
+    const serverUnreadTarget=(Number.isSafeInteger(targetId)&&targetId>0?getViewStateMessageElement(box,{anchorMessageId:targetId}):null);
+    const divider=box.querySelector('.new-messages-divider');
+    const hasUnreadState=Number(activeChatHistory?.unreadCount)>0||Number(activeChatHistory?.unloadedUnreadCount)>0;
+    const unreadTarget=firstUnread||serverUnreadTarget||(hasUnreadState?divider:null);
+    let mode='bottom';
+    if(unreadTarget){
+      const rect=unreadTarget.getBoundingClientRect();
+      const boxRect=box.getBoundingClientRect();
+      this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');
+      mode='unread-first-bottom';
+    }else if(!activeChatHistory?.unreadCount&&!activeChatHistory?.unloadedUnreadCount){
+      if(viewState?.atBottom){
+        this.write(box,box.scrollHeight,'auto');
+        mode='bottom';
+      }else{
+        const target=getViewStateMessageElement(box,viewState);
+        if(target){
+          const rect=target.getBoundingClientRect();
+          const boxRect=box.getBoundingClientRect();
+          const offset=Number(viewState?.anchorOffsetPx)||0;
+          this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');
+          mode='restored';
+        }else this.write(box,box.scrollHeight,'auto');
+      }
+    }else this.write(box,box.scrollHeight,'auto');
+    this.phase='ready';
+    delete box.dataset.scrollPhase;
+    initialMessagesScrollPending=false;
+    resumeUnreadObservation(box);
+    updateUnreadIndicators();
+    updateReplyComposerBar();
+    return mode;
+  },
   stop(){this.generation+=1;if(this.box)delete this.box.dataset.scrollPhase;this.phase='idle';this.roomId=null;this.box=null;this.pendingBottom=false;},
   requestBottom(box=this.box){if(!isCurrentMessagesBox(box))return;if(this.phase==='opening'){this.pendingBottom=true;return;}this.write(box,box.scrollHeight,'auto');},
   focus(target,behavior='smooth',topGap=8){const box=this.box||target?.closest?.('#messages');if(!target||!box||this.isOpening())return false;const boxRect=box.getBoundingClientRect();const rect=target.getBoundingClientRect();return this.write(box,box.scrollTop+rect.top-boxRect.top-topGap,behavior);},
