@@ -1,15 +1,22 @@
-/* Build 93: keep all iOS left-edge right-swipes inside FPChat.
-   Open chat -> chat list. Main screens -> navigation/settings drawer.
+/* Build 97: keep iOS left-edge right-swipes inside FPChat.
+   Open chat -> chat list. Settings -> chat list. Main screens -> navigation/settings drawer.
    Isolated from room, WebSocket, push and update logic. */
 (() => {
   const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
   const CHAT_BACK_THRESHOLD_PX = 80;
   const DRAWER_THRESHOLD_PX = 70;
+  const SETTINGS_BACK_THRESHOLD_PX = 70;
   let swipe = null;
 
   const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
   const chatIsOpen = () => Boolean(document.querySelector(".chat-view") && document.getElementById("messages"));
+  const settingsIsOpen = () => {
+    try {
+      if (typeof state !== "undefined" && state?.view === "settings") return true;
+    } catch {}
+    return Boolean(document.getElementById("nick") && document.getElementById("theme") && document.getElementById("settingsVersion"));
+  };
   const drawerIsOpen = () => Boolean(document.getElementById("sidebar")?.classList.contains("open"));
   const blockedTarget = (target) => Boolean(target?.closest?.(
     '.composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"]',
@@ -19,6 +26,18 @@
       if (typeof edgeSwipe !== "undefined" && edgeSwipe) edgeSwipe.tracking = false;
     } catch {}
   };
+
+  // Settings now use the same mobile gesture model as chats, so the explicit
+  // Back button is no longer needed. Keep desktop navigation via the sidebar.
+  try {
+    const baseRenderSettings = renderSettings;
+    renderSettings = function renderSettingsWithoutBackButton(...args) {
+      const result = baseRenderSettings.apply(this, args);
+      document.getElementById("backBtn")?.remove();
+      return result;
+    };
+    document.getElementById("backBtn")?.remove();
+  } catch {}
 
   // Keep one same-document history guard so iOS cannot reveal an older boot
   // document when it recognizes a native edge-back gesture.
@@ -43,11 +62,11 @@
     if (blockedTarget(event.target)) return;
 
     const touch = event.touches[0];
-    const mode = chatIsOpen() ? "chat" : "drawer";
+    const mode = chatIsOpen() ? "chat" : settingsIsOpen() ? "settings" : "drawer";
 
-    // The main-screen drawer gesture is deliberately edge-only. This mirrors
-    // Telegram and lets normal horizontal/vertical touches elsewhere pass.
-    if (mode === "drawer" && touch.clientX > EDGE_PX) return;
+    // Main/settings navigation gestures are deliberately edge-only. This
+    // mirrors Telegram and lets normal horizontal/vertical touches elsewhere pass.
+    if ((mode === "drawer" || mode === "settings") && touch.clientX > EDGE_PX) return;
 
     swipe = {
       mode,
@@ -107,7 +126,11 @@
     event.stopImmediatePropagation();
     resetLegacyDrawerSwipe();
 
-    const threshold = current.mode === "chat" ? CHAT_BACK_THRESHOLD_PX : DRAWER_THRESHOLD_PX;
+    const threshold = current.mode === "chat"
+      ? CHAT_BACK_THRESHOLD_PX
+      : current.mode === "settings"
+        ? SETTINGS_BACK_THRESHOLD_PX
+        : DRAWER_THRESHOLD_PX;
     if (current.canceled || current.dx < threshold) return;
 
     if (current.mode === "chat") {
@@ -120,7 +143,17 @@
       return;
     }
 
-    if (chatIsOpen() || drawerIsOpen()) return;
+    if (current.mode === "settings") {
+      if (!settingsIsOpen()) return;
+      document.activeElement?.blur?.();
+      try {
+        if (typeof setView === "function") setView("chats");
+        else if (typeof window.setView === "function") window.setView("chats");
+      } catch {}
+      return;
+    }
+
+    if (chatIsOpen() || settingsIsOpen() || drawerIsOpen()) return;
     if (typeof window.openMobileMenu === "function") window.openMobileMenu();
   }, { capture: true, passive: false });
 
