@@ -1,4 +1,4 @@
-/* Build 95: settings are saved immediately; notification checkbox stays left of text. */
+/* Build 96: settings are saved immediately; notification controls use toggles. */
 (() => {
   const STYLE_ID = "fpchat-settings-autosave-style";
   let notificationEnableSequence = 0;
@@ -11,27 +11,77 @@
       .notification-settings .notification-option {
         display: flex;
         align-items: center;
-        justify-content: flex-start;
-        gap: 12px;
+        justify-content: space-between;
+        gap: 14px;
         width: 100%;
-        min-height: 44px;
+        min-height: 48px;
         margin: 0;
+        cursor: pointer;
       }
       .notification-settings .notification-option + .notification-option {
         margin-top: 2px;
       }
-      .notification-settings .notification-option > span {
+      .notification-settings .notification-option-text {
         flex: 1 1 auto;
         min-width: 0;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .notification-settings .notification-option > input[type="checkbox"] {
-        width: 24px;
-        height: 24px;
-        flex: 0 0 24px;
+      .notification-settings .toggle-control {
+        position: relative;
+        width: 50px;
+        height: 28px;
+        flex: 0 0 50px;
+      }
+      .notification-settings .toggle-input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         margin: 0;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 2;
+      }
+      .notification-settings .toggle-ui {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: rgba(144, 161, 181, .42);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+        transition: background .18s ease, box-shadow .18s ease, opacity .18s ease;
+        pointer-events: none;
+      }
+      .notification-settings .toggle-ui::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, .28);
+        transition: transform .18s ease;
+      }
+      .notification-settings .toggle-input:checked + .toggle-ui {
+        background: var(--accent, #3390ec);
+      }
+      .notification-settings .toggle-input:checked + .toggle-ui::after {
+        transform: translateX(22px);
+      }
+      .notification-settings .toggle-input:focus-visible + .toggle-ui {
+        box-shadow: 0 0 0 3px var(--accent-soft, rgba(51, 144, 236, .22));
+      }
+      .notification-settings .toggle-input:disabled {
+        cursor: default;
+      }
+      .notification-settings .toggle-input:disabled + .toggle-ui {
+        opacity: .45;
+      }
+      .notification-settings .notification-option:has(.toggle-input:disabled) .notification-option-text {
+        opacity: .55;
       }
     `;
     document.head.appendChild(style);
@@ -67,7 +117,7 @@
   installSettingsStyles();
 
   renderSettings = function renderSettingsAutoSave() {
-    els.content.innerHTML = `<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label class='notification-option'><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/><span>Включить уведомления</span></label><label class='notification-option'><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/><span>Показывать текст сообщения</span></label><label class='notification-option'><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/><span>Скрывать отправителя</span></label><label class='notification-option'><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/><span>Звук нового сообщения</span></label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;
+    els.content.innerHTML = `<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label class='notification-option'><span class='notification-option-text'>Включить уведомления</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Показывать текст сообщения</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nText' ${state.notif.showText?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Скрывать отправителя</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Звук нового сообщения</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;
 
     void refreshSettingsVersionLine();
 
