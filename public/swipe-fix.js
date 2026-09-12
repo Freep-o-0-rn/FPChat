@@ -1,13 +1,16 @@
-/* Build 92: keep iOS right-swipe navigation inside FPChat.
+/* Build 93: keep all iOS left-edge right-swipes inside FPChat.
+   Open chat -> chat list. Main screens -> navigation/settings drawer.
    Isolated from room, WebSocket, push and update logic. */
 (() => {
-  const EDGE_PX = 28;
+  const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
-  const BACK_THRESHOLD_PX = 80;
+  const CHAT_BACK_THRESHOLD_PX = 80;
+  const DRAWER_THRESHOLD_PX = 70;
   let swipe = null;
 
   const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
   const chatIsOpen = () => Boolean(document.querySelector(".chat-view") && document.getElementById("messages"));
+  const drawerIsOpen = () => Boolean(document.getElementById("sidebar")?.classList.contains("open"));
   const blockedTarget = (target) => Boolean(target?.closest?.(
     '.composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"]',
   ));
@@ -17,8 +20,8 @@
     } catch {}
   };
 
-  // Build 77 already inserts one same-document history entry. Keep it as the
-  // guard instead of allowing iOS to reveal/navigate to the boot document.
+  // Keep one same-document history guard so iOS cannot reveal an older boot
+  // document when it recognizes a native edge-back gesture.
   try {
     history.scrollRestoration = "manual";
     history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, "", location.href);
@@ -36,20 +39,29 @@
 
   document.addEventListener("touchstart", (event) => {
     swipe = null;
-    if (!isMobile() || !chatIsOpen() || event.touches?.length !== 1) return;
+    if (!isMobile() || drawerIsOpen() || event.touches?.length !== 1) return;
     if (blockedTarget(event.target)) return;
+
     const touch = event.touches[0];
+    const mode = chatIsOpen() ? "chat" : "drawer";
+
+    // The main-screen drawer gesture is deliberately edge-only. This mirrors
+    // Telegram and lets normal horizontal/vertical touches elsewhere pass.
+    if (mode === "drawer" && touch.clientX > EDGE_PX) return;
+
     swipe = {
+      mode,
       startX: touch.clientX,
       startY: touch.clientY,
       dx: 0,
       dy: 0,
       axis: "pending",
-      back: false,
+      owned: false,
       canceled: false,
     };
-    // Safari commits to the native Back gesture at touchstart. This is the
-    // critical build-85 behavior: cancel only the narrow left edge early.
+
+    // Safari decides whether to perform native Back at touchstart. Cancel the
+    // left edge immediately, before WebKit can navigate/reveal the boot page.
     if (touch.clientX <= EDGE_PX && event.cancelable) event.preventDefault();
   }, { capture: true, passive: false });
 
@@ -67,7 +79,7 @@
         return;
       }
       if (swipe.dx <= 0) {
-        // Leave the existing left-swipe-to-reply behavior untouched.
+        // Preserve the existing left-swipe-to-reply gesture in an open chat.
         swipe.axis = "other";
         swipe.canceled = true;
         return;
@@ -76,31 +88,40 @@
     }
 
     if (swipe.axis !== "horizontal" || swipe.dx <= 0) return;
-    swipe.back = true;
+    swipe.owned = true;
     if (event.cancelable) event.preventDefault();
-    // Build 77 also has a drawer edge listener. Do not let the same gesture
-    // open the drawer while a room is active.
+
+    // Stop build-77's separate drawer listener from competing with this
+    // gesture. We invoke the intended in-app action ourselves on touchend.
     event.stopImmediatePropagation();
     resetLegacyDrawerSwipe();
   }, { capture: true, passive: false });
 
   document.addEventListener("touchend", (event) => {
     if (!swipe) return;
-    const shouldGoBack = swipe.back && !swipe.canceled && swipe.dx >= BACK_THRESHOLD_PX;
-    const owned = swipe.back;
+    const current = swipe;
     swipe = null;
-    if (!owned) return;
+    if (!current.owned) return;
 
     if (event.cancelable) event.preventDefault();
     event.stopImmediatePropagation();
     resetLegacyDrawerSwipe();
-    if (!shouldGoBack || !chatIsOpen()) return;
 
-    document.activeElement?.blur?.();
-    if (typeof window.showChatsList === "function") window.showChatsList();
-    try {
-      history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, "", "/");
-    } catch {}
+    const threshold = current.mode === "chat" ? CHAT_BACK_THRESHOLD_PX : DRAWER_THRESHOLD_PX;
+    if (current.canceled || current.dx < threshold) return;
+
+    if (current.mode === "chat") {
+      if (!chatIsOpen()) return;
+      document.activeElement?.blur?.();
+      if (typeof window.showChatsList === "function") window.showChatsList();
+      try {
+        history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, "", "/");
+      } catch {}
+      return;
+    }
+
+    if (chatIsOpen() || drawerIsOpen()) return;
+    if (typeof window.openMobileMenu === "function") window.openMobileMenu();
   }, { capture: true, passive: false });
 
   document.addEventListener("touchcancel", () => {
