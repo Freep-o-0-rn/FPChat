@@ -1,4 +1,4 @@
-/* Build 94: settings are saved immediately; no explicit Save button. */
+/* Build 95: settings are saved immediately; notification checkbox stays left of text. */
 (() => {
   const STYLE_ID = "fpchat-settings-autosave-style";
   let notificationEnableSequence = 0;
@@ -11,7 +11,7 @@
       .notification-settings .notification-option {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 12px;
         width: 100%;
         min-height: 44px;
@@ -67,7 +67,7 @@
   installSettingsStyles();
 
   renderSettings = function renderSettingsAutoSave() {
-    els.content.innerHTML = `<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label class='notification-option'><span>Включить уведомления</span><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/></label><label class='notification-option'><span>Показывать текст сообщения</span><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/></label><label class='notification-option'><span>Скрывать отправителя</span><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/></label><label class='notification-option'><span>Звук нового сообщения</span><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/></label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;
+    els.content.innerHTML = `<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label class='notification-option'><input type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/><span>Включить уведомления</span></label><label class='notification-option'><input type='checkbox' id='nText' ${state.notif.showText?'checked':''}/><span>Показывать текст сообщения</span></label><label class='notification-option'><input type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/><span>Скрывать отправителя</span></label><label class='notification-option'><input type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/><span>Звук нового сообщения</span></label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;
 
     void refreshSettingsVersionLine();
 
