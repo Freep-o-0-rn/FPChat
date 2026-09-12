@@ -166,6 +166,10 @@
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
       script.onload = () => {
+        const settingsFix = document.createElement('script');
+        settingsFix.src = `/settings-fix.js${buildSuffix}`;
+        document.body.appendChild(settingsFix);
+
         const swipeFix = document.createElement('script');
         swipeFix.src = `/swipe-fix.js${buildSuffix}`;
         document.body.appendChild(swipeFix);
