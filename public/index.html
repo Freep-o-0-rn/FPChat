@@ -202,6 +202,11 @@
       typingCss.href = `/typing.css${buildSuffix}`;
       document.head.appendChild(typingCss);
 
+      const voiceCss = document.createElement('link');
+      voiceCss.rel = 'stylesheet';
+      voiceCss.href = `/voice.css${buildSuffix}`;
+      document.head.appendChild(voiceCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -209,6 +214,10 @@
         const typing = document.createElement('script');
         typing.src = `/typing.js${buildSuffix}`;
         document.body.appendChild(typing);
+
+        const voice = document.createElement('script');
+        voice.src = `/voice.js${buildSuffix}`;
+        document.body.appendChild(voice);
 
         const settingsFix = document.createElement('script');
         settingsFix.src = `/settings-fix.js${buildSuffix}`;
