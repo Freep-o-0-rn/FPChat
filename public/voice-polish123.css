@@ -1,4 +1,4 @@
-/* Build 123: isolated polish for voice playback/recording UX. */
+/* Build 124: isolated polish for voice playback/recording UX. */
 
 .fp-voice-waveform,
 .fp-voice-preview-waveform {
@@ -8,19 +8,19 @@
 }
 
 .fp-voice-player {
-  gap: 10px;
+  gap: 8px;
 }
 
 .fp-voice-play {
-  width: 44px;
-  height: 44px;
-  flex-basis: 44px;
-  box-shadow: 0 3px 11px rgba(0,0,0,.13);
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  box-shadow: none;
 }
 
 .fp-voice-play svg {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   overflow: visible;
 }
 
@@ -29,7 +29,7 @@
 .fp-voice-preview-play[aria-label="Прослушать запись"] svg path {
   fill: currentColor !important;
   stroke: none !important;
-  transform: translateX(1.25px) scale(.96);
+  transform: translateX(.9px) scale(.91);
   transform-origin: 12px 12px;
 }
 
@@ -37,7 +37,7 @@
 .fp-voice-preview-play[aria-label="Пауза"] svg path {
   fill: none !important;
   stroke: currentColor !important;
-  stroke-width: 2.2 !important;
+  stroke-width: 2.15 !important;
   transform: none;
 }
 
@@ -50,14 +50,14 @@
 }
 
 .fp-voice-unheard-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
   display: inline-block;
-  margin-left: 1px;
+  margin-right: 5px;
   border-radius: 50%;
   background: var(--accent, #3390ec);
-  box-shadow: 0 0 0 2px rgba(51,144,236,.15);
+  box-shadow: 0 0 0 2px rgba(51,144,236,.16);
 }
 
 .fp-voice-unheard-dot.hidden {
@@ -74,34 +74,44 @@
   letter-spacing: .01em;
 }
 
+/* Keep the lock affordance clearly above the thumb while holding the mic. */
+.fp-voice-lock-cue {
+  bottom: 128px !important;
+}
+
+.fp-voice-recording-bar.fp-voice-lock-arming .fp-voice-lock-cue {
+  transform: translateY(-10px) scale(1) !important;
+}
+
 .fp-voice-lock-track123 {
   position: absolute;
   right: 17px;
-  bottom: 136px;
+  bottom: 174px;
   width: 17px;
-  height: 49px;
+  height: 54px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 3px;
+  gap: 4px;
   pointer-events: none;
   opacity: .48;
   z-index: 8;
 }
 
 .fp-voice-lock-arrow123 {
-  height: 15px;
-  line-height: 14px;
-  font-size: 15px;
+  height: 16px;
+  line-height: 15px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--accent, #3390ec);
+  transform: translateY(calc(-4px * var(--fp123-lock-progress, 0)));
 }
 
 .fp-voice-lock-rail123 {
   position: relative;
   width: 3px;
-  height: 30px;
+  height: 34px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(148,163,184,.28);
@@ -135,15 +145,26 @@
     height: 33px;
   }
   .fp-voice-play {
-    width: 43px;
-    height: 43px;
-    flex-basis: 43px;
+    width: 39px;
+    height: 39px;
+    flex-basis: 39px;
+  }
+  .fp-voice-play svg {
+    width: 19px;
+    height: 19px;
+  }
+  .fp-voice-lock-cue {
+    bottom: 132px !important;
+  }
+  .fp-voice-lock-track123 {
+    bottom: 180px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .fp-voice-record-hint,
-  .fp-voice-lock-fill123 {
+  .fp-voice-lock-fill123,
+  .fp-voice-lock-arrow123 {
     transition: none;
   }
 }
