@@ -1,0 +1,24 @@
+/* Build 115: iOS long-press and thumbnail stability fixes for pinned-messages screen. */
+.fp-pins114-card,
+.fp-pins114-card *,
+.fp-pins114-action-overlay,
+.fp-pins114-action-overlay *,
+.fp-pins114-delete-overlay,
+.fp-pins114-delete-overlay * {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+.fp-pins114-thumb,
+.fp-pins114-thumb-img,
+.fp-pins114-thumb-fallback,
+.fp-pins114-play,
+.fp-pins114-extra {
+  pointer-events: none;
+}
+
+.fp-pins114-thumb-img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
