@@ -182,6 +182,11 @@
       messageActionsCss.href = `/message-actions.css${buildSuffix}`;
       document.head.appendChild(messageActionsCss);
 
+      const messageSelectionCss = document.createElement('link');
+      messageSelectionCss.rel = 'stylesheet';
+      messageSelectionCss.href = `/message-selection.css${buildSuffix}`;
+      document.head.appendChild(messageSelectionCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -194,23 +199,31 @@
         chatFix.src = `/chat-fix.js${buildSuffix}`;
         document.body.appendChild(chatFix);
 
-        const messageContext = document.createElement('script');
-        messageContext.src = `/message-context.js${buildSuffix}`;
-        messageContext.onload = () => {
-          const messageContextFix = document.createElement('script');
-          messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
-          messageContextFix.onload = () => {
-            const messageActions = document.createElement('script');
-            messageActions.src = `/message-actions.js${buildSuffix}`;
-            document.body.appendChild(messageActions);
+        const loadContextStack = () => {
+          const messageContext = document.createElement('script');
+          messageContext.src = `/message-context.js${buildSuffix}`;
+          messageContext.onload = () => {
+            const messageContextFix = document.createElement('script');
+            messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
+            messageContextFix.onload = () => {
+              const messageActions = document.createElement('script');
+              messageActions.src = `/message-actions.js${buildSuffix}`;
+              document.body.appendChild(messageActions);
+            };
+            document.body.appendChild(messageContextFix);
           };
-          document.body.appendChild(messageContextFix);
-        };
-        document.body.appendChild(messageContext);
+          document.body.appendChild(messageContext);
 
-        const swipeFix = document.createElement('script');
-        swipeFix.src = `/swipe-fix.js${buildSuffix}`;
-        document.body.appendChild(swipeFix);
+          const swipeFix = document.createElement('script');
+          swipeFix.src = `/swipe-fix.js${buildSuffix}`;
+          document.body.appendChild(swipeFix);
+        };
+
+        const messageSelection = document.createElement('script');
+        messageSelection.src = `/message-selection.js${buildSuffix}`;
+        messageSelection.onload = loadContextStack;
+        messageSelection.onerror = loadContextStack;
+        document.body.appendChild(messageSelection);
       };
       document.body.appendChild(script);
     })();
