@@ -15,6 +15,10 @@
       content: attr(data-fp128-time);
     }
 
+    #mediaViewerRoot .media-viewer-content img {
+      touch-action: none;
+    }
+
     .media-viewer-overlay.fp-media-swipe128 .media-viewer-content {
       touch-action: none;
       will-change: transform, opacity;
