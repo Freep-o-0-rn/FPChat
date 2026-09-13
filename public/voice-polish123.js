@@ -1,12 +1,13 @@
-/* Build 123: isolated voice UX polish. Keeps Build 122 recording/media core untouched. */
+/* Build 124: isolated voice UX polish over the stable Build 122 voice core. */
 (() => {
-  if (window.__fpVoicePolish123Installed) return;
-  window.__fpVoicePolish123Installed = true;
+  if (window.__fpVoicePolish124Installed) return;
+  window.__fpVoicePolish124Installed = true;
 
-  const CANCEL_THRESHOLD_PX = 92;
-  const LOCK_THRESHOLD_PX = 76;
-  const BASELINE_KEY = 'fpchat:voice-unheard-baseline:123';
+  const CANCEL_THRESHOLD_PX = 145;
+  const LOCK_THRESHOLD_PX = 118;
   const PLAYED_KEY = 'fpchat:voice-played:123';
+  const BASELINE_ID_KEY = 'fpchat:voice-unheard-baseline-id:124';
+  const LEGACY_BASELINE_TIME_KEY = 'fpchat:voice-unheard-baseline:123';
   const MAX_PLAYED_KEYS = 1600;
 
   const voiceMeta = new Map();
@@ -17,16 +18,18 @@
   let lastRoomId = '';
   let redrawQueued = false;
 
-  let baselineAt = Number(localStorage.getItem(BASELINE_KEY) || 0);
-  if (!Number.isFinite(baselineAt) || baselineAt <= 0) {
-    baselineAt = Date.now();
-    try { localStorage.setItem(BASELINE_KEY, String(baselineAt)); } catch {}
-  }
+  const legacyBaselineAt = Number(localStorage.getItem(LEGACY_BASELINE_TIME_KEY) || 0);
 
   let playedKeys = new Set();
   try {
     const parsed = JSON.parse(localStorage.getItem(PLAYED_KEY) || '[]');
     if (Array.isArray(parsed)) playedKeys = new Set(parsed.map(String).slice(-MAX_PLAYED_KEYS));
+  } catch {}
+
+  let baselineIds = {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(BASELINE_ID_KEY) || '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) baselineIds = parsed;
   } catch {}
 
   function currentRoomId() {
@@ -58,11 +61,23 @@
   function persistPlayed() {
     try {
       const values = [...playedKeys];
-      if (values.length > MAX_PLAYED_KEYS) {
-        playedKeys = new Set(values.slice(-MAX_PLAYED_KEYS));
-      }
+      if (values.length > MAX_PLAYED_KEYS) playedKeys = new Set(values.slice(-MAX_PLAYED_KEYS));
       localStorage.setItem(PLAYED_KEY, JSON.stringify([...playedKeys]));
     } catch {}
+  }
+
+  function persistBaselines() {
+    try { localStorage.setItem(BASELINE_ID_KEY, JSON.stringify(baselineIds)); } catch {}
+  }
+
+  function hasBaseline(roomId) {
+    return Object.prototype.hasOwnProperty.call(baselineIds, roomId);
+  }
+
+  function setBaseline(roomId, messageId) {
+    if (!roomId || hasBaseline(roomId)) return;
+    baselineIds[roomId] = Math.max(0, Number(messageId) || 0);
+    persistBaselines();
   }
 
   function rememberVoiceMeta(message, mine, roomId = currentRoomId()) {
@@ -75,16 +90,10 @@
       messageId,
       roomId,
       mine: Boolean(mine),
-      createdAt: Number.isFinite(createdAt) ? createdAt : (existing.createdAt || Date.now())
+      createdAt: Number.isFinite(createdAt) ? createdAt : (existing.createdAt || 0)
     };
     voiceMeta.set(messageId, meta);
     return meta;
-  }
-
-  function isUnheard(meta) {
-    if (!meta || meta.mine || !meta.messageId || !meta.roomId) return false;
-    if (meta.createdAt <= baselineAt) return false;
-    return !playedKeys.has(storageVoiceKey(meta.roomId, meta.messageId));
   }
 
   function messageElement(messageId) {
@@ -98,9 +107,36 @@
     return messageElement(messageId)?.querySelector('.fp-voice-player') || null;
   }
 
+  function ensureMetaFromDom(messageId) {
+    const id = String(messageId || '');
+    if (!id) return null;
+    const existing = voiceMeta.get(id);
+    if (existing) return existing;
+    const messageEl = messageElement(id);
+    if (!messageEl) return null;
+    const meta = {
+      messageId: id,
+      roomId: currentRoomId(),
+      mine: messageEl.classList.contains('mine'),
+      createdAt: Date.parse(String(messageEl.dataset.createdAt || '')) || 0
+    };
+    voiceMeta.set(id, meta);
+    return meta;
+  }
+
+  function isUnheard(meta) {
+    if (!meta || meta.mine || !meta.messageId || !meta.roomId) return false;
+    if (!hasBaseline(meta.roomId)) return false;
+    const id = Number(meta.messageId);
+    const baseline = Number(baselineIds[meta.roomId] || 0);
+    if (!Number.isFinite(id) || id <= baseline) return false;
+    return !playedKeys.has(storageVoiceKey(meta.roomId, meta.messageId));
+  }
+
   function ensureUnheardDot(messageId) {
-    const meta = voiceMeta.get(String(messageId));
-    const root = playerRoot(messageId);
+    const id = String(messageId || '');
+    const meta = voiceMeta.get(id) || ensureMetaFromDom(id);
+    const root = playerRoot(id);
     if (!meta || !root) return;
     const footer = root.querySelector('.fp-voice-footer');
     if (!footer) return;
@@ -109,10 +145,10 @@
       dot = document.createElement('span');
       dot.className = 'fp-voice-unheard-dot';
       dot.setAttribute('aria-label', 'Не прослушано');
-      const time = footer.querySelector('.fp-voice-time');
-      if (time) time.after(dot);
-      else footer.prepend(dot);
     }
+    const time = footer.querySelector('.fp-voice-time');
+    if (time && dot.nextElementSibling !== time) time.before(dot);
+    else if (!dot.isConnected) footer.prepend(dot);
     const unheard = isUnheard(meta);
     dot.classList.toggle('hidden', !unheard);
     root.classList.toggle('fp-voice-unheard', unheard);
@@ -120,7 +156,7 @@
 
   function markPlayed(messageId) {
     const id = String(messageId || '');
-    const meta = voiceMeta.get(id);
+    const meta = voiceMeta.get(id) || ensureMetaFromDom(id);
     if (!meta || meta.mine) return;
     const key = storageVoiceKey(meta.roomId, id);
     if (!playedKeys.has(key)) {
@@ -229,18 +265,31 @@
     resetGesturePolish(form);
   }
 
-  function updateGesture(event) {
-    if (!gesture || (event.pointerId != null && gesture.pointerId != null && event.pointerId !== gesture.pointerId)) return;
+  function updateGestureVisual(event) {
+    if (!gesture || (event.pointerId != null && gesture.pointerId != null && event.pointerId !== gesture.pointerId)) return null;
     const bar = gesture.form?.querySelector('.fp-voice-recording-bar');
-    if (!bar || gesture.form.classList.contains('fp-voice-locked')) return;
+    if (!bar || gesture.form.classList.contains('fp-voice-locked')) return null;
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
     const cancel = Math.max(0, Math.min(1, -dx / CANCEL_THRESHOLD_PX));
     const lock = Math.max(0, Math.min(1, -dy / LOCK_THRESHOLD_PX));
     const cancelDominant = cancel >= lock;
-    const shift = cancelDominant ? -Math.round(cancel * 38) : 0;
+    const shift = cancelDominant ? -Math.round(cancel * 52) : 0;
     bar.style.setProperty('--fp123-cancel-shift', `${shift}px`);
     bar.style.setProperty('--fp123-lock-progress', String(lock));
+    return { dx, dy, cancel, lock };
+  }
+
+  function gateCoreGesture(event) {
+    const movement = updateGestureVisual(event);
+    if (!movement || !gesture || gesture.form.classList.contains('fp-voice-locked')) return;
+    const left = Math.max(0, -movement.dx);
+    const up = Math.max(0, -movement.dy);
+    const cancelReady = left >= CANCEL_THRESHOLD_PX && left > up * 0.85;
+    const lockReady = up >= LOCK_THRESHOLD_PX && up > left * 0.72;
+    if (cancelReady || lockReady) return;
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
   }
 
   function endGesture(event) {
@@ -262,7 +311,7 @@
 
   function patchWaveformGeometry() {
     const proto = window.CanvasRenderingContext2D?.prototype;
-    if (!proto || proto.__fpVoice123Geometry) return;
+    if (!proto || proto.__fpVoice124Geometry) return;
     const originalRoundRect = proto.roundRect;
     const originalRect = proto.rect;
     const shouldPolish = (ctx) => {
@@ -279,23 +328,23 @@
       return [nextX, nextY, nextWidth, nextHeight];
     };
     if (typeof originalRoundRect === 'function') {
-      proto.roundRect = function fpVoice123RoundRect(x, y, width, height, radii) {
+      proto.roundRect = function fpVoice124RoundRect(x, y, width, height, radii) {
         const next = adjusted(this, x, y, width, height);
         return originalRoundRect.call(this, next[0], next[1], next[2], next[3], radii);
       };
     }
     if (typeof originalRect === 'function') {
-      proto.rect = function fpVoice123Rect(x, y, width, height) {
+      proto.rect = function fpVoice124Rect(x, y, width, height) {
         const next = adjusted(this, x, y, width, height);
         return originalRect.call(this, next[0], next[1], next[2], next[3]);
       };
     }
-    proto.__fpVoice123Geometry = true;
+    proto.__fpVoice124Geometry = true;
   }
 
   const baseAppendMessage = typeof appendMessage === 'function' ? appendMessage : null;
-  if (baseAppendMessage && !baseAppendMessage.__fpVoicePolish123) {
-    const wrapped = function fpVoice123AppendMessage(box, message, text, mine, autoScroll = true) {
+  if (baseAppendMessage && !baseAppendMessage.__fpVoicePolish124) {
+    const wrapped = function fpVoice124AppendMessage(box, message, text, mine, autoScroll = true) {
       const roomId = currentRoomId();
       const voice = isVoiceMessage(message);
       if (voice) rememberVoiceMeta(message, mine, roomId);
@@ -309,7 +358,7 @@
       }
       return result;
     };
-    wrapped.__fpVoicePolish123 = true;
+    wrapped.__fpVoicePolish124 = true;
     try { appendMessage = wrapped; } catch {}
   }
 
@@ -321,7 +370,26 @@
       const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${query.toString()}`, { cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json().catch(() => null);
-      for (const message of data?.messages || []) {
+      const messages = Array.isArray(data?.messages) ? data.messages : [];
+
+      if (!hasBaseline(roomId)) {
+        let baseline = 0;
+        if (Number.isFinite(legacyBaselineAt) && legacyBaselineAt > 0) {
+          for (const message of messages) {
+            const id = Number(message?.id || 0);
+            const createdAt = Date.parse(String(message?.created_at || ''));
+            if (Number.isFinite(id) && id > baseline && Number.isFinite(createdAt) && createdAt <= legacyBaselineAt) baseline = id;
+          }
+        } else {
+          for (const message of messages) {
+            const id = Number(message?.id || 0);
+            if (Number.isFinite(id) && id > baseline) baseline = id;
+          }
+        }
+        setBaseline(roomId, baseline);
+      }
+
+      for (const message of messages) {
         if (!isVoiceMessage(message)) continue;
         const mine = String(message.sender_device_id || '') === deviceId;
         const meta = rememberVoiceMeta(message, mine, roomId);
@@ -331,6 +399,16 @@
         }
       }
     } catch {}
+  }
+
+  function scanPlayers() {
+    document.querySelectorAll('#messages .fp-voice-player').forEach((root) => {
+      const id = String(root.dataset.messageId || '');
+      if (!id) return;
+      ensureMetaFromDom(id);
+      ensureUnheardDot(id);
+      restorePosition(root);
+    });
   }
 
   document.addEventListener('pointerdown', (event) => {
@@ -345,8 +423,9 @@
     }
   }, true);
 
+  window.addEventListener('pointermove', gateCoreGesture, { capture: true, passive: false });
+
   document.addEventListener('pointermove', (event) => {
-    updateGesture(event);
     if (!seekGesture || (event.pointerId != null && seekGesture.pointerId != null && event.pointerId !== seekGesture.pointerId)) return;
     seekFromPointer(event, seekGesture.root);
   }, true);
@@ -423,10 +502,10 @@
     }
     for (const root of addedPlayers) {
       const id = String(root.dataset.messageId || '');
-      if (id) {
-        restorePosition(root);
-        ensureUnheardDot(id);
-      }
+      if (!id) continue;
+      ensureMetaFromDom(id);
+      restorePosition(root);
+      ensureUnheardDot(id);
     }
     ensureLockTrack();
   });
@@ -442,7 +521,7 @@
   patchWaveformGeometry();
   ensureLockTrack();
   lastRoomId = currentRoomId();
-  if (lastRoomId) void refreshCurrentVoiceMeta(lastRoomId);
+  if (lastRoomId) void refreshCurrentVoiceMeta(lastRoomId).then(scanPlayers);
   scheduleRedraw();
 
   setInterval(() => {
@@ -452,7 +531,9 @@
       lastRoomId = roomId;
       activeVoiceId = '';
       seekGesture = null;
-      if (roomId) void refreshCurrentVoiceMeta(roomId);
+      if (roomId) void refreshCurrentVoiceMeta(roomId).then(scanPlayers);
+      return;
     }
-  }, 600);
+    scanPlayers();
+  }, 700);
 })();
