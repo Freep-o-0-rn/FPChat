@@ -133,15 +133,16 @@
     if (!progress.classList.contains('is-success')) return;
 
     if (Date.now() <= browserDownloadHandoffUntil) {
+      browserDownloadHandoffUntil = 0;
       const host = progress.closest('.media-tile');
       progress.remove();
       host?.classList.remove('media-save-progress-host');
       return;
     }
 
-    // navigator.share() resolves only after the native share action completed.
-    // In that case the check mark is meaningful and can remain for its normal timeout.
-    progress.setAttribute('aria-label', 'Фото сохранено');
+    // Keep the check mark only when the native share API reports a successful action.
+    // A plain browser download has no reliable completion/cancel callback and is handled above.
+    progress.setAttribute('aria-label', 'Действие сохранения завершено');
   }
 
   document.addEventListener('click', markBrowserDownloadHandoff, true);
