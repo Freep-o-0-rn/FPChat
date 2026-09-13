@@ -207,6 +207,11 @@
       voiceCss.href = `/voice.css${buildSuffix}`;
       document.head.appendChild(voiceCss);
 
+      const voicePolishCss = document.createElement('link');
+      voicePolishCss.rel = 'stylesheet';
+      voicePolishCss.href = `/voice-polish123.css${buildSuffix}`;
+      document.head.appendChild(voicePolishCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -216,6 +221,11 @@
         typing.onload = () => {
           const voice = document.createElement('script');
           voice.src = `/voice.js${buildSuffix}`;
+          voice.onload = () => {
+            const voicePolish = document.createElement('script');
+            voicePolish.src = `/voice-polish123.js${buildSuffix}`;
+            document.body.appendChild(voicePolish);
+          };
           document.body.appendChild(voice);
         };
         document.body.appendChild(typing);
