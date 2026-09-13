@@ -1,193 +1,193 @@
-/* Build 105: stabilization patch for the isolated message context layer.
-   Keeps the build-100 context implementation intact, preserves the build-101 geometry fixes,
-   and fixes build-104 image-save progress on iOS. */
+/* Build 106: cache-aware media save UI. */
 (() => {
-  const ROOT_SELECTOR = '.message-context-root';
-  const COPY_SELECTOR = '.message-context-copy';
+  const ROOT = '.message-context-root';
+  const COPY = '.message-context-copy';
+  const MOBILE = '(max-width: 900px)';
+  const videoCache = new Map();
+  const videoSaves = new Set();
+  let toastTimer = null;
 
-  function readMessageId(element) {
-    return String(element?.dataset?.messageId || element?.dataset?.id || '').trim();
-  }
+  const msgId = (el) => String(el?.dataset?.messageId || el?.dataset?.id || '').trim();
+  const px = (v) => Number.parseFloat(v) || 0;
 
-  function numberPx(value) {
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  function disableNativeMediaDrag(root = document) {
-    root.querySelectorAll?.('.bubble-wrap.msg img, .bubble-wrap.msg video, .bubble-wrap.msg .media-tile, .message-context-root img, .message-context-root video, .message-context-root .media-tile')
-      .forEach((element) => {
-        element.draggable = false;
-        element.setAttribute('draggable', 'false');
-      });
-  }
-
-  function findOriginalMessage(messageId, clone) {
-    if (!messageId) return null;
+  function originalMessage(id, clone) {
     return [...document.querySelectorAll('#messages .bubble-wrap.msg')]
-      .find((element) => element !== clone && readMessageId(element) === messageId) || null;
+      .find((el) => el !== clone && msgId(el) === id) || null;
   }
 
-  function lockContextGeometry(root) {
-    if (!root?.isConnected || root.dataset.fpContextGeometryLocked === '1') return;
-    const clone = root.querySelector(COPY_SELECTOR);
-    if (!clone) return;
-
-    disableNativeMediaDrag(root);
-
-    const original = findOriginalMessage(readMessageId(clone), clone);
-    const originalBubble = original?.querySelector('.bubble');
-    const cloneBubble = clone.querySelector('.bubble');
-    if (!originalBubble || !cloneBubble) {
-      root.dataset.fpContextGeometryLocked = '1';
-      return;
-    }
-
-    const originalBubbleRect = originalBubble.getBoundingClientRect();
-    const cloneStyle = getComputedStyle(clone);
-    const horizontalPadding = numberPx(cloneStyle.paddingLeft) + numberPx(cloneStyle.paddingRight);
-    const availableWidth = Math.max(1, clone.getBoundingClientRect().width - horizontalPadding);
-    const bubbleWidth = Math.min(originalBubbleRect.width, availableWidth);
-
-    if (Number.isFinite(bubbleWidth) && bubbleWidth > 0) {
-      cloneBubble.style.setProperty('width', `${bubbleWidth}px`, 'important');
-      cloneBubble.style.setProperty('max-width', `${bubbleWidth}px`, 'important');
-      cloneBubble.style.setProperty('flex', `0 0 ${bubbleWidth}px`, 'important');
-    }
-
-    const originalGrid = original.querySelector('.media-grid');
-    const cloneGrid = clone.querySelector('.media-grid');
-    if (originalGrid && cloneGrid && bubbleWidth > 0) {
-      const bubbleStyle = getComputedStyle(cloneBubble);
-      const innerWidth = Math.max(1,
-        bubbleWidth - numberPx(bubbleStyle.paddingLeft) - numberPx(bubbleStyle.paddingRight));
-      const originalGridWidth = originalGrid.getBoundingClientRect().width;
-      const gridWidth = Math.min(originalGridWidth, innerWidth);
-      if (Number.isFinite(gridWidth) && gridWidth > 0) {
-        cloneGrid.style.setProperty('width', `${gridWidth}px`, 'important');
-        cloneGrid.style.setProperty('max-width', `${gridWidth}px`, 'important');
-        cloneGrid.style.setProperty('min-width', '0', 'important');
-      }
-    }
-
-    root.dataset.fpContextGeometryLocked = '1';
+  function disableDrag(root = document) {
+    root.querySelectorAll?.('.bubble-wrap.msg img,.bubble-wrap.msg video,.media-tile,.message-context-root img,.message-context-root video')
+      .forEach((el) => { el.draggable = false; el.setAttribute('draggable', 'false'); });
   }
 
-  function closeThroughExistingContextHandler(root) {
-    const backdrop = root?.querySelector('.message-context-backdrop');
-    if (!backdrop) return;
-    backdrop.click();
+  function lockGeometry(root) {
+    if (!root?.isConnected || root.dataset.fpGeometry === '1') return;
+    const clone = root.querySelector(COPY);
+    const original = originalMessage(msgId(clone), clone);
+    const a = original?.querySelector('.bubble');
+    const b = clone?.querySelector('.bubble');
+    if (!clone || !a || !b) { root.dataset.fpGeometry = '1'; return; }
+    const s = getComputedStyle(clone);
+    const width = Math.min(a.getBoundingClientRect().width, Math.max(1, clone.getBoundingClientRect().width - px(s.paddingLeft) - px(s.paddingRight)));
+    if (width > 0) {
+      b.style.setProperty('width', `${width}px`, 'important');
+      b.style.setProperty('max-width', `${width}px`, 'important');
+      b.style.setProperty('flex', `0 0 ${width}px`, 'important');
+    }
+    root.dataset.fpGeometry = '1';
   }
 
-  document.addEventListener('click', (event) => {
-    const root = event.target?.closest?.(ROOT_SELECTOR);
-    if (!root) return;
-    if (event.target.closest('.message-context-menu')) return;
-    if (event.target.closest('.message-context-copy .bubble')) return;
+  function closeContext(root) { root?.querySelector('.message-context-backdrop')?.click(); }
 
-    const backdrop = root.querySelector('.message-context-backdrop');
-    if (event.target === backdrop) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    closeThroughExistingContextHandler(root);
-  }, true);
-
-  document.addEventListener('dragstart', (event) => {
-    if (!event.target?.closest?.('.bubble-wrap.msg, .message-context-root')) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, true);
-
-  let browserDownloadHandoffUntil = 0;
-
-  function markBrowserDownloadHandoff(event) {
-    const link = event.target?.closest?.('a[download]');
-    if (!link) return;
-    const filename = String(link.download || '');
-    if (!filename.startsWith('FPChat-')) return;
-    browserDownloadHandoffUntil = Date.now() + 2000;
+  function ensureToastStyle() {
+    if (document.getElementById('fp-save-toast-style')) return;
+    const s = document.createElement('style');
+    s.id = 'fp-save-toast-style';
+    s.textContent = '.fp-save-toast{position:fixed;left:50%;bottom:calc(78px + env(safe-area-inset-bottom));z-index:1700;transform:translate(-50%,8px);padding:10px 15px;border-radius:14px;background:rgba(24,32,40,.92);color:#fff;font:inherit;font-size:14px;font-weight:650;box-shadow:0 8px 24px rgba(0,0,0,.24);opacity:0;pointer-events:none;transition:.16s ease}.fp-save-toast.show{opacity:1;transform:translate(-50%,0)}.fp-save-toast.error{background:rgba(154,43,43,.94)}';
+    document.head.appendChild(s);
   }
 
-  function setAriaLabel(element, value) {
-    if (!element || element.getAttribute('aria-label') === value) return;
-    element.setAttribute('aria-label', value);
+  function toast(kind, ok = true) {
+    ensureToastStyle();
+    clearTimeout(toastTimer);
+    document.querySelector('.fp-save-toast')?.remove();
+    const el = document.createElement('div');
+    el.className = `fp-save-toast${ok ? '' : ' error'}`;
+    const noun = kind === 'video' ? 'Видео' : 'Изображение';
+    el.textContent = ok ? `✓ ${noun} сохранено` : `× Не удалось сохранить ${kind === 'video' ? 'видео' : 'изображение'}`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    toastTimer = setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 180); }, 1800);
   }
 
-  function removeProgress(progress) {
-    if (!(progress instanceof Element) || !progress.isConnected) return;
-    const host = progress.closest('.media-tile');
-    progress.remove();
-    if (!host?.querySelector('.media-save-progress')) {
-      host?.classList.remove('media-save-progress-host');
-    }
+  function wrapShare() {
+    if (typeof navigator.share !== 'function' || navigator.share.__fp106) return;
+    const nativeShare = navigator.share.bind(navigator);
+    const wrapped = async (data) => {
+      const file = Array.isArray(data?.files) ? data.files[0] : null;
+      const fp = file instanceof File && String(file.name || '').startsWith('FPChat-');
+      const kind = String(file?.type || '').startsWith('video/') ? 'video' : 'image';
+      const result = await nativeShare(data);
+      if (fp) toast(kind, true);
+      return result;
+    };
+    wrapped.__fp106 = true;
+    try { navigator.share = wrapped; } catch {}
   }
 
-  function normalizeSaveProgress(progress) {
-    if (!(progress instanceof Element) || !progress.matches('.media-save-progress')) return;
-
-    const currentLabel = String(progress.getAttribute('aria-label') || '');
-    let normalizedLabel = currentLabel;
-
-    if (currentLabel.startsWith('Сохранение фото:')) {
-      normalizedLabel = currentLabel.replace('Сохранение фото:', 'Подготовка фото:');
-    } else if (currentLabel === 'Сохранение фото') {
-      normalizedLabel = 'Подготовка фото';
-    }
-
-    setAriaLabel(progress, normalizedLabel);
-
-    if (progress.classList.contains('is-error')) {
-      setAriaLabel(progress, 'Не удалось подготовить фото');
-      return;
-    }
-
-    if (progress.classList.contains('is-success')) {
-      if (Date.now() <= browserDownloadHandoffUntil) {
-        browserDownloadHandoffUntil = 0;
-        removeProgress(progress);
-        return;
-      }
-      setAriaLabel(progress, 'Действие сохранения завершено');
-      return;
-    }
-
-    // The ring represents only download/decryption preparation. Once preparation
-    // reaches 100%, remove it before control is handed to the iOS share/save UI.
-    // This also prevents a WebKit share promise from leaving a permanent spinner.
-    if (normalizedLabel === 'Подготовка фото: 100%') {
-      queueMicrotask(() => removeProgress(progress));
-    }
+  function wirePhotoProgress(el) {
+    if (!(el instanceof Element) || el.dataset.fp106 === '1') return;
+    el.dataset.fp106 = '1';
+    const hide = () => { el.style.visibility = 'hidden'; el.style.opacity = '0'; };
+    const show = () => { el.style.visibility = 'visible'; el.style.opacity = '1'; };
+    hide();
+    let timer = null;
+    const sync = () => {
+      clearTimeout(timer);
+      if (!el.isConnected) return;
+      if (el.classList.contains('is-error')) { show(); return; }
+      if (el.classList.contains('is-success')) { hide(); return; }
+      const m = String(el.getAttribute('aria-label') || '').match(/(\d{1,3})%/);
+      if (m) { Number(m[1]) >= 100 ? hide() : show(); return; }
+      timer = setTimeout(() => { if (el.isConnected && !el.classList.contains('is-success') && !/100%/.test(el.getAttribute('aria-label') || '')) show(); }, 120);
+    };
+    const mo = new MutationObserver(sync);
+    mo.observe(el, { attributes: true, attributeFilter: ['class', 'aria-label'] });
+    sync();
+    setTimeout(() => mo.disconnect(), 30000);
   }
 
-  document.addEventListener('click', markBrowserDownloadHandoff, true);
+  function videoProgress(original, index) {
+    const tile = original?.querySelector(`.media-tile[data-media-index="${index}"]`);
+    if (!tile) return { set() {}, done() {}, fail() {} };
+    tile.querySelector('.media-save-progress')?.remove();
+    tile.classList.add('media-save-progress-host');
+    const el = document.createElement('div');
+    el.className = 'media-save-progress is-indeterminate';
+    el.innerHTML = '<span class="media-save-progress-ring"><svg viewBox="0 0 48 48"><circle class="media-save-progress-track" cx="24" cy="24" r="18"></circle><circle class="media-save-progress-value" cx="24" cy="24" r="18"></circle></svg><span class="media-save-progress-icon">↓</span></span>';
+    tile.appendChild(el);
+    const c = el.querySelector('.media-save-progress-value');
+    const icon = el.querySelector('.media-save-progress-icon');
+    const n = 2 * Math.PI * 18;
+    c.style.strokeDasharray = `${n}`; c.style.strokeDashoffset = `${n}`;
+    const remove = () => { el.remove(); if (!tile.querySelector('.media-save-progress')) tile.classList.remove('media-save-progress-host'); };
+    return {
+      set({ loaded = 0, total = 0 } = {}) { if (!el.isConnected) return; if (total > 0) { const r = Math.max(0, Math.min(1, loaded / total)); el.classList.remove('is-indeterminate'); c.style.strokeDashoffset = `${n * (1 - r)}`; } },
+      done: remove,
+      fail() { if (!el.isConnected) return; el.classList.remove('is-indeterminate'); el.classList.add('is-error'); c.style.strokeDashoffset = '0'; icon.textContent = '×'; setTimeout(remove, 1000); }
+    };
+  }
 
-  disableNativeMediaDrag(document);
+  function emit(entry) { for (const fn of entry.listeners) { try { fn({ loaded: entry.loaded, total: entry.total, done: entry.done }); } catch {} } }
 
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      if (record.type === 'attributes' && record.target instanceof Element) {
-        if (record.target.matches('.media-save-progress')) normalizeSaveProgress(record.target);
-        continue;
-      }
+  async function mediaItem(messageId, index) {
+    const roomId = typeof state !== 'undefined' ? state.roomId : null;
+    const saved = roomId && typeof STORAGE !== 'undefined' ? STORAGE.get(STORAGE.roomState(roomId)) : null;
+    const deviceId = typeof activeChatDeviceId !== 'undefined' && activeChatDeviceId ? activeChatDeviceId : saved?.deviceId;
+    if (!roomId || !deviceId) throw new Error('device unavailable');
+    const q = new URLSearchParams({ deviceId: String(deviceId), limit: '1' });
+    const id = Number(messageId); if (Number.isSafeInteger(id) && id > 0) q.set('before', String(id + 1));
+    const r = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${q}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('message unavailable');
+    const d = await r.json();
+    const m = (d?.messages || []).find((x) => String(x?.id) === String(messageId)) || d?.messages?.[0];
+    const item = m?.media?.[index]; if (!item?.public_id) throw new Error('media unavailable');
+    return { item, deviceId };
+  }
 
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        disableNativeMediaDrag(node);
-        if (node.matches(ROOT_SELECTOR)) lockContextGeometry(node);
-        node.querySelectorAll?.(ROOT_SELECTOR).forEach(lockContextGeometry);
-        if (node.matches('.media-save-progress')) normalizeSaveProgress(node);
-        node.querySelectorAll?.('.media-save-progress').forEach(normalizeSaveProgress);
-      }
-    }
-  });
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['class', 'aria-label']
-  });
+  async function videoBlob(messageId, index, onProgress) {
+    const key = `${messageId}:${index}`;
+    const consume = async (e) => { if (onProgress) { e.listeners.add(onProgress); onProgress({ loaded:e.loaded,total:e.total,done:e.done }); } try { return await e.promise; } finally { if (onProgress) e.listeners.delete(onProgress); } };
+    if (videoCache.has(key)) return consume(videoCache.get(key));
+    const e = { loaded:0,total:0,done:false,listeners:new Set(),promise:null };
+    e.promise = (async () => {
+      const { item, deviceId } = await mediaItem(messageId, index);
+      const r = await fetch(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
+      if (!r.ok) throw new Error('media load failed');
+      const len = Number(r.headers.get('content-length')); e.total = Number.isFinite(len) && len > 0 ? len : 0; emit(e);
+      let encrypted;
+      if (r.body?.getReader) {
+        const reader = r.body.getReader(), chunks = [];
+        while (true) { const x = await reader.read(); if (x.done) break; if (x.value?.byteLength) { chunks.push(x.value); e.loaded += x.value.byteLength; emit(e); } }
+        if (!e.total) e.total = e.loaded; encrypted = new Blob(chunks, { type:r.headers.get('content-type') || 'application/octet-stream' });
+      } else { encrypted = await r.blob(); e.loaded = encrypted.size; if (!e.total) e.total = encrypted.size; emit(e); }
+      const blob = await decryptBlobWithIvPrefix(encrypted, item.mime_type || 'video/mp4'); e.done = true; emit(e); return { blob, item };
+    })();
+    videoCache.set(key, e);
+    try { return await consume(e); } catch (err) { videoCache.delete(key); throw err; }
+  }
 
-  document.querySelectorAll(ROOT_SELECTOR).forEach(lockContextGeometry);
-  document.querySelectorAll('.media-save-progress').forEach(normalizeSaveProgress);
+  function ext(mime) { return ({'video/mp4':'mp4','video/webm':'webm','video/quicktime':'mov','video/x-m4v':'m4v'})[String(mime || '').toLowerCase()] || 'mp4'; }
+  function download(blob, name) { const u = URL.createObjectURL(blob), a = document.createElement('a'); a.href=u; a.download=name; a.style.display='none'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u),1500); }
+
+  async function saveVideo(s) {
+    const key = `${s.messageId}:${s.index}`; if (videoSaves.has(key)) return; videoSaves.add(key);
+    const progress = videoCache.get(key)?.done ? null : videoProgress(s.original, s.index);
+    try {
+      const { blob, item } = await videoBlob(s.messageId, s.index, (v) => progress?.set(v)); progress?.done();
+      const mime = item?.mime_type || blob.type || 'video/mp4'; const name = `FPChat-${s.messageId}-${s.index + 1}.${ext(mime)}`; const file = new File([blob], name, { type:mime });
+      if (window.matchMedia(MOBILE).matches && navigator.share && navigator.canShare?.({ files:[file] })) { try { await navigator.share({ files:[file] }); return; } catch (e) { if (e?.name === 'AbortError') return; } }
+      download(blob, name); toast('video', true);
+    } catch { progress?.fail(); toast('video', false); } finally { videoSaves.delete(key); }
+  }
+
+  function decorate(root) {
+    if (!root?.isConnected || root.dataset.fp106Decorated === '1') return; root.dataset.fp106Decorated = '1';
+    const clone = root.querySelector(COPY), menu = root.querySelector('.message-context-menu'), tile = clone?.querySelector('.message-context-selected-media'); if (!clone || !menu || !tile) return;
+    const save = [...menu.querySelectorAll('.message-context-action')].find((b) => /Сохранить фото/i.test(b.textContent || ''));
+    if (save) { const label = save.querySelector('span:last-child'); if (label) label.textContent = 'Сохранить в галерею'; return; }
+    if (!tile.querySelector('.media-video-badge:not(.hidden)')) return;
+    const id = msgId(clone), index = Number(tile.dataset.mediaIndex), original = originalMessage(id, clone); if (!id || !Number.isInteger(index) || !original) return;
+    const b = document.createElement('button'); b.type='button'; b.className='message-context-action'; b.innerHTML='<span class="message-context-action-icon">⇩</span><span>Сохранить в галерею</span>';
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); closeContext(root); void saveVideo({ messageId:id,index,original }); }; menu.appendChild(b);
+  }
+
+  document.addEventListener('click', (e) => { const root = e.target?.closest?.(ROOT); if (!root || e.target.closest('.message-context-menu') || e.target.closest('.message-context-copy .bubble')) return; if (e.target === root.querySelector('.message-context-backdrop')) return; e.preventDefault(); e.stopImmediatePropagation(); closeContext(root); }, true);
+  document.addEventListener('dragstart', (e) => { if (!e.target?.closest?.('.bubble-wrap.msg,.message-context-root')) return; e.preventDefault(); e.stopImmediatePropagation(); }, true);
+
+  wrapShare(); disableDrag(document);
+  const mo = new MutationObserver((records) => { for (const r of records) for (const node of r.addedNodes) { if (!(node instanceof Element)) continue; disableDrag(node); if (node.matches(ROOT)) { lockGeometry(node); decorate(node); } node.querySelectorAll?.(ROOT).forEach((x) => { lockGeometry(x); decorate(x); }); if (node.matches('.media-save-progress')) wirePhotoProgress(node); node.querySelectorAll?.('.media-save-progress').forEach(wirePhotoProgress); } });
+  mo.observe(document.body, { childList:true, subtree:true });
+  document.querySelectorAll(ROOT).forEach((x) => { lockGeometry(x); decorate(x); });
+  document.querySelectorAll('.media-save-progress').forEach(wirePhotoProgress);
 })();
