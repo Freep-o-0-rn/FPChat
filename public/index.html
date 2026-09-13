@@ -162,6 +162,11 @@
       css.href = `/styles.css${buildSuffix}`;
       document.head.appendChild(css);
 
+      const messageContextCss = document.createElement('link');
+      messageContextCss.rel = 'stylesheet';
+      messageContextCss.href = `/message-context.css${buildSuffix}`;
+      document.head.appendChild(messageContextCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -169,6 +174,10 @@
         const settingsFix = document.createElement('script');
         settingsFix.src = `/settings-fix.js${buildSuffix}`;
         document.body.appendChild(settingsFix);
+
+        const messageContext = document.createElement('script');
+        messageContext.src = `/message-context.js${buildSuffix}`;
+        document.body.appendChild(messageContext);
 
         const swipeFix = document.createElement('script');
         swipeFix.src = `/swipe-fix.js${buildSuffix}`;
