@@ -1,0 +1,15 @@
+/* Build 116: typing indicator visual layer. */
+#presenceLine.fp-typing-active .fp-typing-label {
+  color: var(--accent, #3390ec);
+  font-weight: 650;
+  animation: fp-typing-soft-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes fp-typing-soft-pulse {
+  0%, 100% { opacity: .72; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #presenceLine.fp-typing-active .fp-typing-label { animation: none; }
+}
