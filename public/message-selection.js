@@ -1,11 +1,12 @@
-/* Build 110: isolated multiple-message selection layer.
+/* Build 111: stable isolated multiple-message selection layer.
    Uses the existing Build 108 delete API; does not replace message transport,
    unread/read, lazy history, scroll coordinator or swipe/reply logic. */
 (() => {
   const ROOT = '.message-context-root';
   const MENU = '.message-context-menu';
   const COPY = '.message-context-copy';
-  const MESSAGE = '#messages .bubble-wrap.msg';
+  const MESSAGE = '#messages .bubble-wrap.msg:not(.system-event-wrap)';
+  const MESSAGE_LOCAL = '.bubble-wrap.msg:not(.system-event-wrap)';
   const MODE_CLASS = 'fp-message-selection-open';
   const VIEW_CLASS = 'fp-selection-mode';
   const EDGE_BACK_PX = 32;
@@ -14,6 +15,7 @@
 
   let selection = null;
   let touchGesture = null;
+  let suppressClickUntil = 0;
 
   function numericId(value) {
     const id = Number(value);
@@ -39,7 +41,11 @@
   }
 
   function isSelectableMessage(el) {
-    return Boolean(el?.matches?.('.bubble-wrap.msg') && messageId(el));
+    return Boolean(
+      el?.matches?.(MESSAGE_LOCAL) &&
+      document.getElementById('messages')?.contains(el) &&
+      messageId(el)
+    );
   }
 
   function closeContext(root = document.querySelector(ROOT)) {
@@ -64,7 +70,7 @@
       const root = button.closest(ROOT);
       const clone = root?.querySelector(COPY);
       const id = messageId(clone);
-      if (!id || !clone) return;
+      if (!id || !clone || clone.classList.contains('system-event-wrap')) return;
       const mine = clone.classList.contains('mine');
       closeContext(root);
       requestAnimationFrame(() => startSelection(id, mine));
@@ -76,7 +82,7 @@
     if (!(root instanceof Element) || selection) return;
     const menu = root.querySelector(MENU);
     const clone = root.querySelector(COPY);
-    if (!menu || !clone || !messageId(clone)) return;
+    if (!menu || !clone || !messageId(clone) || clone.classList.contains('system-event-wrap')) return;
 
     let select = menu.querySelector('[data-fp-message-action="select"]');
     if (!select) {
@@ -86,6 +92,14 @@
 
     const remove = menu.querySelector('[data-fp-message-action="delete"]');
     if (remove && select.nextElementSibling !== remove) menu.insertBefore(select, remove);
+  }
+
+  function syncMessageVisual(el) {
+    if (!selection || !isSelectableMessage(el)) return;
+    const id = messageId(el);
+    const selected = Boolean(id && selection.ids.has(id));
+    el.classList.toggle('message-selection-selected', selected);
+    el.querySelector(':scope > .message-selection-check')?.classList.toggle('selected', selected);
   }
 
   function ensureCheck(el) {
@@ -101,19 +115,10 @@
     syncMessageVisual(el);
   }
 
-  function syncMessageVisual(el) {
-    if (!selection || !el) return;
-    const id = messageId(el);
-    const selected = Boolean(id && selection.ids.has(id));
-    el.classList.toggle('message-selection-selected', selected);
-    const check = el.querySelector(':scope > .message-selection-check');
-    check?.classList.toggle('selected', selected);
-  }
-
   function decorateMessages(root = document) {
     if (!selection) return;
-    if (root instanceof Element && root.matches('.bubble-wrap.msg')) ensureCheck(root);
-    root.querySelectorAll?.('.bubble-wrap.msg').forEach(ensureCheck);
+    if (root instanceof Element && isSelectableMessage(root)) ensureCheck(root);
+    root.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => { if (isSelectableMessage(el)) ensureCheck(el); });
   }
 
   function selectionCountLabel(count) {
@@ -122,17 +127,16 @@
 
   function ensureTopBar() {
     if (!selection) return null;
-    const view = document.querySelector('.chat-view');
-    const header = view?.querySelector('.chat-header');
-    if (!view || !header) return null;
+    const header = document.querySelector('.chat-view .chat-header');
+    if (!header) return null;
     let bar = header.querySelector(':scope > .message-selection-topbar');
     if (!bar) {
       bar = document.createElement('div');
       bar.className = 'message-selection-topbar';
       bar.innerHTML = '<button type="button" class="message-selection-close" aria-label="Отменить выбор">×</button><div class="message-selection-count">Выбрано 0</div><button type="button" class="message-selection-cancel">Отмена</button>';
       header.appendChild(bar);
-      bar.querySelector('.message-selection-close')?.addEventListener('click', () => exitSelection());
-      bar.querySelector('.message-selection-cancel')?.addEventListener('click', () => exitSelection());
+      bar.querySelector('.message-selection-close')?.addEventListener('click', exitSelection);
+      bar.querySelector('.message-selection-cancel')?.addEventListener('click', exitSelection);
     }
     return bar;
   }
@@ -159,9 +163,11 @@
     const top = ensureTopBar();
     const bottom = ensureBottomBar();
     const countEl = top?.querySelector('.message-selection-count');
-    if (countEl) countEl.textContent = selectionCountLabel(count);
+    const label = selectionCountLabel(count);
+    if (countEl && countEl.textContent !== label) countEl.textContent = label;
     const deleteButton = bottom?.querySelector('.message-selection-delete');
-    if (deleteButton) deleteButton.disabled = count === 0 || selection.busy;
+    const disabled = count === 0 || selection.busy;
+    if (deleteButton && deleteButton.disabled !== disabled) deleteButton.disabled = disabled;
   }
 
   function updateAllVisuals() {
@@ -173,20 +179,25 @@
 
   function startSelection(id, mine) {
     const roomId = currentRoomId();
-    if (!roomId || !numericId(id)) return;
+    const numeric = numericId(id);
+    const original = messageElement(numeric);
+    if (!roomId || !numeric || !original) return;
     if (selection) exitSelection();
 
     selection = {
       roomId,
-      ids: new Set([Number(id)]),
-      mineById: new Map([[Number(id), Boolean(mine)]]),
+      ids: new Set([numeric]),
+      mineById: new Map([[numeric, Boolean(mine)]]),
       busy: false
     };
 
     document.body.classList.add(MODE_CLASS);
     document.querySelector('.chat-view')?.classList.add(VIEW_CLASS);
-    decorateMessages(document);
     updateAllVisuals();
+  }
+
+  function closeBulkDeleteDialog() {
+    document.querySelector('.message-selection-delete-overlay')?.remove();
   }
 
   function removeSelectionUi() {
@@ -221,10 +232,6 @@
     navigator.vibrate?.(7);
   }
 
-  function closeBulkDeleteDialog() {
-    document.querySelector('.message-selection-delete-overlay')?.remove();
-  }
-
   function russianMessages(count) {
     const n10 = count % 10;
     const n100 = count % 100;
@@ -243,8 +250,12 @@
     overlay.className = 'message-delete-overlay message-selection-delete-overlay';
     overlay.innerHTML = `<div class="message-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="messageSelectionDeleteTitle"><div class="message-delete-title" id="messageSelectionDeleteTitle">Удалить ${count} ${russianMessages(count)}?</div><div class="message-delete-text">${allMine ? 'Выберите, где удалить выбранные сообщения.' : 'Среди выбранных есть чужие сообщения, поэтому удалить их можно только у себя.'}</div><div class="message-delete-actions"><button type="button" data-selection-delete-scope="self">Удалить у меня</button>${allMine ? '<button type="button" class="danger" data-selection-delete-scope="all">Удалить у всех</button>' : ''}<button type="button" class="cancel" data-selection-delete-cancel>Отмена</button></div></div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', (event) => { if (event.target === overlay && !selection?.busy) closeBulkDeleteDialog(); });
-    overlay.querySelector('[data-selection-delete-cancel]')?.addEventListener('click', () => { if (!selection?.busy) closeBulkDeleteDialog(); });
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay && !selection?.busy) closeBulkDeleteDialog();
+    });
+    overlay.querySelector('[data-selection-delete-cancel]')?.addEventListener('click', () => {
+      if (!selection?.busy) closeBulkDeleteDialog();
+    });
     overlay.querySelectorAll('[data-selection-delete-scope]').forEach((button) => {
       button.addEventListener('click', () => {
         const scope = button.dataset.selectionDeleteScope === 'all' ? 'all' : 'self';
@@ -304,25 +315,14 @@
     alert(`Не удалось удалить ${failed.length} ${russianMessages(failed.length)}. Проверьте соединение и попробуйте ещё раз.`);
   }
 
-  function pruneRemovedSelectedMessages() {
-    if (!selection) return;
-    let changed = false;
-    for (const id of [...selection.ids]) {
-      if (messageElement(id)) continue;
-      selection.ids.delete(id);
-      selection.mineById.delete(id);
-      changed = true;
-    }
-    if (changed) updateBars();
-  }
-
   function handleSelectionTouchStart(event) {
     if (!selection || event.touches?.length !== 1) return;
-    const message = event.target?.closest?.('.bubble-wrap.msg');
-    if (!message || !document.getElementById('messages')?.contains(message)) return;
+    const messages = document.getElementById('messages');
+    if (!messages?.contains(event.target)) return;
     const touch = event.touches[0];
+    const message = event.target?.closest?.(MESSAGE_LOCAL);
     touchGesture = {
-      message,
+      message: isSelectableMessage(message) ? message : null,
       startX: touch.clientX,
       startY: touch.clientY,
       lastX: touch.clientX,
@@ -351,18 +351,26 @@
     touchGesture = null;
     const dx = gesture.lastX - gesture.startX;
     const dy = gesture.lastY - gesture.startY;
+
     if (gesture.edgeBack && dx >= EDGE_BACK_TRIGGER_PX && Math.abs(dx) > Math.abs(dy) * 1.1) {
-      event.preventDefault?.();
+      if (event.cancelable) event.preventDefault();
       event.stopImmediatePropagation();
+      suppressClickUntil = Date.now() + 500;
       exitSelection();
       return;
     }
+
+    if (!gesture.moved && gesture.message) {
+      if (event.cancelable) event.preventDefault();
+      event.stopImmediatePropagation();
+      suppressClickUntil = Date.now() + 500;
+      toggleMessage(gesture.message);
+      return;
+    }
+
     event.stopImmediatePropagation();
   }
 
-  // Registered before message-context.js in Build 110. While selection mode is
-  // active these capture handlers stop long-press and swipe-to-reply from ever
-  // reaching their normal handlers, without preventing vertical native scroll.
   document.addEventListener('touchstart', handleSelectionTouchStart, { capture: true, passive: true });
   document.addEventListener('touchmove', handleSelectionTouchMove, { capture: true, passive: false });
   document.addEventListener('touchend', handleSelectionTouchEnd, { capture: true, passive: false });
@@ -374,18 +382,19 @@
 
   document.addEventListener('contextmenu', (event) => {
     if (!selection) return;
-    const message = event.target?.closest?.('.bubble-wrap.msg');
-    if (!message || !document.getElementById('messages')?.contains(message)) return;
+    const message = event.target?.closest?.(MESSAGE_LOCAL);
+    if (!isSelectableMessage(message)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
 
   document.addEventListener('click', (event) => {
     if (!selection) return;
-    const message = event.target?.closest?.('.bubble-wrap.msg');
-    if (!message || !document.getElementById('messages')?.contains(message)) return;
+    const message = event.target?.closest?.(MESSAGE_LOCAL);
+    if (!isSelectableMessage(message)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (Date.now() < suppressClickUntil) return;
     toggleMessage(message);
   }, true);
 
@@ -397,6 +406,8 @@
   }, true);
 
   const observer = new MutationObserver((records) => {
+    let selectionChanged = false;
+
     for (const record of records) {
       for (const node of record.addedNodes) {
         if (!(node instanceof Element)) continue;
@@ -404,17 +415,35 @@
         node.querySelectorAll?.(ROOT).forEach(decorateContext);
         const root = node.closest?.(ROOT);
         if (root) decorateContext(root);
-        if (selection) decorateMessages(node);
+
+        if (selection) {
+          if (isSelectableMessage(node)) ensureCheck(node);
+          node.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => { if (isSelectableMessage(el)) ensureCheck(el); });
+        }
+      }
+
+      if (!selection) continue;
+      for (const node of record.removedNodes) {
+        if (!(node instanceof Element)) continue;
+        const candidates = [];
+        if (node.matches?.(MESSAGE_LOCAL)) candidates.push(node);
+        node.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => candidates.push(el));
+        for (const el of candidates) {
+          const id = messageId(el);
+          if (!id || !selection.ids.has(id) || messageElement(id)) continue;
+          selection.ids.delete(id);
+          selection.mineById.delete(id);
+          selectionChanged = true;
+        }
       }
     }
-    if (selection) {
-      if (currentRoomId() !== selection.roomId || !document.querySelector('.chat-view')) {
-        exitSelection();
-        return;
-      }
-      pruneRemovedSelectedMessages();
-      updateBars();
+
+    if (!selection) return;
+    if (currentRoomId() !== selection.roomId || !document.querySelector('.chat-view')) {
+      exitSelection();
+      return;
     }
+    if (selectionChanged) updateBars();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
