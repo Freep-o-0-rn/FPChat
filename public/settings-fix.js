@@ -3,6 +3,14 @@
   const STYLE_ID = 'fpchat-settings-autosave-style';
   let notificationEnableSequence = 0;
 
+  // Extend the existing settings model without creating a second storage format.
+  const baseNotificationNormalizer = normalizeNotificationSettings;
+  normalizeNotificationSettings = function normalizeNotificationSettingsWithSystemEvents(value) {
+    const normalized = baseNotificationNormalizer(value);
+    const raw = value && typeof value === 'object' ? value : {};
+    return { ...normalized, notifySystemEvents: raw.notifySystemEvents !== false };
+  };
+
   function installSettingsStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
@@ -173,4 +181,18 @@
     updateInstallUi();
     document.getElementById('backBtn').onclick = () => setView('chats');
   };
+
+  if (!document.getElementById('fpchat-room-lifecycle-css')) {
+    const lifecycleCss = document.createElement('link');
+    lifecycleCss.id = 'fpchat-room-lifecycle-css';
+    lifecycleCss.rel = 'stylesheet';
+    lifecycleCss.href = '/room-lifecycle.css?v=98';
+    document.head.appendChild(lifecycleCss);
+  }
+  if (!document.getElementById('fpchat-room-lifecycle-js')) {
+    const lifecycleScript = document.createElement('script');
+    lifecycleScript.id = 'fpchat-room-lifecycle-js';
+    lifecycleScript.src = '/room-lifecycle.js?v=98';
+    document.body.appendChild(lifecycleScript);
+  }
 })();
