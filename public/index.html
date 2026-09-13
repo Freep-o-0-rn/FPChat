@@ -224,6 +224,11 @@
           voice.onload = () => {
             const voicePolish = document.createElement('script');
             voicePolish.src = `/voice-polish123.js${buildSuffix}`;
+            voicePolish.onload = () => {
+              const voiceCancel125 = document.createElement('script');
+              voiceCancel125.src = `/voice-cancel125.js${buildSuffix}`;
+              document.body.appendChild(voiceCancel125);
+            };
             document.body.appendChild(voicePolish);
           };
           document.body.appendChild(voice);
