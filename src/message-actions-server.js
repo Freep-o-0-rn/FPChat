@@ -52,7 +52,7 @@ function installMessageActionsServer({
   q.listMessagesBefore = db.prepare(`${SELECT_108} WHERE m.room_id=? AND m.id<? AND COALESCE(m.deleted_for_all,0)=0 ORDER BY m.id DESC LIMIT ?`);
   q.listMessagesAfter = db.prepare(`${SELECT_108} WHERE m.room_id=? AND m.id>? AND COALESCE(m.deleted_for_all,0)=0 ORDER BY m.id ASC LIMIT ?`);
   q.findMessageById = db.prepare(`${SELECT_108} WHERE m.id=? AND m.room_id=?`);
-  q.findMessageByClientId = db.prepare(`${SELECT_108} WHERE m.room_id=? AND m.sender_id=? AND m.client_message_id=?`);
+  q.findMessageByClientId = db.prepare(`${SELECT_108} WHERE m.room_id=? AND m.sender_id=? AND m.client_message_id=? AND COALESCE(m.deleted_for_all,0)=0`);
   q.findMessageInRoom = db.prepare('SELECT id FROM messages WHERE id=? AND room_id=? AND COALESCE(deleted_for_all,0)=0');
   q.findMessageForRead = db.prepare("SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id=? AND room_id=? AND COALESCE(deleted_for_all,0)=0");
   q.markDelivered = db.prepare("UPDATE messages SET status=CASE WHEN status='sent' THEN 'delivered' ELSE status END, delivered_at=CASE WHEN status='sent' THEN datetime('now') ELSE delivered_at END WHERE id=? AND status='sent' AND COALESCE(deleted_for_all,0)=0");
