@@ -1,4 +1,4 @@
-/* Build 119: transient typing and media-upload activity transport. No persistence. */
+/* Build 120: transient typing, media-upload and voice activity transport. No persistence. */
 function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
   if (!wss || !q || !sendToRoomParticipants) throw new Error('typing server dependencies are missing');
   if (wss.__fpTypingInstalled) return;
@@ -6,7 +6,7 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
 
   const TIMEOUT_MS = 7000;
   const rooms = new Map();
-  const allowedActivities = new Set(['typing', 'photo', 'video', 'media']);
+  const allowedActivities = new Set(['typing', 'photo', 'video', 'media', 'recording_audio', 'audio']);
 
   function getRoomMap(roomPublicId) {
     let roomMap = rooms.get(roomPublicId);
@@ -69,9 +69,7 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     entry.sockets.add(ws);
     armTimeout(room.public_id, ws.deviceId, entry);
 
-    // Every client heartbeat must also refresh the peer's client-side TTL.
-    // Suppressing repeated broadcasts here caused the peer indicator to expire
-    // while the server still considered the sender active.
+    // Every heartbeat also refreshes the peer's client-side TTL.
     broadcast(room.public_id, ws.deviceId, entry.displayName, activity);
   }
 
