@@ -1,6 +1,7 @@
 /* Build 97: keep iOS left-edge right-swipes inside FPChat.
    Open chat -> chat list. Settings -> chat list. Main screens -> navigation/settings drawer.
-   Isolated from room, WebSocket, push and update logic. */
+   Isolated from room, WebSocket, push and update logic.
+   Build 122: voice waveform canvases own their horizontal gestures. */
 (() => {
   const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
@@ -19,7 +20,7 @@
   };
   const drawerIsOpen = () => Boolean(document.getElementById("sidebar")?.classList.contains("open"));
   const blockedTarget = (target) => Boolean(target?.closest?.(
-    '.message-context-root, .message-context-root *, .composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"]',
+    '.message-context-root, .message-context-root *, .composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"], .fp-voice-waveform, .fp-voice-preview-waveform, .fp-voice-live-waveform',
   ));
   const resetLegacyDrawerSwipe = () => {
     try {
