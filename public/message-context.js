@@ -1,4 +1,4 @@
-/* Build 100: Telegram-style message context mode.
+/* Build 103: Telegram-style message context mode with image save progress.
    Isolated from message transport, unread/read logic, lazy history and scroll coordinator. */
 (() => {
   const LONG_PRESS_MS = 450;
@@ -7,6 +7,7 @@
   const MOBILE_QUERY = '(max-width: 900px)';
   const mediaByMessageId = new Map();
   const mediaBlobCache = new Map();
+  const activeMediaSaves = new Set();
 
   let contextState = null;
   let touchSession = null;
@@ -87,11 +88,75 @@
     return mediaByMessageId.get(String(messageId)) || [];
   }
 
-  async function fetchOriginalMediaBlob(messageId, mediaIndex) {
-    const cacheKey = `${messageId}:${mediaIndex}`;
-    if (mediaBlobCache.has(cacheKey)) return mediaBlobCache.get(cacheKey);
+  function emitMediaBlobProgress(entry) {
+    const payload = {
+      loaded: entry.loaded,
+      total: entry.total,
+      done: entry.done
+    };
+    for (const listener of entry.listeners) {
+      try { listener(payload); } catch {}
+    }
+  }
 
-    const promise = (async () => {
+  async function readResponseBlobWithProgress(response, entry) {
+    const headerLength = Number(response.headers.get('content-length'));
+    entry.total = Number.isFinite(headerLength) && headerLength > 0 ? headerLength : 0;
+    emitMediaBlobProgress(entry);
+
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      const blob = await response.blob();
+      entry.loaded = blob.size;
+      if (!entry.total) entry.total = blob.size;
+      emitMediaBlobProgress(entry);
+      return blob;
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value?.byteLength) {
+        chunks.push(value);
+        entry.loaded += value.byteLength;
+        emitMediaBlobProgress(entry);
+      }
+    }
+
+    if (!entry.total) entry.total = entry.loaded;
+    emitMediaBlobProgress(entry);
+    return new Blob(chunks, { type: response.headers.get('content-type') || 'application/octet-stream' });
+  }
+
+  async function fetchOriginalMediaBlob(messageId, mediaIndex, onProgress = null) {
+    const cacheKey = `${messageId}:${mediaIndex}`;
+
+    const consumeEntry = async (entry) => {
+      if (typeof onProgress === 'function') {
+        entry.listeners.add(onProgress);
+        try {
+          onProgress({ loaded: entry.loaded, total: entry.total, done: entry.done });
+        } catch {}
+      }
+      try {
+        return await entry.promise;
+      } finally {
+        if (typeof onProgress === 'function') entry.listeners.delete(onProgress);
+      }
+    };
+
+    if (mediaBlobCache.has(cacheKey)) return consumeEntry(mediaBlobCache.get(cacheKey));
+
+    const entry = {
+      loaded: 0,
+      total: 0,
+      done: false,
+      listeners: new Set(),
+      promise: null
+    };
+
+    entry.promise = (async () => {
       const media = await ensureMessageMedia(messageId);
       const item = media?.[mediaIndex];
       if (!item?.public_id) throw new Error('media unavailable');
@@ -100,14 +165,16 @@
       if (!persisted?.deviceId) throw new Error('device unavailable');
       const response = await fetch(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`);
       if (!response.ok) throw new Error('media load failed');
-      const encrypted = await response.blob();
+      const encrypted = await readResponseBlobWithProgress(response, entry);
       const blob = await decryptBlobWithIvPrefix(encrypted, item.mime_type || 'application/octet-stream');
+      entry.done = true;
+      emitMediaBlobProgress(entry);
       return { blob, item, media };
     })();
 
-    mediaBlobCache.set(cacheKey, promise);
+    mediaBlobCache.set(cacheKey, entry);
     try {
-      return await promise;
+      return await consumeEntry(entry);
     } catch (error) {
       mediaBlobCache.delete(cacheKey);
       throw error;
@@ -327,29 +394,131 @@
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
-  async function saveSelectedPhoto() {
-    if (!contextState || contextState.mediaIndex == null) return false;
+  function createSaveProgress(stateForSave) {
+    const tile = stateForSave?.mediaIndex == null
+      ? null
+      : stateForSave.original?.querySelector?.(`.media-tile[data-media-index="${stateForSave.mediaIndex}"]`);
+
+    if (!tile) {
+      return {
+        setProgress() {},
+        success() {},
+        error() {},
+        cancel() {}
+      };
+    }
+
+    tile.querySelector('.media-save-progress')?.remove();
+    tile.classList.add('media-save-progress-host');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'media-save-progress is-indeterminate';
+    overlay.setAttribute('role', 'status');
+    overlay.setAttribute('aria-live', 'polite');
+    overlay.setAttribute('aria-label', 'Сохранение фото');
+    overlay.innerHTML = `
+      <span class="media-save-progress-ring" aria-hidden="true">
+        <svg viewBox="0 0 48 48">
+          <circle class="media-save-progress-track" cx="24" cy="24" r="18"></circle>
+          <circle class="media-save-progress-value" cx="24" cy="24" r="18"></circle>
+        </svg>
+        <span class="media-save-progress-icon">↓</span>
+      </span>`;
+    tile.appendChild(overlay);
+
+    const progressCircle = overlay.querySelector('.media-save-progress-value');
+    const icon = overlay.querySelector('.media-save-progress-icon');
+    const circumference = 2 * Math.PI * 18;
+    progressCircle.style.strokeDasharray = `${circumference}`;
+    progressCircle.style.strokeDashoffset = `${circumference}`;
+
+    let finished = false;
+    let removeTimer = null;
+
+    const remove = (delay = 0) => {
+      clearTimeout(removeTimer);
+      removeTimer = setTimeout(() => {
+        overlay.remove();
+        tile.classList.remove('media-save-progress-host');
+      }, delay);
+    };
+
+    const finish = (className, symbol, delay) => {
+      if (finished) return;
+      finished = true;
+      overlay.classList.remove('is-indeterminate');
+      overlay.classList.add(className);
+      progressCircle.style.strokeDashoffset = '0';
+      icon.textContent = symbol;
+      remove(delay);
+    };
+
+    return {
+      setProgress({ loaded = 0, total = 0 } = {}) {
+        if (finished) return;
+        if (total > 0) {
+          const ratio = Math.max(0, Math.min(1, loaded / total));
+          overlay.classList.remove('is-indeterminate');
+          progressCircle.style.strokeDashoffset = `${circumference * (1 - ratio)}`;
+          overlay.setAttribute('aria-label', `Сохранение фото: ${Math.round(ratio * 100)}%`);
+        } else {
+          overlay.classList.add('is-indeterminate');
+          overlay.setAttribute('aria-label', 'Сохранение фото');
+        }
+      },
+      success() {
+        finish('is-success', '✓', 750);
+      },
+      error() {
+        finish('is-error', '×', 1100);
+      },
+      cancel() {
+        if (finished) return;
+        finished = true;
+        remove(120);
+      }
+    };
+  }
+
+  async function saveSelectedPhoto(stateForSave, progress) {
+    if (!stateForSave || stateForSave.mediaIndex == null) return false;
+    const saveKey = `${stateForSave.messageId}:${stateForSave.mediaIndex}`;
+    if (activeMediaSaves.has(saveKey)) return false;
+    activeMediaSaves.add(saveKey);
+
     try {
-      const { blob, item } = await fetchOriginalMediaBlob(contextState.messageId, contextState.mediaIndex);
+      const { blob, item } = await fetchOriginalMediaBlob(
+        stateForSave.messageId,
+        stateForSave.mediaIndex,
+        (value) => progress?.setProgress(value)
+      );
       const extension = extensionForMime(item?.mime_type || blob.type);
-      const filename = `FPChat-${contextState.messageId}-${contextState.mediaIndex + 1}.${extension}`;
+      const filename = `FPChat-${stateForSave.messageId}-${stateForSave.mediaIndex + 1}.${extension}`;
       const file = new File([blob], filename, { type: item?.mime_type || blob.type || 'image/jpeg' });
       const isMobile = window.matchMedia(MOBILE_QUERY).matches;
 
       if (isMobile && navigator.share && navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({ files: [file] });
+          progress?.success();
           return true;
         } catch (error) {
-          if (error?.name === 'AbortError') return false;
+          if (error?.name === 'AbortError') {
+            progress?.cancel();
+            return false;
+          }
         }
       }
 
       downloadBlob(blob, filename);
+      progress?.success();
       return true;
     } catch {
+      progress?.error();
       alert('Не удалось сохранить фото.');
       return false;
+    } finally {
+      activeMediaSaves.delete(saveKey);
     }
   }
 
@@ -375,8 +544,11 @@
   }
 
   async function saveSelectedContent() {
-    const ok = await saveSelectedPhoto();
-    if (ok) closeContext();
+    if (!contextState || contextState.mediaIndex == null) return;
+    const stateForSave = contextState;
+    const progress = createSaveProgress(stateForSave);
+    closeContext();
+    await saveSelectedPhoto(stateForSave, progress);
   }
 
   function buildMenu(stateForMenu) {
