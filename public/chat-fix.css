@@ -1,4 +1,4 @@
-/* Build 102: normal chat fixes only. */
+/* Build 107: normal chat fixes only. */
 
 /* Keep unbroken text (URLs, hashes, invite codes, long IDs) inside the message bubble. */
 #messages .bubble-wrap.msg,
@@ -11,4 +11,28 @@
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* Build 107: on mobile the "Down / N new messages" pill must float over the
+   chat instead of taking a full flex row between messages and the composer. */
+@media (max-width: 900px) {
+  .chat-view {
+    position: relative;
+  }
+
+  .chat-view .new-messages-pill {
+    position: absolute;
+    left: 50%;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    z-index: 12;
+    width: max-content;
+    max-width: calc(100% - 24px);
+    margin: 0;
+    transform: translateX(-50%);
+    flex: none;
+  }
+
+  .chat-view .new-messages-pill.hidden {
+    display: none;
+  }
 }
