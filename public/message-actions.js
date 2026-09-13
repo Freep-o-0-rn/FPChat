@@ -65,6 +65,9 @@
   }
 
   function closeContext() {
+    const root = document.querySelector(ROOT);
+    const backdrop = root?.querySelector('.message-context-backdrop');
+    if (backdrop) { backdrop.click(); return; }
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   }
 
