@@ -1,4 +1,4 @@
-/* Build 100: isolated message context layer. */
+/* Build 103: isolated message context layer with image save progress. */
 .bubble-wrap.msg,
 .bubble-wrap.msg .bubble,
 .bubble-wrap.msg .media-tile,
@@ -174,6 +174,86 @@
   line-height: 1;
 }
 
+.media-save-progress-host {
+  position: relative !important;
+}
+
+.media-save-progress {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, .08);
+  pointer-events: none;
+}
+
+.media-save-progress-ring {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(15, 23, 32, .58);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, .24);
+}
+
+.media-save-progress-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.media-save-progress-track,
+.media-save-progress-value {
+  fill: none;
+  stroke-width: 3.5;
+}
+
+.media-save-progress-track {
+  stroke: rgba(255, 255, 255, .28);
+}
+
+.media-save-progress-value {
+  stroke: #fff;
+  stroke-linecap: round;
+  transition: stroke-dashoffset .12s linear;
+}
+
+.media-save-progress-icon {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.media-save-progress.is-indeterminate .media-save-progress-value {
+  stroke-dasharray: 30 84 !important;
+  stroke-dashoffset: 0 !important;
+}
+
+.media-save-progress.is-indeterminate .media-save-progress-ring svg {
+  animation: media-save-progress-spin .8s linear infinite;
+}
+
+.media-save-progress.is-success .media-save-progress-ring {
+  background: rgba(36, 154, 88, .88);
+}
+
+.media-save-progress.is-error .media-save-progress-ring {
+  background: rgba(196, 57, 57, .9);
+}
+
+@keyframes media-save-progress-spin {
+  to { transform: rotate(270deg); }
+}
+
 @media (max-width: 900px) {
   .message-context-root {
     z-index: 1280;
@@ -225,7 +305,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .message-context-action {
+  .message-context-action,
+  .media-save-progress-value {
     transition: none;
+  }
+
+  .media-save-progress.is-indeterminate .media-save-progress-ring svg {
+    animation-duration: 1.4s;
   }
 }
