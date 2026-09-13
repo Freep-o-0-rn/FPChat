@@ -1,11 +1,12 @@
-/* Build 116: transient typing indicator transport. No persistence. */
+/* Build 117: transient typing and media-upload activity transport. No persistence. */
 function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
   if (!wss || !q || !sendToRoomParticipants) throw new Error('typing server dependencies are missing');
   if (wss.__fpTypingInstalled) return;
   wss.__fpTypingInstalled = true;
 
-  const TIMEOUT_MS = 5000;
+  const TIMEOUT_MS = 7000;
   const rooms = new Map();
+  const allowedActivities = new Set(['typing', 'photo', 'video', 'media']);
 
   function getRoomMap(roomPublicId) {
     let roomMap = rooms.get(roomPublicId);
@@ -16,13 +17,20 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     return roomMap;
   }
 
-  function broadcast(roomPublicId, deviceId, displayName, typing) {
+  function safeActivity(value, fallback = '') {
+    const activity = String(value || '');
+    if (allowedActivities.has(activity)) return activity;
+    return fallback;
+  }
+
+  function broadcast(roomPublicId, deviceId, displayName, activity = '') {
     sendToRoomParticipants(roomPublicId, {
       type: 'typing:update',
       roomId: roomPublicId,
       deviceId,
       displayName: displayName || '',
-      typing: typing === true
+      typing: Boolean(activity),
+      activity: activity || null
     }, deviceId);
   }
 
@@ -32,7 +40,7 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     const roomMap = rooms.get(roomPublicId);
     roomMap?.delete(deviceId);
     if (roomMap && roomMap.size === 0) rooms.delete(roomPublicId);
-    if (emitStop) broadcast(roomPublicId, deviceId, entry.displayName, false);
+    if (emitStop) broadcast(roomPublicId, deviceId, entry.displayName, '');
   }
 
   function armTimeout(roomPublicId, deviceId, entry) {
@@ -46,27 +54,30 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     entry.timer.unref?.();
   }
 
-  function startTyping(ws, room, participant) {
-    if (!room || !participant || !isRoomOpen?.(room)) return;
+  function startActivity(ws, room, participant, activity) {
+    if (!room || !participant || !activity || !isRoomOpen?.(room)) return;
     if (ws.visible !== true || ws.activeRoomId !== room.public_id) return;
 
     const roomMap = getRoomMap(room.public_id);
     let entry = roomMap.get(ws.deviceId);
-    const wasTyping = Boolean(entry?.sockets?.size);
+    const previousActivity = entry?.activity || '';
+    const wasActive = Boolean(entry?.sockets?.size);
     if (!entry) {
-      entry = { displayName: participant.display_name || '', sockets: new Set(), timer: null };
+      entry = { displayName: participant.display_name || '', sockets: new Set(), timer: null, activity };
       roomMap.set(ws.deviceId, entry);
     }
     entry.displayName = participant.display_name || entry.displayName || '';
+    entry.activity = activity;
     entry.sockets.add(ws);
     armTimeout(room.public_id, ws.deviceId, entry);
-    if (!wasTyping) broadcast(room.public_id, ws.deviceId, entry.displayName, true);
+    if (!wasActive || previousActivity !== activity) broadcast(room.public_id, ws.deviceId, entry.displayName, activity);
   }
 
-  function stopTypingSocket(ws, roomPublicId) {
+  function stopActivitySocket(ws, roomPublicId, expectedActivity = '') {
     const roomMap = rooms.get(roomPublicId);
     const entry = roomMap?.get(ws.deviceId);
     if (!entry) return;
+    if (expectedActivity && entry.activity !== expectedActivity) return;
     entry.sockets.delete(ws);
     if (entry.sockets.size > 0) {
       armTimeout(roomPublicId, ws.deviceId, entry);
@@ -79,7 +90,7 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     for (const [roomPublicId, roomMap] of rooms) {
       const entry = roomMap.get(ws.deviceId);
       if (!entry || !entry.sockets.has(ws) || roomPublicId === exceptRoomId) continue;
-      stopTypingSocket(ws, roomPublicId);
+      stopActivitySocket(ws, roomPublicId);
     }
   }
 
@@ -99,11 +110,14 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
 
       if (payload.type === 'message:send' || payload.type === 'message:new') {
         const targetRoom = String(payload.roomId || '').slice(0, 64);
-        if (targetRoom) stopTypingSocket(ws, targetRoom);
+        if (targetRoom) stopActivitySocket(ws, targetRoom);
         return;
       }
 
-      if (payload.type !== 'typing:start' && payload.type !== 'typing:stop') return;
+      const isStart = payload.type === 'typing:start' || payload.type === 'activity:start';
+      const isStop = payload.type === 'typing:stop' || payload.type === 'activity:stop';
+      if (!isStart && !isStop) return;
+
       const roomPublicId = String(payload.roomId || '').slice(0, 64);
       if (!roomPublicId) return;
       const room = q.findRoomByPublicId.get(roomPublicId);
@@ -111,8 +125,18 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
       const participant = q.findParticipant.get(room.id, ws.deviceId);
       if (!participant) return;
 
-      if (payload.type === 'typing:start') startTyping(ws, room, participant);
-      else stopTypingSocket(ws, roomPublicId);
+      if (isStart) {
+        const activity = payload.type === 'typing:start'
+          ? 'typing'
+          : safeActivity(payload.activity);
+        if (activity) startActivity(ws, room, participant, activity);
+        return;
+      }
+
+      const expectedActivity = payload.type === 'typing:stop'
+        ? 'typing'
+        : safeActivity(payload.activity);
+      stopActivitySocket(ws, roomPublicId, expectedActivity);
     };
 
     ws.on('message', onMessage);
