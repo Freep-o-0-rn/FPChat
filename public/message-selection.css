@@ -1,0 +1,241 @@
+/* Build 110: isolated multiple-message selection UI. */
+body.fp-message-selection-open {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body.fp-message-selection-open .message-context-root {
+  display: none !important;
+}
+
+.chat-view.fp-selection-mode .chat-header {
+  position: relative;
+}
+
+.chat-view.fp-selection-mode .chat-header > :not(.message-selection-topbar) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.message-selection-topbar {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: minmax(46px, auto) 1fr minmax(72px, auto);
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
+}
+
+.message-selection-topbar button {
+  appearance: none;
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.message-selection-close {
+  width: 42px;
+  padding: 0;
+  font-size: 29px !important;
+  line-height: 1;
+}
+
+.message-selection-cancel {
+  padding: 0 8px;
+  font-size: 15px !important;
+  font-weight: 650 !important;
+}
+
+.message-selection-count {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 750;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-view.fp-selection-mode #sendForm,
+.chat-view.fp-selection-mode .reply-composer-bar,
+.chat-view.fp-selection-mode #replyComposerBar,
+.chat-view.fp-selection-mode #mediaPreviewRoot,
+.chat-view.fp-selection-mode .edit-composer-bar,
+.chat-view.fp-selection-mode #closedRoomBar {
+  display: none !important;
+}
+
+.message-selection-bottombar {
+  min-height: 66px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 7px 14px calc(7px + env(safe-area-inset-bottom));
+  border-top: 1px solid color-mix(in srgb, var(--border, rgba(120,130,145,.24)) 70%, transparent);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+
+.message-selection-delete {
+  appearance: none;
+  min-width: 58px;
+  min-height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--danger, #d45454);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.message-selection-delete:hover,
+.message-selection-delete:active {
+  background: var(--danger-soft, rgba(212,84,84,.14));
+}
+
+.message-selection-delete:disabled {
+  opacity: .42;
+  cursor: default;
+}
+
+.message-selection-delete svg {
+  width: 27px;
+  height: 27px;
+  fill: currentColor;
+}
+
+body.fp-message-selection-open #messages .bubble-wrap.msg {
+  position: relative;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body.fp-message-selection-open #messages .bubble-wrap.msg:not(.mine) {
+  box-sizing: border-box;
+  padding-left: 46px !important;
+}
+
+.message-selection-check {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  z-index: 12;
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 2px solid color-mix(in srgb, var(--muted) 72%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+  box-shadow: 0 1px 4px rgba(0,0,0,.16);
+  pointer-events: none;
+  transition: background .12s ease, border-color .12s ease, transform .12s ease;
+}
+
+.message-selection-check-mark {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(.72);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.message-selection-check.selected {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.message-selection-check.selected .message-selection-check-mark {
+  opacity: 1;
+  transform: scale(1);
+}
+
+body.fp-message-selection-open #messages .bubble-wrap.msg.message-selection-selected::before {
+  content: '';
+  position: absolute;
+  inset: -3px -8px;
+  z-index: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+}
+
+.message-context-action.fp-message-select-action {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (max-width: 900px) {
+  .message-selection-topbar {
+    padding-left: calc(8px + env(safe-area-inset-left));
+    padding-right: calc(8px + env(safe-area-inset-right));
+  }
+
+  .message-selection-count {
+    font-size: 18px;
+  }
+
+  .message-selection-cancel {
+    font-size: 16px !important;
+  }
+
+  .message-selection-bottombar {
+    min-height: 72px;
+    padding-left: calc(10px + env(safe-area-inset-left));
+    padding-right: calc(10px + env(safe-area-inset-right));
+  }
+
+  .message-selection-delete {
+    min-width: 64px;
+    min-height: 54px;
+  }
+
+  .message-selection-delete span {
+    display: none;
+  }
+
+  .message-selection-delete svg {
+    width: 30px;
+    height: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-selection-check,
+  .message-selection-check-mark {
+    transition: none;
+  }
+}
