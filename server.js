@@ -38,91 +38,133 @@ const socketsByDevice = new Map();
 const HISTORY_PAGE_SIZE = 100;
 const WS_MAX_PAYLOAD = 256 * 1024;
 const WS_HEARTBEAT_INTERVAL_MS = 30 * 1000;
-const MESSAGE_SELECT = `SELECT m.id, m.type, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id`;
+const ROOM_OPEN = 'open';
+const ROOM_CLOSED = 'closed';
+const SYSTEM_JOINED = 'participant_joined';
+const SYSTEM_LEFT = 'participant_left';
+const MESSAGE_SELECT = `SELECT m.id, m.type, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.status, m.event_type, m.event_actor_name, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id`;
 
 const q = {
-  createRoom: db.prepare('INSERT INTO rooms (public_id) VALUES (?)'),
+  createRoom: db.prepare('INSERT INTO rooms (public_id, status) VALUES (?, \'open\')'),
   findRoomByPublicId: db.prepare('SELECT * FROM rooms WHERE public_id = ?'),
   findRoomById: db.prepare('SELECT * FROM rooms WHERE id = ?'),
-  createRecovery: db.prepare(`INSERT INTO recovery (room_id, device_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext) VALUES (?, ?, ?, ?, ?, ?)`),
-  upsertRecovery: db.prepare(`INSERT INTO recovery (room_id, device_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, device_id) DO UPDATE SET recovery_salt = excluded.recovery_salt, recovery_verifier = excluded.recovery_verifier, recovery_secret_iv = excluded.recovery_secret_iv, recovery_secret_ciphertext = excluded.recovery_secret_ciphertext`),
+  closeRoom: db.prepare("UPDATE rooms SET status='closed', closed_at=COALESCE(closed_at, datetime('now')) WHERE id=?"),
+
+  createRecovery: db.prepare(`INSERT INTO recovery (room_id, device_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext, revoked) VALUES (?, ?, ?, ?, ?, ?, 0)`),
+  upsertRecovery: db.prepare(`INSERT INTO recovery (room_id, device_id, recovery_salt, recovery_verifier, recovery_secret_iv, recovery_secret_ciphertext, revoked, revoked_at) VALUES (?, ?, ?, ?, ?, ?, 0, NULL) ON CONFLICT(room_id, device_id) DO UPDATE SET recovery_salt=excluded.recovery_salt, recovery_verifier=excluded.recovery_verifier, recovery_secret_iv=excluded.recovery_secret_iv, recovery_secret_ciphertext=excluded.recovery_secret_ciphertext, revoked=0, revoked_at=NULL`),
   listRecoveriesByRoomId: db.prepare(`SELECT * FROM recovery WHERE room_id = ? ORDER BY id ASC`),
-  findRecoveryByRoomDevice: db.prepare(`SELECT rec.id FROM recovery rec WHERE rec.room_id = ? AND rec.device_id = ?`),
-  listRecoveriesWithRooms: db.prepare(`SELECT room.public_id, rec.device_id, rec.recovery_salt, rec.recovery_verifier, rec.recovery_secret_iv, rec.recovery_secret_ciphertext FROM recovery rec JOIN rooms room ON room.id = rec.room_id`),
-  upsertParticipant: db.prepare(`INSERT INTO participants (room_id, display_name, device_id, last_seen_at, online, updated_at) VALUES (?, ?, ?, datetime('now'), 0, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET display_name = excluded.display_name, last_seen_at = datetime('now'), updated_at = datetime('now')`),
-  listParticipantsByRoom: db.prepare(`SELECT device_id, display_name, online, last_seen_at FROM participants WHERE room_id = ? ORDER BY id ASC`),
-  setParticipantOnline: db.prepare(`UPDATE participants SET online = 1, last_seen_at = datetime('now'), updated_at = datetime('now') WHERE room_id = ? AND device_id = ?`),
-  setParticipantOffline: db.prepare(`UPDATE participants SET online = 0, last_seen_at = datetime('now'), updated_at = datetime('now') WHERE room_id = ? AND device_id = ?`),
-  findParticipant: db.prepare('SELECT * FROM participants WHERE room_id = ? AND device_id = ?'),
-  listParticipantRoomsByDevice: db.prepare(`SELECT p.room_id, p.device_id, p.display_name, p.online, p.last_seen_at, r.public_id AS room_public_id FROM participants p JOIN rooms r ON r.id = p.room_id WHERE p.device_id = ?`),
-  listMessagesLatest: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? ORDER BY m.id DESC LIMIT ?`),
-  listMessagesBefore: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT ?`),
-  listMessagesAfter: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id = ? AND m.id > ? ORDER BY m.id ASC LIMIT ?`),
-  countUnreadForParticipant: db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE room_id = ? AND sender_id != ? AND status != 'read'`),
-  findFirstUnreadForParticipant: db.prepare(`SELECT id FROM messages WHERE room_id = ? AND sender_id != ? AND status != 'read' ORDER BY id ASC LIMIT 1`),
+  findRecoveryByRoomDevice: db.prepare(`SELECT * FROM recovery WHERE room_id = ? AND device_id = ?`),
+  listRecoveriesWithRooms: db.prepare(`SELECT room.public_id, room.status AS room_status, room.closed_at, rec.* FROM recovery rec JOIN rooms room ON room.id = rec.room_id`),
+  revokeRecovery: db.prepare(`UPDATE recovery SET revoked=1, revoked_at=COALESCE(revoked_at, datetime('now')) WHERE room_id=? AND device_id=? AND revoked=0`),
+
+  upsertParticipant: db.prepare(`INSERT INTO participants (room_id, display_name, device_id, last_seen_at, online, updated_at, access_revoked) VALUES (?, ?, ?, datetime('now'), 0, datetime('now'), 0) ON CONFLICT(room_id, device_id) DO UPDATE SET display_name=excluded.display_name, last_seen_at=datetime('now'), updated_at=datetime('now')`),
+  listParticipantsByRoom: db.prepare(`SELECT * FROM participants WHERE room_id=? AND access_revoked=0 ORDER BY id ASC`),
+  listAllParticipantsByRoom: db.prepare(`SELECT * FROM participants WHERE room_id=? ORDER BY id ASC`),
+  countActiveParticipants: db.prepare(`SELECT COUNT(*) AS count FROM participants WHERE room_id=? AND access_revoked=0`),
+  setParticipantOnline: db.prepare(`UPDATE participants SET online=1, last_seen_at=datetime('now'), updated_at=datetime('now') WHERE room_id=? AND device_id=? AND access_revoked=0`),
+  setParticipantOffline: db.prepare(`UPDATE participants SET online=0, last_seen_at=datetime('now'), updated_at=datetime('now') WHERE room_id=? AND device_id=? AND access_revoked=0`),
+  findParticipant: db.prepare('SELECT * FROM participants WHERE room_id=? AND device_id=? AND access_revoked=0'),
+  findParticipantAny: db.prepare('SELECT * FROM participants WHERE room_id=? AND device_id=?'),
+  revokeParticipant: db.prepare(`UPDATE participants SET access_revoked=1, permanent_left_at=COALESCE(permanent_left_at, datetime('now')), online=0, updated_at=datetime('now') WHERE room_id=? AND device_id=? AND access_revoked=0`),
+  listParticipantRoomsByDevice: db.prepare(`SELECT p.room_id, p.device_id, p.display_name, p.online, p.last_seen_at, r.public_id AS room_public_id, r.status AS room_status, r.closed_at FROM participants p JOIN rooms r ON r.id=p.room_id WHERE p.device_id=? AND p.access_revoked=0`),
+
+  listMessagesLatest: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id=? ORDER BY m.id DESC LIMIT ?`),
+  listMessagesBefore: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id=? AND m.id<? ORDER BY m.id DESC LIMIT ?`),
+  listMessagesAfter: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id=? AND m.id>? ORDER BY m.id ASC LIMIT ?`),
+  countUnreadForParticipant: db.prepare(`SELECT COUNT(*) AS count FROM messages WHERE room_id=? AND sender_id!=? AND status!='read'`),
+  findFirstUnreadForParticipant: db.prepare(`SELECT id FROM messages WHERE room_id=? AND sender_id!=? AND status!='read' ORDER BY id ASC LIMIT 1`),
   createMessage: db.prepare(`INSERT INTO messages (room_id, sender_id, ciphertext, iv, type, client_message_id, status, reply_to_message_id) VALUES (?, ?, ?, ?, ?, ?, 'sent', ?)`),
-  findMessageInRoom: db.prepare('SELECT id FROM messages WHERE id = ? AND room_id = ?'),
-  findMessageById: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.id = ? AND m.room_id = ?`),
-  findMessageByClientId: db.prepare(`SELECT m.id, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.type, m.status, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id = m.sender_id WHERE m.room_id = ? AND m.sender_id = ? AND m.client_message_id = ?`),
-  findMessageForRead: db.prepare('SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id = ? AND room_id = ?'),
-  findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id = ? AND device_id = ?`),
-  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, at_bottom, updated_at FROM chat_view_state WHERE room_id = ? AND device_id = ?`),
+  createSystemEvent: db.prepare(`INSERT OR IGNORE INTO messages (room_id, sender_id, ciphertext, iv, type, client_message_id, status, reply_to_message_id, event_type, event_actor_name) VALUES (?, ?, '', '', 'system', ?, 'sent', NULL, ?, ?)`),
+  findSystemEvent: db.prepare(`SELECT m.id, m.type, m.client_message_id, m.ciphertext, m.iv, m.reply_to_message_id, m.status, m.event_type, m.event_actor_name, m.created_at, m.delivered_at, m.read_at, p.display_name as sender_name, p.device_id as sender_device_id FROM messages m JOIN participants p ON p.id=m.sender_id WHERE m.room_id=? AND m.sender_id=? AND m.event_type=? AND m.type='system'`),
+  findMessageInRoom: db.prepare('SELECT id FROM messages WHERE id=? AND room_id=?'),
+  findMessageById: db.prepare(`${MESSAGE_SELECT} WHERE m.id=? AND m.room_id=?`),
+  findMessageByClientId: db.prepare(`${MESSAGE_SELECT} WHERE m.room_id=? AND m.sender_id=? AND m.client_message_id=?`),
+  findMessageForRead: db.prepare('SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id=? AND room_id=?'),
+
+  findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id=? AND device_id=?`),
+  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, at_bottom, updated_at FROM chat_view_state WHERE room_id=? AND device_id=?`),
   upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, at_bottom, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, at_bottom=excluded.at_bottom, updated_at=datetime('now')`),
   upsertDraft: db.prepare(`INSERT INTO drafts (room_id, device_id, ciphertext, iv, reply_to_message_id, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET ciphertext=excluded.ciphertext, iv=excluded.iv, reply_to_message_id=excluded.reply_to_message_id, updated_at=datetime('now')`),
-  deleteDraftByRoomDevice: db.prepare(`DELETE FROM drafts WHERE room_id = ? AND device_id = ?`),
-  markDelivered: db.prepare(`UPDATE messages
-    SET status = CASE WHEN status = 'sent' THEN 'delivered' ELSE status END,
-        delivered_at = CASE WHEN status = 'sent' THEN datetime('now') ELSE delivered_at END
-    WHERE id = ? AND status = 'sent'`),
-  markReadBulk: db.prepare(`UPDATE messages
-    SET status = 'read',
-        delivered_at = CASE WHEN delivered_at IS NULL THEN datetime('now') ELSE delivered_at END,
-        read_at = CASE WHEN read_at IS NULL THEN datetime('now') ELSE read_at END
-    WHERE room_id = ? AND id = ? AND sender_id != ? AND status != 'read'`),
-  upsertPushSub: db.prepare(`INSERT INTO push_subscriptions (room_id, device_id, endpoint, p256dh, auth, muted, show_text, hide_sender, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT muted FROM push_subscriptions WHERE room_id=? AND device_id=?),0), ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET endpoint=excluded.endpoint, p256dh=excluded.p256dh, auth=excluded.auth, show_text=excluded.show_text, hide_sender=excluded.hide_sender, updated_at=datetime('now')`),
-  deletePushByRoomEndpointOtherDevice: db.prepare('DELETE FROM push_subscriptions WHERE room_id = ? AND endpoint = ? AND device_id != ?'),
-  updatePushSettings: db.prepare(`UPDATE push_subscriptions SET show_text=?, hide_sender=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
+  deleteDraftByRoomDevice: db.prepare(`DELETE FROM drafts WHERE room_id=? AND device_id=?`),
+
+  markDelivered: db.prepare(`UPDATE messages SET status=CASE WHEN status='sent' THEN 'delivered' ELSE status END, delivered_at=CASE WHEN status='sent' THEN datetime('now') ELSE delivered_at END WHERE id=? AND status='sent'`),
+  markReadBulk: db.prepare(`UPDATE messages SET status='read', delivered_at=CASE WHEN delivered_at IS NULL THEN datetime('now') ELSE delivered_at END, read_at=CASE WHEN read_at IS NULL THEN datetime('now') ELSE read_at END WHERE room_id=? AND id=? AND sender_id!=? AND status!='read'`),
+
+  upsertPushSub: db.prepare(`INSERT INTO push_subscriptions (room_id, device_id, endpoint, p256dh, auth, muted, show_text, hide_sender, notify_system_events, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE((SELECT muted FROM push_subscriptions WHERE room_id=? AND device_id=?),0), ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET endpoint=excluded.endpoint, p256dh=excluded.p256dh, auth=excluded.auth, show_text=excluded.show_text, hide_sender=excluded.hide_sender, notify_system_events=excluded.notify_system_events, updated_at=datetime('now')`),
+  deletePushByRoomEndpointOtherDevice: db.prepare('DELETE FROM push_subscriptions WHERE room_id=? AND endpoint=? AND device_id!=?'),
+  updatePushSettings: db.prepare(`UPDATE push_subscriptions SET show_text=?, hide_sender=?, notify_system_events=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
   mutePushRoom: db.prepare(`UPDATE push_subscriptions SET muted=?, updated_at=datetime('now') WHERE room_id=? AND device_id=?`),
-  deletePushByDeviceRoom: db.prepare('DELETE FROM push_subscriptions WHERE device_id = ? AND room_id = ?'),
-  deletePushByDevice: db.prepare('DELETE FROM push_subscriptions WHERE device_id = ?'),
-  listPushForRoom: db.prepare(`SELECT ps.*, r.public_id as room_public_id, p.display_name as device_name FROM push_subscriptions ps JOIN rooms r ON r.id = ps.room_id JOIN participants p ON p.room_id = ps.room_id AND p.device_id = ps.device_id WHERE ps.room_id = ?`),
-  deletePushById: db.prepare('DELETE FROM push_subscriptions WHERE id = ?'),
+  deletePushByDeviceRoom: db.prepare('DELETE FROM push_subscriptions WHERE device_id=? AND room_id=?'),
+  deletePushByDevice: db.prepare('DELETE FROM push_subscriptions WHERE device_id=?'),
+  listPushForRoom: db.prepare(`SELECT ps.*, r.public_id as room_public_id, p.display_name as device_name FROM push_subscriptions ps JOIN rooms r ON r.id=ps.room_id JOIN participants p ON p.room_id=ps.room_id AND p.device_id=ps.device_id AND p.access_revoked=0 WHERE ps.room_id=?`),
+  deletePushById: db.prepare('DELETE FROM push_subscriptions WHERE id=?'),
   claimPushDelivery: db.prepare('INSERT OR IGNORE INTO push_deliveries (room_id, message_id, device_id) VALUES (?, ?, ?)'),
-  deletePushDelivery: db.prepare('DELETE FROM push_deliveries WHERE room_id = ? AND message_id = ? AND device_id = ?'),
-  deletePushDeliveriesByRoomId: db.prepare('DELETE FROM push_deliveries WHERE room_id = ?'),
+  deletePushDelivery: db.prepare('DELETE FROM push_deliveries WHERE room_id=? AND message_id=? AND device_id=?'),
+
   createInvite: db.prepare(`INSERT INTO invites (invite_code, room_id, room_secret, expires_at) VALUES (?, ?, ?, datetime('now', '+24 hours'))`),
-  findInviteByCode: db.prepare(`SELECT * FROM invites WHERE invite_code = ?`),
-  consumeInvite: db.prepare(`UPDATE invites SET used_at = datetime('now'), used_by_device_id = ?, room_secret = NULL WHERE id = ? AND used_at IS NULL AND revoked = 0 AND expires_at > datetime('now') AND room_secret IS NOT NULL`),
-  listExpiredSoloInviteRooms: db.prepare(`SELECT i.room_id FROM invites i WHERE i.expires_at <= datetime('now') AND i.used_at IS NULL AND (SELECT COUNT(*) FROM participants p WHERE p.room_id = i.room_id) < 2`),
-  deletePushByRoomId: db.prepare('DELETE FROM push_subscriptions WHERE room_id = ?'),
+  findInviteByCode: db.prepare(`SELECT * FROM invites WHERE invite_code=?`),
+  consumeInvite: db.prepare(`UPDATE invites SET used_at=datetime('now'), used_by_device_id=?, room_secret=NULL WHERE id=? AND used_at IS NULL AND revoked=0 AND expires_at>datetime('now') AND room_secret IS NOT NULL`),
+  revokeInvitesByRoomId: db.prepare(`UPDATE invites SET revoked=1, room_secret=NULL WHERE room_id=? AND revoked=0`),
+  listExpiredSoloInviteRooms: db.prepare(`SELECT i.room_id FROM invites i JOIN rooms r ON r.id=i.room_id WHERE r.status='open' AND i.expires_at<=datetime('now') AND i.used_at IS NULL AND (SELECT COUNT(*) FROM participants p WHERE p.room_id=i.room_id AND p.access_revoked=0)<2`),
+
   createMedia: db.prepare(`INSERT INTO media (public_id, room_id, status, file_order, server_filename, thumbnail_filename, original_name_ciphertext, original_name_iv, mime_type, media_kind, size_bytes, encrypted_size_bytes, thumb_size_bytes, thumb_encrypted_size_bytes, width, height, duration_seconds) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-  listMediaByMessageId: db.prepare(`SELECT id, public_id, mime_type, media_kind, size_bytes, encrypted_size_bytes, width, height, duration_seconds, file_order FROM media WHERE message_id = ? ORDER BY file_order ASC, id ASC`),
-  listPendingMediaByIds: db.prepare(`SELECT * FROM media WHERE room_id = ? AND id IN (SELECT value FROM json_each(?)) ORDER BY file_order ASC, id ASC`),
+  listMediaByMessageId: db.prepare(`SELECT id, public_id, mime_type, media_kind, size_bytes, encrypted_size_bytes, width, height, duration_seconds, file_order FROM media WHERE message_id=? ORDER BY file_order ASC, id ASC`),
+  listPendingMediaByIds: db.prepare(`SELECT * FROM media WHERE room_id=? AND id IN (SELECT value FROM json_each(?)) ORDER BY file_order ASC, id ASC`),
   attachMediaToMessage: db.prepare(`UPDATE media SET status='attached', message_id=?, updated_at=datetime('now') WHERE id=? AND room_id=? AND status='pending' AND message_id IS NULL`),
   findMediaByPublicId: db.prepare(`SELECT * FROM media WHERE public_id=?`),
   deletePendingMediaByIds: db.prepare(`DELETE FROM media WHERE room_id=? AND status='pending' AND id IN (SELECT value FROM json_each(?))`),
-  listStalePendingMedia: db.prepare(`SELECT * FROM media WHERE status='pending' AND created_at < datetime('now', '-24 hours')`),
+  listStalePendingMedia: db.prepare(`SELECT * FROM media WHERE status='pending' AND created_at<datetime('now', '-24 hours')`),
   deletePendingMediaById: db.prepare(`DELETE FROM media WHERE id=? AND status='pending'`),
   listMediaFilesByRoomId: db.prepare(`SELECT server_filename, thumbnail_filename FROM media WHERE room_id=?`),
-  deleteMediaByRoomId: db.prepare('DELETE FROM media WHERE room_id = ?'),
-  deleteMessagesByRoomId: db.prepare('DELETE FROM messages WHERE room_id = ?'),
-  deleteParticipantsByRoomId: db.prepare('DELETE FROM participants WHERE room_id = ?'),
-  deleteViewStateByRoomId: db.prepare('DELETE FROM chat_view_state WHERE room_id = ?'),
-  deleteRecoveryByRoomId: db.prepare('DELETE FROM recovery WHERE room_id = ?'),
-  deleteInvitesByRoomId: db.prepare('DELETE FROM invites WHERE room_id = ?'),
-  deleteRoomById: db.prepare('DELETE FROM rooms WHERE id = ?')
+
+  deleteMediaByRoomId: db.prepare('DELETE FROM media WHERE room_id=?'),
+  deletePushByRoomId: db.prepare('DELETE FROM push_subscriptions WHERE room_id=?'),
+  deletePushDeliveriesByRoomId: db.prepare('DELETE FROM push_deliveries WHERE room_id=?'),
+  deleteDraftsByRoomId: db.prepare('DELETE FROM drafts WHERE room_id=?'),
+  deleteViewStateByRoomId: db.prepare('DELETE FROM chat_view_state WHERE room_id=?'),
+  deleteMessagesByRoomId: db.prepare('DELETE FROM messages WHERE room_id=?'),
+  deleteParticipantsByRoomId: db.prepare('DELETE FROM participants WHERE room_id=?'),
+  deleteRecoveryByRoomId: db.prepare('DELETE FROM recovery WHERE room_id=?'),
+  deleteInvitesByRoomId: db.prepare('DELETE FROM invites WHERE room_id=?'),
+  deleteRoomById: db.prepare('DELETE FROM rooms WHERE id=?')
 };
 
-function randomToken(length) { const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let out = ''; while (out.length < length) out += alphabet[crypto.randomInt(0, alphabet.length)]; return out; }
+function randomToken(length) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  while (out.length < length) out += alphabet[crypto.randomInt(0, alphabet.length)];
+  return out;
+}
 function getDeviceSockets(deviceId) {
   if (!socketsByDevice.has(deviceId)) socketsByDevice.set(deviceId, new Set());
   return socketsByDevice.get(deviceId);
 }
-function getBaseUrl(req) { if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL.replace(/\/+$/, ''); const protocol = req.headers['x-forwarded-proto']?.split(',')[0].trim() || req.protocol; const host = req.headers['x-forwarded-host']?.split(',')[0].trim() || req.headers.host; return `${protocol}://${host}`; }
+function getBaseUrl(req) {
+  if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL.replace(/\/+$/, '');
+  const protocol = req.headers['x-forwarded-proto']?.split(',')[0].trim() || req.protocol;
+  const host = req.headers['x-forwarded-host']?.split(',')[0].trim() || req.headers.host;
+  return `${protocol}://${host}`;
+}
 function pushOff(res) { return res.status(503).json({ ok: false, error: 'push disabled on server' }); }
 function getRoomByInput(roomId) { return q.findRoomByPublicId.get(roomId) || q.findRoomById.get(Number(roomId)); }
+function isRoomOpen(room) { return Boolean(room && String(room.status || ROOM_OPEN).toLowerCase() === ROOM_OPEN); }
+function roomStatePayload(room) {
+  return {
+    roomStatus: String(room?.status || ROOM_OPEN).toLowerCase(),
+    closedAt: toIsoUtc(room?.closed_at)
+  };
+}
+function systemEventText(message, hideActor = false) {
+  const actor = hideActor ? 'Участник' : String(message?.event_actor_name || message?.sender_name || 'Участник');
+  if (message?.event_type === SYSTEM_JOINED) return `${actor} присоединился к комнате`;
+  if (message?.event_type === SYSTEM_LEFT) return `${actor} покинул комнату`;
+  return 'Системное событие';
+}
 function hydrateMessages(messages) {
-  return messages.map((m) => ({ ...m, media: m.type === 'media' ? q.listMediaByMessageId.all(m.id).map((item) => ({ ...item, thumbnail_url: `/api/media/${item.public_id}/thumb` })) : [] }));
+  return messages.map((m) => ({
+    ...m,
+    media: m.type === 'media' ? q.listMediaByMessageId.all(m.id).map((item) => ({ ...item, thumbnail_url: `/api/media/${item.public_id}/thumb` })) : []
+  }));
 }
 function normalizeHistoryLimit(value) {
   const parsed = Number.parseInt(value, 10);
@@ -149,11 +191,7 @@ function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE
   const hasMore = rows.length > safeLimit;
   const pageRows = rows.slice(0, safeLimit).reverse();
   const messages = serializeMessages(pageRows);
-  return {
-    messages,
-    hasMore,
-    nextCursor: messages.length ? Number(messages[0].id) : null
-  };
+  return { messages, hasMore, nextCursor: messages.length ? Number(messages[0].id) : null };
 }
 function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE) {
   const safeLimit = normalizeHistoryLimit(limit);
@@ -161,11 +199,7 @@ function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE) 
   const hasMore = rows.length > safeLimit;
   const pageRows = rows.slice(0, safeLimit);
   const messages = serializeMessages(pageRows);
-  return {
-    messages,
-    hasMore,
-    nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor
-  };
+  return { messages, hasMore, nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor };
 }
 function normalizeViewState(row) {
   if (!row) return null;
@@ -191,6 +225,25 @@ function toIsoUtc(value) {
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
 }
+function messageToDto(row) {
+  return {
+    id: Number(row.id),
+    client_message_id: row.client_message_id || null,
+    ciphertext: row.ciphertext,
+    iv: row.iv,
+    reply_to_message_id: row.reply_to_message_id ? Number(row.reply_to_message_id) : null,
+    status: row.status,
+    event_type: row.event_type || null,
+    event_actor_name: row.event_actor_name || null,
+    created_at: toIsoUtc(row.created_at),
+    delivered_at: toIsoUtc(row.delivered_at),
+    read_at: toIsoUtc(row.read_at),
+    sender_name: row.sender_name,
+    sender_device_id: row.sender_device_id,
+    type: row.type || 'text',
+    media: []
+  };
+}
 
 app.get('/api/push/vapid-public-key', (req, res) => res.json(pushEnabled ? { enabled: true, publicKey: VAPID_PUBLIC_KEY } : { enabled: false }));
 app.post('/api/push/subscribe', (req, res) => {
@@ -206,35 +259,53 @@ app.post('/api/push/subscribe', (req, res) => {
   const auth = subscription?.keys?.auth;
   if (!endpoint || !p256dh || !auth) return res.status(400).json({ ok: false, error: 'invalid subscription' });
   q.deletePushByRoomEndpointOtherDevice.run(room.id, endpoint, safeDeviceId);
-  q.upsertPushSub.run(room.id, safeDeviceId, endpoint, p256dh, auth, room.id, safeDeviceId, settings?.showText ? 1 : 0, settings?.hideSender ? 1 : 0);
+  q.upsertPushSub.run(
+    room.id,
+    safeDeviceId,
+    endpoint,
+    p256dh,
+    auth,
+    room.id,
+    safeDeviceId,
+    settings?.showText ? 1 : 0,
+    settings?.hideSender ? 1 : 0,
+    settings?.notifySystemEvents === false ? 0 : 1
+  );
   res.json({ ok: true });
 });
-
 app.post('/api/push/settings', (req, res) => {
   if (!pushEnabled) return pushOff(res);
-  const room = getRoomByInput(req.body?.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const room = getRoomByInput(req.body?.roomId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
   const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
-  const info = q.updatePushSettings.run(req.body?.showText ? 1 : 0, req.body?.hideSender ? 1 : 0, room.id, safeDeviceId);
-  res.json({ ok: true, updated: info.changes>0 });
+  const info = q.updatePushSettings.run(
+    req.body?.showText ? 1 : 0,
+    req.body?.hideSender ? 1 : 0,
+    req.body?.notifySystemEvents === false ? 0 : 1,
+    room.id,
+    safeDeviceId
+  );
+  res.json({ ok: true, updated: info.changes > 0 });
 });
-
 app.post('/api/push/mute-room', (req, res) => {
   if (!pushEnabled) return pushOff(res);
-  const room = getRoomByInput(req.body?.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const room = getRoomByInput(req.body?.roomId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
   const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
   q.mutePushRoom.run(req.body?.muted ? 1 : 0, room.id, safeDeviceId);
   res.json({ ok: true });
 });
-
 app.post('/api/push/unsubscribe', (req, res) => {
   if (!pushEnabled) return pushOff(res);
-  const deviceId = String(req.body?.deviceId || '').slice(0, 64); if (!deviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  const deviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!deviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (req.body?.roomId) {
-    const room = getRoomByInput(req.body.roomId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+    const room = getRoomByInput(req.body.roomId);
+    if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
     if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
     q.deletePushByDeviceRoom.run(deviceId, room.id);
   } else {
@@ -246,9 +317,9 @@ app.post('/api/push/unsubscribe', (req, res) => {
 });
 
 async function sendPushForMessage({ roomId, messageId, roomPublicId, senderDeviceId, senderName, preview }) {
-  if (!pushEnabled) return;
+  if (!pushEnabled) return false;
   const safeMessageId = Number(messageId);
-  if (!Number.isSafeInteger(safeMessageId) || safeMessageId <= 0) return;
+  if (!Number.isSafeInteger(safeMessageId) || safeMessageId <= 0) return false;
   const subs = q.listPushForRoom.all(roomId);
   let delivered = false;
   for (const sub of subs) {
@@ -270,31 +341,86 @@ async function sendPushForMessage({ roomId, messageId, roomPublicId, senderDevic
   }
   return delivered;
 }
+async function sendPushForSystemEvent(room, message) {
+  if (!pushEnabled || !room || !message) return false;
+  const safeMessageId = Number(message.id);
+  if (!Number.isSafeInteger(safeMessageId) || safeMessageId <= 0) return false;
+  let delivered = false;
+  for (const sub of q.listPushForRoom.all(room.id)) {
+    if (sub.device_id === message.sender_device_id || sub.muted || !sub.notify_system_events) continue;
+    if (hasVisibleRoomSocketForDevice(sub.device_id, room.public_id)) continue;
+    const claim = q.claimPushDelivery.run(room.id, safeMessageId, sub.device_id);
+    if (!claim.changes) continue;
+    const body = systemEventText(message, Boolean(sub.hide_sender));
+    const payload = JSON.stringify({ type: 'system', roomId: room.public_id, url: `/chat/${room.public_id}`, title: 'FPChat', body });
+    try {
+      await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
+      delivered = true;
+    } catch (err) {
+      q.deletePushDelivery.run(room.id, safeMessageId, sub.device_id);
+      if (err?.statusCode === 404 || err?.statusCode === 410) q.deletePushById.run(sub.id);
+      else console.warn(`System push failed for room ${room.public_id}: ${err?.statusCode || 'error'}`);
+    }
+  }
+  return delivered;
+}
 
-// existing endpoints below ...
-const removeRoomCascade = db.transaction((roomId) => {
-  for (const item of q.listMediaFilesByRoomId.all(roomId)) { safeUnlink(item.server_filename); safeUnlink(item.thumbnail_filename); }
+function safeUnlink(file) {
+  if (!file) return;
+  try { fs.unlinkSync(path.join(UPLOAD_DIR, file)); } catch {}
+}
+function removeRoomRows(roomId) {
+  const files = q.listMediaFilesByRoomId.all(roomId);
   q.deleteMediaByRoomId.run(roomId);
   q.deletePushByRoomId.run(roomId);
   q.deletePushDeliveriesByRoomId.run(roomId);
+  q.deleteDraftsByRoomId.run(roomId);
   q.deleteViewStateByRoomId.run(roomId);
   q.deleteMessagesByRoomId.run(roomId);
   q.deleteParticipantsByRoomId.run(roomId);
   q.deleteRecoveryByRoomId.run(roomId);
   q.deleteInvitesByRoomId.run(roomId);
   q.deleteRoomById.run(roomId);
-});
-function mediaToDto(media, req) {
-  return { id: media.id, public_id: media.public_id, mime_type: media.mime_type, media_kind: media.media_kind, size_bytes: media.size_bytes, encrypted_size_bytes: media.encrypted_size_bytes, width: media.width, height: media.height, duration_seconds: media.duration_seconds, file_order: media.file_order, thumbnail_url: media.thumbnail_filename ? `${getBaseUrl(req)}/api/media/${media.public_id}/thumb` : null };
+  return files;
 }
-function safeUnlink(file){if(!file)return;try{fs.unlinkSync(path.join(UPLOAD_DIR,file));}catch{}}
-function cleanupStalePendingMedia(){const rows=q.listStalePendingMedia.all();for(const m of rows){safeUnlink(m.server_filename);safeUnlink(m.thumbnail_filename);q.deletePendingMediaById.run(m.id);}}
+const removeRoomCascadeTx = db.transaction((roomId) => removeRoomRows(roomId));
+function removeRoomCascade(roomId) {
+  const files = removeRoomCascadeTx(roomId);
+  for (const item of files) {
+    safeUnlink(item.server_filename);
+    safeUnlink(item.thumbnail_filename);
+  }
+}
+function mediaToDto(media, req) {
+  return {
+    id: media.id,
+    public_id: media.public_id,
+    mime_type: media.mime_type,
+    media_kind: media.media_kind,
+    size_bytes: media.size_bytes,
+    encrypted_size_bytes: media.encrypted_size_bytes,
+    width: media.width,
+    height: media.height,
+    duration_seconds: media.duration_seconds,
+    file_order: media.file_order,
+    thumbnail_url: media.thumbnail_filename ? `${getBaseUrl(req)}/api/media/${media.public_id}/thumb` : null
+  };
+}
+function cleanupStalePendingMedia() {
+  const rows = q.listStalePendingMedia.all();
+  for (const media of rows) {
+    safeUnlink(media.server_filename);
+    safeUnlink(media.thumbnail_filename);
+    q.deletePendingMediaById.run(media.id);
+  }
+}
 function cleanupExpiredSoloRooms() {
   const rows = q.listExpiredSoloInviteRooms.all();
   for (const row of rows) removeRoomCascade(row.room_id);
 }
 cleanupStalePendingMedia();
 setInterval(cleanupStalePendingMedia, 45 * 60 * 1000);
+
 app.post('/api/rooms', (req, res) => {
   const publicId = randomToken(16);
   const inviteCode = randomToken(24);
@@ -306,14 +432,22 @@ app.post('/api/rooms', (req, res) => {
   let roomId;
   db.transaction(() => {
     const roomResult = q.createRoom.run(publicId);
-    roomId = roomResult.lastInsertRowid;
+    roomId = Number(roomResult.lastInsertRowid);
     q.createRecovery.run(roomId, safeDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext);
     q.upsertParticipant.run(roomId, safeName, safeDeviceId);
     q.createInvite.run(inviteCode, roomId, String(roomSecret));
   })();
   const invite = q.findInviteByCode.get(inviteCode);
   const participant = q.findParticipant.get(roomId, safeDeviceId);
-  return res.json({ ok: true, publicId, inviteLink: `${getBaseUrl(req)}/i/${inviteCode}`, inviteExpiresAt: toIsoUtc(invite.expires_at), participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id } });
+  return res.json({
+    ok: true,
+    publicId,
+    inviteLink: `${getBaseUrl(req)}/i/${inviteCode}`,
+    inviteExpiresAt: toIsoUtc(invite.expires_at),
+    participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id },
+    roomStatus: ROOM_OPEN,
+    closedAt: null
+  });
 });
 
 app.post('/api/rooms/:publicId/recovery', (req, res) => {
@@ -327,62 +461,64 @@ app.post('/api/rooms/:publicId/recovery', (req, res) => {
   const participant = q.findParticipant.get(room.id, safeDeviceId);
   if (!participant) return res.status(403).json({ ok: false, error: 'forbidden' });
   q.upsertRecovery.run(room.id, safeDeviceId, recoverySalt, recoveryVerifier, recoverySecretIv, recoverySecretCiphertext);
-  return res.json({ ok: true });
+  return res.json({ ok: true, ...roomStatePayload(room) });
 });
 
+function recoveryDenied(res, code = 'RECOVERY_INVALID') {
+  const error = code === 'RECOVERY_REVOKED' ? 'recovery revoked' : 'invalid recovery code or device';
+  return res.status(403).json({ ok: false, error, code });
+}
 app.post('/api/recover', (req, res) => {
   const { recoveryCode, deviceIds } = req.body || {};
   if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
   const safeDeviceIds = Array.isArray(deviceIds) ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))] : [];
-  if (safeDeviceIds.length === 0) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
+  if (!safeDeviceIds.length) return recoveryDenied(res);
   const recoveries = q.listRecoveriesWithRooms.all();
   for (const recovery of recoveries) {
     const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64');
     if (digest !== recovery.recovery_verifier) continue;
+    if (!safeDeviceIds.includes(recovery.device_id)) return recoveryDenied(res);
+    if (recovery.revoked) return recoveryDenied(res, 'RECOVERY_REVOKED');
     const room = q.findRoomByPublicId.get(recovery.public_id);
-    const participant = q.listParticipantsByRoom.all(room.id).find((p) => p.device_id === recovery.device_id && safeDeviceIds.includes(recovery.device_id));
-    if (!participant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
+    const participant = room ? q.findParticipant.get(room.id, recovery.device_id) : null;
+    if (!room || !participant) return recoveryDenied(res, 'RECOVERY_REVOKED');
     return res.json({
       publicId: recovery.public_id,
       deviceId: participant.device_id,
       recoverySalt: recovery.recovery_salt,
       recoverySecretIv: recovery.recovery_secret_iv,
-      recoverySecretCiphertext: recovery.recovery_secret_ciphertext
+      recoverySecretCiphertext: recovery.recovery_secret_ciphertext,
+      ...roomStatePayload(room)
     });
   }
-  return res.status(403).json({ error: 'invalid recovery code' });
+  return recoveryDenied(res);
 });
 app.post('/api/rooms/:publicId/recover', (req, res) => {
   const { recoveryCode, deviceIds } = req.body || {};
   if (!recoveryCode) return res.status(400).json({ error: 'recoveryCode required' });
   const room = q.findRoomByPublicId.get(req.params.publicId);
   if (!room) return res.status(404).json({ error: 'room not found' });
-  const safeDeviceIds = Array.isArray(deviceIds)
-    ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))]
-    : [];
-  if (!safeDeviceIds.length) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
-
-  const recoveries = q.listRecoveriesByRoomId.all(room.id);
-  let matchedRecovery = null;
-  for (const recovery of recoveries) {
+  const safeDeviceIds = Array.isArray(deviceIds) ? [...new Set(deviceIds.map((id) => String(id || '').slice(0, 64)).filter(Boolean))] : [];
+  if (!safeDeviceIds.length) return recoveryDenied(res);
+  for (const recovery of q.listRecoveriesByRoomId.all(room.id)) {
     if (!safeDeviceIds.includes(recovery.device_id)) continue;
     const digest = crypto.createHash('sha256').update(`${String(recoveryCode)}:${recovery.recovery_salt}`).digest('base64');
-    if (digest === recovery.recovery_verifier) {
-      matchedRecovery = recovery;
-      break;
-    }
+    if (digest !== recovery.recovery_verifier) continue;
+    if (recovery.revoked) return recoveryDenied(res, 'RECOVERY_REVOKED');
+    const participant = q.findParticipant.get(room.id, recovery.device_id);
+    if (!participant) return recoveryDenied(res, 'RECOVERY_REVOKED');
+    return res.json({
+      deviceId: recovery.device_id,
+      recoverySalt: recovery.recovery_salt,
+      recoverySecretIv: recovery.recovery_secret_iv,
+      recoverySecretCiphertext: recovery.recovery_secret_ciphertext,
+      ...roomStatePayload(room)
+    });
   }
-  if (!matchedRecovery) return res.status(403).json({ error: 'invalid recovery code or device' });
-  const participant = q.findParticipant.get(room.id, matchedRecovery.device_id);
-  if (!participant) return res.status(403).json({ error: 'recovery only allowed from existing participant device' });
-  return res.json({
-    deviceId: matchedRecovery.device_id,
-    recoverySalt: matchedRecovery.recovery_salt,
-    recoverySecretIv: matchedRecovery.recovery_secret_iv,
-    recoverySecretCiphertext: matchedRecovery.recovery_secret_ciphertext
-  });
+  return recoveryDenied(res);
 });
-app.post('/api/invites/:inviteCode/join', (req, res) => {
+
+app.post('/api/invites/:inviteCode/join', async (req, res) => {
   const { displayName, deviceId } = req.body || {};
   if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' });
   const invite = q.findInviteByCode.get(req.params.inviteCode);
@@ -394,19 +530,37 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
   }
   const room = q.findRoomById.get(invite.room_id);
   if (!room) return res.status(404).json({ error: 'room not found' });
+  if (!isRoomOpen(room)) return res.status(410).json({ error: 'room closed', code: 'ROOM_CLOSED' });
   const safeDeviceId = String(deviceId).slice(0, 64);
   const safeName = String(displayName).slice(0, 48);
   if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });
-  if (q.findParticipant.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });
+  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });
   if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' });
   const roomSecret = invite.room_secret;
+  let participantId = null;
+  let eventId = null;
   const tx = db.transaction(() => {
-    const info = q.consumeInvite.run(safeDeviceId, invite.id);
-    if (!info.changes) return false;
+    const latestRoom = q.findRoomById.get(room.id);
+    if (!isRoomOpen(latestRoom)) return { ok: false, reason: 'closed' };
+    const consume = q.consumeInvite.run(safeDeviceId, invite.id);
+    if (!consume.changes) return { ok: false, reason: 'used' };
     q.upsertParticipant.run(room.id, safeName, safeDeviceId);
-    return true;
+    const participant = q.findParticipant.get(room.id, safeDeviceId);
+    participantId = Number(participant.id);
+    const eventKey = `system:${SYSTEM_JOINED}:${participant.id}`;
+    q.createSystemEvent.run(room.id, participant.id, eventKey, SYSTEM_JOINED, safeName);
+    const event = q.findSystemEvent.get(room.id, participant.id, SYSTEM_JOINED);
+    eventId = event ? Number(event.id) : null;
+    return { ok: true };
   });
-  if (!tx()) return res.status(410).json({ error: 'invite expired or used' });
+  const result = tx();
+  if (!result.ok) {
+    if (result.reason === 'closed') return res.status(410).json({ error: 'room closed', code: 'ROOM_CLOSED' });
+    return res.status(410).json({ error: 'invite expired or used' });
+  }
+
+  console.log(`[ROOM] invite accepted room=${room.public_id}`);
+  console.log(`[ROOM] participant joined room=${room.public_id} participant=${participantId}`);
   const participant = q.findParticipant.get(room.id, safeDeviceId);
   const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
     deviceId: item.device_id,
@@ -415,23 +569,43 @@ app.post('/api/invites/:inviteCode/join', (req, res) => {
     lastSeenAt: toIsoUtc(item.last_seen_at)
   }));
   const history = getMessageHistoryPage(room.id);
+  const systemEvents = history.messages.filter((message) => message.type === 'system');
+  const responseHistory = { ...history, messages: history.messages.filter((message) => message.type !== 'system') };
   const unread = getUnreadState(room.id, participant.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
+
+  if (eventId) {
+    const eventRow = q.findMessageById.get(eventId, room.id);
+    if (eventRow) {
+      const eventMessage = messageToDto(eventRow);
+      broadcastRoomMessage(room, eventMessage, safeDeviceId);
+      broadcastUnreadState(room);
+      void sendPushForSystemEvent(room, eventMessage);
+    }
+  }
+
   return res.json({
     ok: true,
     publicId: room.public_id,
     roomSecret,
     participant: { id: participant.id, displayName: participant.display_name, deviceId: participant.device_id },
     participants,
-    ...history,
+    ...responseHistory,
+    systemEvents,
     unreadCount: unread.unreadCount,
     firstUnreadMessageId: unread.firstUnreadMessageId,
-    viewState
+    viewState,
+    ...roomStatePayload(q.findRoomById.get(room.id))
   });
 });
+
 app.get('/i/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 app.get('/chat/:publicId', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/api/rooms/:publicId', (req, res) => { const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ error: 'room not found' }); return res.json({ publicId: room.public_id, createdAt: room.created_at }); });
+app.get('/api/rooms/:publicId', (req, res) => {
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  return res.json({ publicId: room.public_id, createdAt: toIsoUtc(room.created_at), ...roomStatePayload(room) });
+});
 app.post('/api/rooms/:publicId/join', (req, res) => {
   const room = q.findRoomByPublicId.get(req.params.publicId);
   if (!room) return res.status(404).json({ error: 'room not found' });
@@ -439,7 +613,7 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   if (!displayName || !deviceId) return res.status(400).json({ error: 'displayName and deviceId required' });
   const safeDeviceId = String(deviceId).slice(0, 64);
   const participant = q.findParticipant.get(room.id, safeDeviceId);
-  if (!participant) return res.status(403).json({ error: 'forbidden' });
+  if (!participant) return res.status(403).json({ error: 'forbidden', code: 'ACCESS_REVOKED' });
   q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId);
   const updated = q.findParticipant.get(room.id, safeDeviceId);
   const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
@@ -457,7 +631,8 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
     ...history,
     unreadCount: unread.unreadCount,
     firstUnreadMessageId: unread.firstUnreadMessageId,
-    viewState
+    viewState,
+    ...roomStatePayload(room)
   });
 });
 
@@ -467,20 +642,18 @@ app.get('/api/rooms/:publicId/messages', (req, res) => {
   const safeDeviceId = String(req.query?.deviceId || '').slice(0, 64);
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   const participant = q.findParticipant.get(room.id, safeDeviceId);
-  if (!participant) return res.status(403).json({ ok: false, error: 'forbidden' });
+  if (!participant) return res.status(403).json({ ok: false, error: 'forbidden', code: 'ACCESS_REVOKED' });
   if (req.query?.after !== undefined) {
     const afterCursor = Number.parseInt(req.query.after, 10);
-    if (!Number.isSafeInteger(afterCursor) || afterCursor < 0) {
-      return res.status(400).json({ ok: false, error: 'invalid after cursor' });
-    }
+    if (!Number.isSafeInteger(afterCursor) || afterCursor < 0) return res.status(400).json({ ok: false, error: 'invalid after cursor' });
     const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit);
     const unread = getUnreadState(room.id, participant.id);
-    return res.json({ ok: true, ...sync, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId });
+    return res.json({ ok: true, ...sync, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) });
   }
   const beforeCursor = normalizeHistoryCursor(req.query?.before);
   const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit);
   const unread = getUnreadState(room.id, participant.id);
-  return res.json({ ok: true, ...history, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId });
+  return res.json({ ok: true, ...history, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) });
 });
 
 app.get('/api/rooms/:publicId/view-state', (req, res) => {
@@ -489,7 +662,7 @@ app.get('/api/rooms/:publicId/view-state', (req, res) => {
   const safeDeviceId = String(req.query?.deviceId || '').slice(0, 64);
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
-  return res.json({ ok: true, viewState: normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId)) });
+  return res.json({ ok: true, viewState: normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId)), ...roomStatePayload(room) });
 });
 app.put('/api/rooms/:publicId/view-state', (req, res) => {
   const room = q.findRoomByPublicId.get(req.params.publicId);
@@ -502,7 +675,7 @@ app.put('/api/rooms/:publicId/view-state', (req, res) => {
   const anchorOffsetPx = Math.max(-100000, Math.min(100000, Number.parseInt(req.body?.anchorOffsetPx ?? req.body?.anchor_offset_px ?? 0, 10) || 0));
   const atBottom = req.body?.atBottom === true || req.body?.at_bottom === 1 ? 1 : 0;
   q.upsertViewState.run(room.id, safeDeviceId, anchorMessageId, anchorOffsetPx, atBottom);
-  return res.json({ ok: true });
+  return res.json({ ok: true, ...roomStatePayload(room) });
 });
 
 app.get('/api/rooms/:publicId/draft', (req, res) => {
@@ -512,7 +685,7 @@ app.get('/api/rooms/:publicId/draft', (req, res) => {
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const draft = q.findDraftByRoomDevice.get(room.id, safeDeviceId);
-  return res.json({ ok: true, draft: draft ? { ...draft, updated_at: toIsoUtc(draft.updated_at) } : null });
+  return res.json({ ok: true, draft: draft ? { ...draft, updated_at: toIsoUtc(draft.updated_at) } : null, ...roomStatePayload(room) });
 });
 app.put('/api/rooms/:publicId/draft', (req, res) => {
   const room = q.findRoomByPublicId.get(req.params.publicId);
@@ -520,13 +693,17 @@ app.put('/api/rooms/:publicId/draft', (req, res) => {
   const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });
   const ciphertext = req.body?.ciphertext || null;
   const iv = req.body?.iv || null;
   const rawReplyId = req.body?.replyToMessageId ?? req.body?.reply_to_message_id;
   let replyToMessageId = Number(rawReplyId);
   if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0 || !q.findMessageInRoom.get(replyToMessageId, room.id)) replyToMessageId = null;
   if (ciphertext && !iv) return res.status(400).json({ ok: false, error: 'iv required when ciphertext exists' });
-  if (!ciphertext && !replyToMessageId) { q.deleteDraftByRoomDevice.run(room.id, safeDeviceId); return res.json({ ok: true, deleted: true }); }
+  if (!ciphertext && !replyToMessageId) {
+    q.deleteDraftByRoomDevice.run(room.id, safeDeviceId);
+    return res.json({ ok: true, deleted: true });
+  }
   q.upsertDraft.run(room.id, safeDeviceId, ciphertext, iv, replyToMessageId);
   return res.json({ ok: true });
 });
@@ -540,20 +717,20 @@ app.delete('/api/rooms/:publicId/draft', (req, res) => {
   return res.json({ ok: true });
 });
 
+function sendWsJson(ws, payload) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  try { ws.send(JSON.stringify(payload)); return true; } catch { return false; }
+}
 function sendToRoomParticipants(roomPublicId, payload, exceptDeviceId = null) {
   const room = q.findRoomByPublicId.get(roomPublicId);
   if (!room) return;
-  const participants = q.listParticipantsByRoom.all(room.id);
-  for (const participant of participants) {
+  for (const participant of q.listParticipantsByRoom.all(room.id)) {
     if (exceptDeviceId && participant.device_id === exceptDeviceId) continue;
     const sockets = socketsByDevice.get(participant.device_id);
     if (!sockets) continue;
-    for (const client of sockets) {
-      sendWsJson(client, payload);
-    }
+    for (const client of sockets) sendWsJson(client, payload);
   }
 }
-
 function sendUnreadStateToDevice(roomPublicId, deviceId) {
   const room = q.findRoomByPublicId.get(roomPublicId);
   if (!room || !deviceId) return false;
@@ -561,25 +738,22 @@ function sendUnreadStateToDevice(roomPublicId, deviceId) {
   const sockets = socketsByDevice.get(deviceId);
   if (!participant || !sockets) return false;
   const unread = getUnreadState(room.id, participant.id);
-  const payload = {
-    type: 'chat:unread',
-    roomId: room.public_id,
-    unreadCount: unread.unreadCount,
-    firstUnreadMessageId: unread.firstUnreadMessageId
-  };
+  const payload = { type: 'chat:unread', roomId: room.public_id, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) };
   let sent = false;
   for (const client of sockets) sent = sendWsJson(client, payload) || sent;
   return sent;
 }
-
 function broadcastUnreadState(room) {
   if (!room) return;
-  for (const participant of q.listParticipantsByRoom.all(room.id)) {
-    sendUnreadStateToDevice(room.public_id, participant.device_id);
-  }
+  for (const participant of q.listParticipantsByRoom.all(room.id)) sendUnreadStateToDevice(room.public_id, participant.device_id);
 }
-
-function broadcastPresenceUpdate(roomPublicId, payload) { sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload }); }
+function broadcastRoomState(room) {
+  if (!room) return;
+  sendToRoomParticipants(room.public_id, { type: 'room:state', roomId: room.public_id, status: String(room.status || ROOM_OPEN).toLowerCase(), closedAt: toIsoUtc(room.closed_at) });
+}
+function broadcastPresenceUpdate(roomPublicId, payload) {
+  sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload });
+}
 function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);
   if (!sockets) return false;
@@ -588,16 +762,12 @@ function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
   }
   return false;
 }
-
 function hasVisibleSocketForDevice(deviceId) {
   const sockets = socketsByDevice.get(deviceId);
   if (!sockets) return false;
-  for (const client of sockets) {
-    if (client.readyState === WebSocket.OPEN && client.visible === true) return true;
-  }
+  for (const client of sockets) if (client.readyState === WebSocket.OPEN && client.visible === true) return true;
   return false;
 }
-
 function syncDevicePresence(deviceId) {
   if (!deviceId) return;
   const online = hasVisibleSocketForDevice(deviceId);
@@ -615,7 +785,6 @@ function syncDevicePresence(deviceId) {
     });
   }
 }
-
 function unregisterWsFromAllDevices(ws) {
   if (!ws?.deviceIds || !(ws.deviceIds instanceof Set)) return;
   for (const boundDeviceId of ws.deviceIds) {
@@ -627,53 +796,156 @@ function unregisterWsFromAllDevices(ws) {
 }
 
 app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedFile', maxCount: 1 }, { name: 'encryptedThumbnail', maxCount: 1 }]), (req, res) => {
-  const room = q.findRoomByPublicId.get(req.params.publicId); if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
-  const deviceId = String(req.body?.deviceId || '').slice(0, 64); if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
-  const mimeType = String(req.body?.mimeType || ''); const mediaKind = String(req.body?.mediaKind || '');
-  const allowed = new Set(['image/jpeg','image/png','image/webp','image/gif','video/mp4','video/webm','video/quicktime']);
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const deviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });
+  const mimeType = String(req.body?.mimeType || '');
+  const mediaKind = String(req.body?.mediaKind || '');
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']);
   if (!allowed.has(mimeType)) return res.status(400).json({ ok: false, error: 'mime not allowed' });
-  if (!['image','video'].includes(mediaKind)) return res.status(400).json({ ok: false, error: 'mediaKind invalid' });
-  const sizeBytes = Number(req.body?.sizeBytes || 0); if (mediaKind === 'image' && sizeBytes > 10*1024*1024) return res.status(400).json({ ok:false,error:'image too large' }); if (mediaKind === 'video' && sizeBytes > 100*1024*1024) return res.status(400).json({ ok:false,error:'video too large' });
-  const encryptedFile = req.files?.encryptedFile?.[0]; if (!encryptedFile) return res.status(400).json({ ok:false,error:'encryptedFile required' });
+  if (!['image', 'video'].includes(mediaKind)) return res.status(400).json({ ok: false, error: 'mediaKind invalid' });
+  const sizeBytes = Number(req.body?.sizeBytes || 0);
+  if (mediaKind === 'image' && sizeBytes > 10 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'image too large' });
+  if (mediaKind === 'video' && sizeBytes > 100 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'video too large' });
+  const encryptedFile = req.files?.encryptedFile?.[0];
+  if (!encryptedFile) return res.status(400).json({ ok: false, error: 'encryptedFile required' });
   const encryptedThumb = req.files?.encryptedThumbnail?.[0] || null;
   const publicId = randomToken(24);
-  const serverFilename = `media_${publicId}.bin`; const thumbFilename = encryptedThumb ? `thumb_${publicId}.bin` : null;
-  fs.writeFileSync(path.join(UPLOAD_DIR, serverFilename), encryptedFile.buffer); if (encryptedThumb) fs.writeFileSync(path.join(UPLOAD_DIR, thumbFilename), encryptedThumb.buffer);
-  const info = q.createMedia.run(publicId, room.id, Number(req.body?.fileOrder || 0), serverFilename, thumbFilename, req.body?.originalNameCiphertext || null, req.body?.originalNameIv || null, mimeType, mediaKind, sizeBytes, Number(req.body?.encryptedSizeBytes || encryptedFile.size), Number(req.body?.thumbSizeBytes || 0) || null, Number(req.body?.thumbEncryptedSizeBytes || 0) || null, Number(req.body?.width || 0) || null, Number(req.body?.height || 0) || null, Number(req.body?.durationSeconds || 0) || null);
+  const serverFilename = `media_${publicId}.bin`;
+  const thumbFilename = encryptedThumb ? `thumb_${publicId}.bin` : null;
+  fs.writeFileSync(path.join(UPLOAD_DIR, serverFilename), encryptedFile.buffer);
+  if (encryptedThumb) fs.writeFileSync(path.join(UPLOAD_DIR, thumbFilename), encryptedThumb.buffer);
+  q.createMedia.run(
+    publicId,
+    room.id,
+    Number(req.body?.fileOrder || 0),
+    serverFilename,
+    thumbFilename,
+    req.body?.originalNameCiphertext || null,
+    req.body?.originalNameIv || null,
+    mimeType,
+    mediaKind,
+    sizeBytes,
+    Number(req.body?.encryptedSizeBytes || encryptedFile.size),
+    Number(req.body?.thumbSizeBytes || 0) || null,
+    Number(req.body?.thumbEncryptedSizeBytes || 0) || null,
+    Number(req.body?.width || 0) || null,
+    Number(req.body?.height || 0) || null,
+    Number(req.body?.durationSeconds || 0) || null
+  );
   const media = q.findMediaByPublicId.get(publicId);
   return res.json({ ok: true, media: mediaToDto(media, req) });
 });
-app.get('/api/media/:publicId/blob', (req,res)=>{ const media=q.findMediaByPublicId.get(req.params.publicId); if(!media) return res.status(404).end(); const deviceId=String(req.query.deviceId||'').slice(0,64); if(!q.findParticipant.get(media.room_id,deviceId)) return res.status(403).end(); const filePath=path.join(UPLOAD_DIR, media.server_filename); if(!fs.existsSync(filePath)) return res.status(404).end(); res.setHeader('Content-Type','application/octet-stream'); res.sendFile(filePath);});
-app.get('/api/media/:publicId/thumb', (req,res)=>{ const media=q.findMediaByPublicId.get(req.params.publicId); if(!media||!media.thumbnail_filename) return res.status(404).end(); const deviceId=String(req.query.deviceId||'').slice(0,64); if(!q.findParticipant.get(media.room_id,deviceId)) return res.status(403).end(); const filePath=path.join(UPLOAD_DIR, media.thumbnail_filename); if(!fs.existsSync(filePath)) return res.status(404).end(); res.setHeader('Content-Type','application/octet-stream'); res.sendFile(filePath);});
-app.delete('/api/rooms/:publicId/media/pending', (req,res)=>{ const room=q.findRoomByPublicId.get(req.params.publicId); if(!room) return res.status(404).json({ok:false,error:'room not found'}); const deviceId=String(req.body?.deviceId||'').slice(0,64); if(!q.findParticipant.get(room.id,deviceId)) return res.status(403).json({ok:false,error:'forbidden'}); const mediaIds=Array.isArray(req.body?.mediaIds)?req.body.mediaIds.map(Number).filter(Boolean):[]; const rows=q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds)); for(const m of rows){safeUnlink(m.server_filename);safeUnlink(m.thumbnail_filename);} q.deletePendingMediaByIds.run(room.id, JSON.stringify(mediaIds)); res.json({ok:true,deleted:rows.length});});
-
-function sendWsJson(ws, payload) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  try {
-    ws.send(JSON.stringify(payload));
-    return true;
-  } catch {
-    return false;
+app.get('/api/media/:publicId/blob', (req, res) => {
+  const media = q.findMediaByPublicId.get(req.params.publicId);
+  if (!media) return res.status(404).end();
+  const deviceId = String(req.query.deviceId || '').slice(0, 64);
+  if (!q.findParticipant.get(media.room_id, deviceId)) return res.status(403).end();
+  const filePath = path.join(UPLOAD_DIR, media.server_filename);
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.sendFile(filePath);
+});
+app.get('/api/media/:publicId/thumb', (req, res) => {
+  const media = q.findMediaByPublicId.get(req.params.publicId);
+  if (!media || !media.thumbnail_filename) return res.status(404).end();
+  const deviceId = String(req.query.deviceId || '').slice(0, 64);
+  if (!q.findParticipant.get(media.room_id, deviceId)) return res.status(403).end();
+  const filePath = path.join(UPLOAD_DIR, media.thumbnail_filename);
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.sendFile(filePath);
+});
+app.delete('/api/rooms/:publicId/media/pending', (req, res) => {
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const deviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  const mediaIds = Array.isArray(req.body?.mediaIds) ? req.body.mediaIds.map(Number).filter(Boolean) : [];
+  const rows = q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds));
+  for (const media of rows) {
+    safeUnlink(media.server_filename);
+    safeUnlink(media.thumbnail_filename);
   }
-}
+  q.deletePendingMediaByIds.run(room.id, JSON.stringify(mediaIds));
+  res.json({ ok: true, deleted: rows.length });
+});
 
-function messageToDto(row) {
-  return {
-    id: Number(row.id),
-    client_message_id: row.client_message_id || null,
-    ciphertext: row.ciphertext,
-    iv: row.iv,
-    reply_to_message_id: row.reply_to_message_id ? Number(row.reply_to_message_id) : null,
-    status: row.status,
-    created_at: toIsoUtc(row.created_at),
-    delivered_at: toIsoUtc(row.delivered_at),
-    read_at: toIsoUtc(row.read_at),
-    sender_name: row.sender_name,
-    sender_device_id: row.sender_device_id,
-    type: row.type || 'text',
-    media: []
-  };
-}
+app.delete('/api/rooms/:publicId', async (req, res) => {
+  const publicId = String(req.params.publicId || '');
+  const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+  const room = q.findRoomByPublicId.get(publicId);
+  if (!room) return res.json({ ok: true, alreadyDeleted: true, roomDeleted: true });
+  const participantAny = q.findParticipantAny.get(room.id, safeDeviceId);
+  if (!participantAny) return res.status(403).json({ ok: false, error: 'forbidden' });
+  if (participantAny.access_revoked) {
+    return res.json({ ok: true, alreadyDeleted: true, roomDeleted: false, ...roomStatePayload(room) });
+  }
+
+  let result;
+  const tx = db.transaction(() => {
+    const currentRoom = q.findRoomById.get(room.id);
+    const currentParticipant = q.findParticipantAny.get(room.id, safeDeviceId);
+    if (!currentRoom || !currentParticipant) return { ok: true, alreadyDeleted: true, roomDeleted: true, files: [] };
+    if (currentParticipant.access_revoked) return { ok: true, alreadyDeleted: true, roomDeleted: false, files: [] };
+
+    q.revokeParticipant.run(room.id, safeDeviceId);
+    q.revokeRecovery.run(room.id, safeDeviceId);
+    q.deletePushByDeviceRoom.run(safeDeviceId, room.id);
+    q.deleteDraftByRoomDevice.run(room.id, safeDeviceId);
+    q.closeRoom.run(room.id);
+    q.revokeInvitesByRoomId.run(room.id);
+
+    const eventKey = `system:${SYSTEM_LEFT}:${currentParticipant.id}`;
+    q.createSystemEvent.run(room.id, currentParticipant.id, eventKey, SYSTEM_LEFT, currentParticipant.display_name);
+    const event = q.findSystemEvent.get(room.id, currentParticipant.id, SYSTEM_LEFT);
+    const activeCount = Number(q.countActiveParticipants.get(room.id)?.count || 0);
+    if (activeCount === 0) {
+      const files = removeRoomRows(room.id);
+      return { ok: true, roomDeleted: true, files, event: null, room: null, participant: currentParticipant };
+    }
+    return {
+      ok: true,
+      roomDeleted: false,
+      files: [],
+      event: event ? messageToDto(event) : null,
+      room: q.findRoomById.get(room.id),
+      participant: currentParticipant
+    };
+  });
+
+  try {
+    result = tx();
+  } catch (error) {
+    console.error(`[ROOM] permanent delete failed room=${publicId}: ${error?.message || 'error'}`);
+    return res.status(500).json({ ok: false, error: 'delete failed' });
+  }
+
+  for (const item of result.files || []) {
+    safeUnlink(item.server_filename);
+    safeUnlink(item.thumbnail_filename);
+  }
+  console.log(`[ROOM] participant permanently left room=${publicId}`);
+  console.log(`[ROOM] participant recovery revoked room=${publicId}`);
+  console.log(`[PUSH] room subscriptions removed room=${publicId}`);
+
+  if (result.roomDeleted) {
+    console.log(`[ROOM] room permanently deleted room=${publicId}`);
+    return res.json({ ok: true, roomDeleted: true });
+  }
+
+  console.log(`[ROOM] room closed room=${publicId}`);
+  if (result.event && result.room) {
+    broadcastRoomMessage(result.room, result.event, safeDeviceId);
+    broadcastUnreadState(result.room);
+    broadcastRoomState(result.room);
+    void sendPushForSystemEvent(result.room, result.event);
+  }
+  return res.json({ ok: true, roomDeleted: false, ...roomStatePayload(result.room) });
+});
 
 function sendTextMessageAck(ws, room, message) {
   sendWsJson(ws, {
@@ -688,7 +960,9 @@ function sendTextMessageAck(ws, room, message) {
     message
   });
 }
-
+function sendMessageRejected(ws, room, clientMessageId, error, code = null) {
+  sendWsJson(ws, { type: 'message:ack', accepted: false, roomId: room?.public_id || null, clientMessageId: clientMessageId || null, error, code });
+}
 function broadcastDeliveredStatus(room, message) {
   sendToRoomParticipants(room.public_id, {
     type: 'message:status',
@@ -699,7 +973,6 @@ function broadcastDeliveredStatus(room, message) {
     deliveredAt: toIsoUtc(message.delivered_at) || new Date().toISOString()
   });
 }
-
 function broadcastRoomMessage(room, message, sourceDeviceId) {
   const event = { type: 'message:new', roomId: room.public_id, message };
   const eventJson = JSON.stringify(event);
@@ -717,7 +990,6 @@ function broadcastRoomMessage(room, message, sourceDeviceId) {
   }
   return deliveredToRecipient;
 }
-
 function markMessageReceived(room, recipientParticipantId, messageId) {
   const target = q.findMessageForRead.get(messageId, room.id);
   if (!target || target.sender_id === recipientParticipantId) return;
@@ -726,27 +998,19 @@ function markMessageReceived(room, recipientParticipantId, messageId) {
   const updated = q.findMessageById.get(messageId, room.id);
   broadcastDeliveredStatus(room, updated || target);
 }
-
-function broadcastTextMessage(room, message, sourceDeviceId) {
-  return broadcastRoomMessage(room, message, sourceDeviceId);
-}
+function broadcastTextMessage(room, message, sourceDeviceId) { return broadcastRoomMessage(room, message, sourceDeviceId); }
 
 async function handleTextMessage(ws, payload) {
   const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
   if (!room) return;
-  const sender = q.findParticipant.get(room.id, ws.deviceId);
-  if (!sender) return;
   const clientMessageId = String(payload.clientMessageId || '').trim();
-  if (!clientMessageId || clientMessageId.length > 128) {
-    sendWsJson(ws, { type: 'message:ack', roomId: room.public_id, clientMessageId: clientMessageId || null, accepted: false, error: 'invalid client message id' });
-    return;
-  }
+  const sender = q.findParticipant.get(room.id, ws.deviceId);
+  if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');
+  if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');
+  if (!clientMessageId || clientMessageId.length > 128) return sendMessageRejected(ws, room, clientMessageId, 'invalid client message id');
   const ciphertext = String(payload.ciphertext || '');
   const iv = String(payload.iv || '');
-  if (!ciphertext || !iv) {
-    sendWsJson(ws, { type: 'message:ack', roomId: room.public_id, clientMessageId, accepted: false, error: 'ciphertext and iv required' });
-    return;
-  }
+  if (!ciphertext || !iv) return sendMessageRejected(ws, room, clientMessageId, 'ciphertext and iv required');
   const rawReplyId = payload.replyToMessageId ?? payload.reply_to_message_id;
   let replyToMessageId = Number(rawReplyId);
   if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0 || !q.findMessageInRoom.get(replyToMessageId, room.id)) replyToMessageId = null;
@@ -760,17 +1024,11 @@ async function handleTextMessage(ws, payload) {
       row = q.findMessageByClientId.get(room.id, sender.id, clientMessageId);
     }
   }
-  if (!row) {
-    sendWsJson(ws, { type: 'message:ack', roomId: room.public_id, clientMessageId, accepted: false, error: 'message was not saved' });
-    return;
-  }
-
+  if (!row) return sendMessageRejected(ws, room, clientMessageId, 'message was not saved');
   const message = messageToDto(row);
   sendTextMessageAck(ws, room, message);
   if (message.status === 'sent') broadcastTextMessage(room, message, ws.deviceId);
   broadcastUnreadState(room);
-
-  // Push wakes the recipient but is not proof that the message reached the app.
   const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
   await sendPushForMessage({ roomId: room.id, messageId: message.id, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
 }
@@ -797,7 +1055,6 @@ wss.on('connection', (ws, req) => {
     ws.close(1008, 'device required');
     return;
   }
-
   ws.deviceId = deviceId;
   ws.deviceIds = new Set([deviceId]);
   ws.visible = false;
@@ -810,8 +1067,12 @@ wss.on('connection', (ws, req) => {
   const participantRooms = q.listParticipantRoomsByDevice.all(ws.deviceId);
   for (const participant of participantRooms) ws.subscribedRooms.add(participant.room_public_id);
   getDeviceSockets(deviceId).add(ws);
-
-  for (const participant of participantRooms) sendUnreadStateToDevice(participant.room_public_id, ws.deviceId);
+  for (const participant of participantRooms) {
+    sendUnreadStateToDevice(participant.room_public_id, ws.deviceId);
+    if (participant.room_status === ROOM_CLOSED) {
+      sendWsJson(ws, { type: 'room:state', roomId: participant.room_public_id, status: ROOM_CLOSED, closedAt: toIsoUtc(participant.closed_at) });
+    }
+  }
   syncDevicePresence(ws.deviceId);
 
   ws.on('message', async (raw) => {
@@ -825,25 +1086,25 @@ wss.on('connection', (ws, req) => {
       syncDevicePresence(ws.deviceId);
       return;
     }
-
     if (payload.type === 'message:send') {
       await handleTextMessage(ws, payload);
       return;
     }
-
     if (payload.type === 'message:new') {
       const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
       if (!room) return;
       const sender = q.findParticipant.get(room.id, ws.deviceId);
       if (!sender) return;
+      if (!isRoomOpen(room)) {
+        sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');
+        return;
+      }
       const ciphertext = String(payload.ciphertext || '');
       const iv = String(payload.iv || '');
       if (!ciphertext || !iv) return;
-
       const rawReplyId = payload.replyToMessageId ?? payload.reply_to_message_id;
       let replyToMessageId = Number(rawReplyId);
       if (!Number.isInteger(replyToMessageId) || replyToMessageId <= 0 || !q.findMessageInRoom.get(replyToMessageId, room.id)) replyToMessageId = null;
-
       const msgType = payload.messageType === 'media' ? 'media' : 'text';
       let mediaItems = [];
       let mediaIds = [];
@@ -853,10 +1114,11 @@ wss.on('connection', (ws, req) => {
         mediaItems = q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds));
         if (mediaItems.length !== mediaIds.length || mediaItems.some((media) => media.status !== 'pending' || media.message_id !== null)) return;
       }
-
       let messageId;
       try {
         const createMessage = db.transaction(() => {
+          const latestRoom = q.findRoomById.get(room.id);
+          if (!isRoomOpen(latestRoom) || !q.findParticipant.get(room.id, ws.deviceId)) return null;
           const result = q.createMessage.run(room.id, sender.id, ciphertext, iv, msgType, null, replyToMessageId);
           for (const media of mediaItems) q.attachMediaToMessage.run(result.lastInsertRowid, media.id, room.id);
           return Number(result.lastInsertRowid);
@@ -865,25 +1127,22 @@ wss.on('connection', (ws, req) => {
       } catch {
         return;
       }
-
+      if (!messageId) {
+        sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');
+        return;
+      }
       const row = q.findMessageById.get(messageId, room.id);
       if (!row) return;
       const message = messageToDto(row);
       if (msgType === 'media') {
-        message.media = q.listMediaByMessageId.all(messageId).map((media) => ({
-          ...media,
-          thumbnail_url: `${PUBLIC_BASE_URL || ''}/api/media/${media.public_id}/thumb`
-        }));
+        message.media = q.listMediaByMessageId.all(messageId).map((media) => ({ ...media, thumbnail_url: `${PUBLIC_BASE_URL || ''}/api/media/${media.public_id}/thumb` }));
       }
       broadcastRoomMessage(room, message, ws.deviceId);
       broadcastUnreadState(room);
-
-      // Push wakes the recipient but is not proof that the message reached the app.
       const preview = typeof payload.notificationPreview === 'string' ? payload.notificationPreview.slice(0, 80) : '';
       await sendPushForMessage({ roomId: room.id, messageId, roomPublicId: room.public_id, senderDeviceId: ws.deviceId, senderName: sender.display_name, preview });
       return;
     }
-
     if (payload.type === 'message:received' || (payload.type === 'message:received:bulk' && Array.isArray(payload.messageIds))) {
       const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
       if (!room) return;
@@ -894,7 +1153,6 @@ wss.on('connection', (ws, req) => {
       for (const id of ids) markMessageReceived(room, recipient.id, id);
       return;
     }
-
     if (payload.type === 'message:read:bulk' && Array.isArray(payload.messageIds)) {
       const room = q.findRoomByPublicId.get(String(payload.roomId || ''));
       if (!room) return;
