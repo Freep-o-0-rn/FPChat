@@ -213,11 +213,12 @@
       script.onload = () => {
         const typing = document.createElement('script');
         typing.src = `/typing.js${buildSuffix}`;
+        typing.onload = () => {
+          const voice = document.createElement('script');
+          voice.src = `/voice.js${buildSuffix}`;
+          document.body.appendChild(voice);
+        };
         document.body.appendChild(typing);
-
-        const voice = document.createElement('script');
-        voice.src = `/voice.js${buildSuffix}`;
-        document.body.appendChild(voice);
 
         const settingsFix = document.createElement('script');
         settingsFix.src = `/settings-fix.js${buildSuffix}`;
