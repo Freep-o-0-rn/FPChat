@@ -1,4 +1,4 @@
-/* Build 117: transient typing and media-upload activity transport. No persistence. */
+/* Build 119: transient typing and media-upload activity transport. No persistence. */
 function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
   if (!wss || !q || !sendToRoomParticipants) throw new Error('typing server dependencies are missing');
   if (wss.__fpTypingInstalled) return;
@@ -60,8 +60,6 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
 
     const roomMap = getRoomMap(room.public_id);
     let entry = roomMap.get(ws.deviceId);
-    const previousActivity = entry?.activity || '';
-    const wasActive = Boolean(entry?.sockets?.size);
     if (!entry) {
       entry = { displayName: participant.display_name || '', sockets: new Set(), timer: null, activity };
       roomMap.set(ws.deviceId, entry);
@@ -70,7 +68,11 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     entry.activity = activity;
     entry.sockets.add(ws);
     armTimeout(room.public_id, ws.deviceId, entry);
-    if (!wasActive || previousActivity !== activity) broadcast(room.public_id, ws.deviceId, entry.displayName, activity);
+
+    // Every client heartbeat must also refresh the peer's client-side TTL.
+    // Suppressing repeated broadcasts here caused the peer indicator to expire
+    // while the server still considered the sender active.
+    broadcast(room.public_id, ws.deviceId, entry.displayName, activity);
   }
 
   function stopActivitySocket(ws, roomPublicId, expectedActivity = '') {
