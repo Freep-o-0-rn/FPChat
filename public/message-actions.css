@@ -1,4 +1,17 @@
-/* Build 108: edit/delete message actions. */
+/* Build 109: edit/delete message actions + iOS context-menu suppression. */
+
+/* The FPChat long-press overlay is an application control surface, not
+   selectable document text. Prevent Safari from opening its native
+   Copy / Find / Translate callout when a menu action is held. */
+.message-context-root,
+.message-context-menu,
+.message-context-action,
+.message-context-action * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .message-context-action.fp-message-action-danger {
   color: var(--danger, #d45454);
 }
