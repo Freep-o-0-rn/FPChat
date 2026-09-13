@@ -1,6 +1,6 @@
-/* Build 101: stabilization patch for the isolated message context layer.
-   Keeps the build-100 context implementation intact and fixes only overlay hit-testing,
-   media dragging/layout stability and native drag behavior. */
+/* Build 104: stabilization patch for the isolated message context layer.
+   Keeps the build-100 context implementation intact, preserves the build-101 geometry fixes,
+   and makes build-103 image-save progress distinguish preparation from confirmed completion. */
 (() => {
   const ROOT_SELECTOR = '.message-context-root';
   const COPY_SELECTOR = '.message-context-copy';
@@ -105,19 +105,73 @@
     event.stopImmediatePropagation();
   }, true);
 
+  let browserDownloadHandoffUntil = 0;
+
+  function markBrowserDownloadHandoff(event) {
+    const link = event.target?.closest?.('a[download]');
+    if (!link) return;
+    const filename = String(link.download || '');
+    if (!filename.startsWith('FPChat-')) return;
+    browserDownloadHandoffUntil = Date.now() + 2000;
+  }
+
+  function normalizeSaveProgress(progress) {
+    if (!(progress instanceof Element) || !progress.matches('.media-save-progress')) return;
+
+    const currentLabel = String(progress.getAttribute('aria-label') || '');
+    if (currentLabel.startsWith('Сохранение фото:')) {
+      progress.setAttribute('aria-label', currentLabel.replace('Сохранение фото:', 'Подготовка фото:'));
+    } else if (currentLabel === 'Сохранение фото') {
+      progress.setAttribute('aria-label', 'Подготовка фото');
+    }
+
+    if (progress.classList.contains('is-error')) {
+      progress.setAttribute('aria-label', 'Не удалось подготовить фото');
+      return;
+    }
+
+    if (!progress.classList.contains('is-success')) return;
+
+    if (Date.now() <= browserDownloadHandoffUntil) {
+      const host = progress.closest('.media-tile');
+      progress.remove();
+      host?.classList.remove('media-save-progress-host');
+      return;
+    }
+
+    // navigator.share() resolves only after the native share action completed.
+    // In that case the check mark is meaningful and can remain for its normal timeout.
+    progress.setAttribute('aria-label', 'Фото сохранено');
+  }
+
+  document.addEventListener('click', markBrowserDownloadHandoff, true);
+
   disableNativeMediaDrag(document);
 
   const observer = new MutationObserver((records) => {
     for (const record of records) {
+      if (record.type === 'attributes' && record.target instanceof Element) {
+        if (record.target.matches('.media-save-progress')) normalizeSaveProgress(record.target);
+        continue;
+      }
+
       for (const node of record.addedNodes) {
         if (!(node instanceof Element)) continue;
         disableNativeMediaDrag(node);
         if (node.matches(ROOT_SELECTOR)) lockContextGeometry(node);
         node.querySelectorAll?.(ROOT_SELECTOR).forEach(lockContextGeometry);
+        if (node.matches('.media-save-progress')) normalizeSaveProgress(node);
+        node.querySelectorAll?.('.media-save-progress').forEach(normalizeSaveProgress);
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'aria-label']
+  });
 
   document.querySelectorAll(ROOT_SELECTOR).forEach(lockContextGeometry);
+  document.querySelectorAll('.media-save-progress').forEach(normalizeSaveProgress);
 })();
