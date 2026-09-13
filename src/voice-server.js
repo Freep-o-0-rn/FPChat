@@ -1,6 +1,6 @@
-/* Build 120: isolated encrypted voice-message upload endpoint. */
-function installVoiceServer({ app, q, upload, UPLOAD_DIR, fs, path, randomToken, safeUnlink, isRoomOpen }) {
-  if (!app || !q || !upload || !UPLOAD_DIR || !fs || !path || !randomToken) {
+/* Build 121: encrypted voice upload plus opaque encrypted waveform metadata. */
+function installVoiceServer({ app, db, q, upload, UPLOAD_DIR, fs, path, randomToken, safeUnlink, isRoomOpen }) {
+  if (!app || !db || !q || !upload || !UPLOAD_DIR || !fs || !path || !randomToken) {
     throw new Error('voice server dependencies are missing');
   }
   if (app.__fpVoiceInstalled) return;
@@ -9,9 +9,42 @@ function installVoiceServer({ app, q, upload, UPLOAD_DIR, fs, path, randomToken,
   const MAX_VOICE_BYTES = 25 * 1024 * 1024;
   const MIN_DURATION_SECONDS = 0.65;
   const MAX_DURATION_SECONDS = 600.5;
+  const MAX_META_TEXT = 32 * 1024;
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS voice_meta (
+      media_id INTEGER PRIMARY KEY,
+      meta_ciphertext TEXT NOT NULL,
+      meta_iv TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TRIGGER IF NOT EXISTS trg_voice_meta_media_delete
+    AFTER DELETE ON media
+    BEGIN
+      DELETE FROM voice_meta WHERE media_id=OLD.id;
+    END;
+  `);
+
+  const upsertVoiceMeta = db.prepare(`
+    INSERT INTO voice_meta (media_id, meta_ciphertext, meta_iv, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(media_id) DO UPDATE SET
+      meta_ciphertext=excluded.meta_ciphertext,
+      meta_iv=excluded.meta_iv,
+      updated_at=datetime('now')
+  `);
+  const findVoiceMeta = db.prepare('SELECT meta_ciphertext, meta_iv FROM voice_meta WHERE media_id=?');
 
   function safeDevice(value) {
     return String(value || '').trim().slice(0, 64);
+  }
+
+  function safeOpaqueBase64(value) {
+    const text = String(value || '').trim();
+    if (!text || text.length > MAX_META_TEXT) return '';
+    return /^[A-Za-z0-9+/=_-]+$/.test(text) ? text : '';
   }
 
   function safeAudioMime(value) {
@@ -29,6 +62,22 @@ function installVoiceServer({ app, q, upload, UPLOAD_DIR, fs, path, randomToken,
     ]);
     return allowed.has(base) ? mime : '';
   }
+
+  app.get('/api/media/:publicId/voice-meta', (req, res) => {
+    const media = q.findMediaByPublicId.get(String(req.params.publicId || ''));
+    if (!media || String(media.media_kind || '') !== 'audio') {
+      return res.status(404).json({ ok: false, error: 'voice not found' });
+    }
+    const deviceId = safeDevice(req.query?.deviceId);
+    if (!deviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
+    const participant = q.findParticipant.get(media.room_id, deviceId);
+    if (!participant) return res.status(403).json({ ok: false, error: 'forbidden' });
+    const meta = findVoiceMeta.get(media.id);
+    return res.json({
+      ok: true,
+      meta: meta ? { ciphertext: meta.meta_ciphertext, iv: meta.meta_iv } : null
+    });
+  });
 
   app.post('/api/rooms/:publicId/voice/upload', upload.single('encryptedFile'), (req, res) => {
     const room = q.findRoomByPublicId.get(String(req.params.publicId || ''));
@@ -55,9 +104,18 @@ function installVoiceServer({ app, q, upload, UPLOAD_DIR, fs, path, randomToken,
     const sizeBytes = Math.max(0, Number(req.body?.sizeBytes || 0) || 0);
     if (sizeBytes > MAX_VOICE_BYTES) return res.status(413).json({ ok: false, error: 'voice too large' });
 
+    const metaCiphertextRaw = String(req.body?.metaCiphertext || '').trim();
+    const metaIvRaw = String(req.body?.metaIv || '').trim();
+    const metaCiphertext = safeOpaqueBase64(metaCiphertextRaw);
+    const metaIv = safeOpaqueBase64(metaIvRaw);
+    if ((metaCiphertextRaw || metaIvRaw) && (!metaCiphertext || !metaIv)) {
+      return res.status(400).json({ ok: false, error: 'invalid voice metadata' });
+    }
+
     const publicId = randomToken(24);
     const serverFilename = `voice_${publicId}.bin`;
     const filePath = path.join(UPLOAD_DIR, serverFilename);
+    let media = null;
 
     try {
       fs.writeFileSync(filePath, encryptedFile.buffer);
@@ -79,8 +137,9 @@ function installVoiceServer({ app, q, upload, UPLOAD_DIR, fs, path, randomToken,
         null,
         durationSeconds
       );
-      const media = q.findMediaByPublicId.get(publicId);
+      media = q.findMediaByPublicId.get(publicId);
       if (!media) throw new Error('voice media was not saved');
+      if (metaCiphertext && metaIv) upsertVoiceMeta.run(media.id, metaCiphertext, metaIv);
       return res.json({
         ok: true,
         media: {
@@ -94,7 +153,8 @@ function installVoiceServer({ app, q, upload, UPLOAD_DIR, fs, path, randomToken,
           file_order: Number(media.file_order || 0)
         }
       });
-    } catch (error) {
+    } catch {
+      try { if (media?.id) q.deletePendingMediaById.run(media.id); } catch {}
       try { safeUnlink?.(serverFilename); } catch {}
       return res.status(500).json({ ok: false, error: 'voice upload failed' });
     }
