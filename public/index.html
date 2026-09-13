@@ -212,6 +212,11 @@
       voicePolishCss.href = `/voice-polish123.css${buildSuffix}`;
       document.head.appendChild(voicePolishCss);
 
+      const voicePins127Css = document.createElement('link');
+      voicePins127Css.rel = 'stylesheet';
+      voicePins127Css.href = `/voice-pins127.css${buildSuffix}`;
+      document.head.appendChild(voicePins127Css);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -228,6 +233,10 @@
               const voiceCancel125 = document.createElement('script');
               voiceCancel125.src = `/voice-cancel125.js${buildSuffix}`;
               document.body.appendChild(voiceCancel125);
+
+              const voicePins127 = document.createElement('script');
+              voicePins127.src = `/voice-pins127.js${buildSuffix}`;
+              document.body.appendChild(voicePins127);
             };
             document.body.appendChild(voicePolish);
           };
