@@ -1,0 +1,151 @@
+/* Build 123: isolated polish for voice playback/recording UX. */
+
+.fp-voice-waveform,
+.fp-voice-preview-waveform {
+  --fp-wave-active: var(--accent, #3390ec);
+  --fp-wave-idle: rgba(148,163,184,.27);
+  height: 34px;
+}
+
+.fp-voice-player {
+  gap: 10px;
+}
+
+.fp-voice-play {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  box-shadow: 0 3px 11px rgba(0,0,0,.13);
+}
+
+.fp-voice-play svg {
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+}
+
+.fp-voice-play[aria-label="Воспроизвести голосовое"] svg path,
+.fp-voice-preview-play[aria-label="Воспроизвести голосовое"] svg path,
+.fp-voice-preview-play[aria-label="Прослушать запись"] svg path {
+  fill: currentColor !important;
+  stroke: none !important;
+  transform: translateX(1.25px) scale(.96);
+  transform-origin: 12px 12px;
+}
+
+.fp-voice-play[aria-label="Пауза"] svg path,
+.fp-voice-preview-play[aria-label="Пауза"] svg path {
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 2.2 !important;
+  transform: none;
+}
+
+.fp-voice-footer {
+  justify-content: flex-start;
+}
+
+.fp-voice-footer .fp-voice-speed {
+  margin-left: auto;
+}
+
+.fp-voice-unheard-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  display: inline-block;
+  margin-left: 1px;
+  border-radius: 50%;
+  background: var(--accent, #3390ec);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #3390ec) 16%, transparent);
+}
+
+.fp-voice-unheard-dot.hidden {
+  display: none !important;
+}
+
+.fp-voice-record-hint {
+  transform: translateX(var(--fp123-cancel-shift, 0px));
+  will-change: transform;
+  transition: transform .055s linear, color .12s ease, opacity .12s ease;
+}
+
+.fp-voice-recording-bar.fp-voice-cancel-arming .fp-voice-record-hint {
+  letter-spacing: .01em;
+}
+
+.fp-voice-lock-track123 {
+  position: absolute;
+  right: 17px;
+  bottom: 136px;
+  width: 17px;
+  height: 49px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  pointer-events: none;
+  opacity: calc(.28 + (var(--fp123-lock-progress, 0) * .72));
+  z-index: 8;
+}
+
+.fp-voice-lock-arrow123 {
+  height: 15px;
+  line-height: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent, #3390ec);
+  transform: translateY(calc(-3px * var(--fp123-lock-progress, 0)));
+}
+
+.fp-voice-lock-rail123 {
+  position: relative;
+  width: 3px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148,163,184,.28);
+}
+
+.fp-voice-lock-fill123 {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #3390ec);
+  transform: scaleY(var(--fp123-lock-progress, 0));
+  transform-origin: center bottom;
+  transition: transform .04s linear;
+}
+
+#sendForm.fp-voice-locked .fp-voice-lock-track123,
+#sendForm.fp-voice-processing .fp-voice-lock-track123 {
+  display: none;
+}
+
+.fp-voice-recording-bar.fp-voice-lock-arming .fp-voice-lock-track123 {
+  opacity: 1;
+}
+
+@media (max-width: 430px) {
+  .fp-voice-waveform,
+  .fp-voice-preview-waveform {
+    height: 33px;
+  }
+  .fp-voice-play {
+    width: 43px;
+    height: 43px;
+    flex-basis: 43px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-voice-record-hint,
+  .fp-voice-lock-fill123,
+  .fp-voice-lock-arrow123 {
+    transition: none;
+  }
+}
