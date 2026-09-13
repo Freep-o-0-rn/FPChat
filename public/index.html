@@ -187,6 +187,11 @@
       messageSelectionCss.href = `/message-selection.css${buildSuffix}`;
       document.head.appendChild(messageSelectionCss);
 
+      const messagePinsCss = document.createElement('link');
+      messagePinsCss.rel = 'stylesheet';
+      messagePinsCss.href = `/message-pins.css${buildSuffix}`;
+      document.head.appendChild(messagePinsCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -208,6 +213,11 @@
             messageContextFix.onload = () => {
               const messageActions = document.createElement('script');
               messageActions.src = `/message-actions.js${buildSuffix}`;
+              messageActions.onload = () => {
+                const messagePins = document.createElement('script');
+                messagePins.src = `/message-pins.js${buildSuffix}`;
+                document.body.appendChild(messagePins);
+              };
               document.body.appendChild(messageActions);
             };
             document.body.appendChild(messageContextFix);
