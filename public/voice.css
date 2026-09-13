@@ -123,13 +123,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: calc(.45 + var(--fp-lock-progress, 0) * .55);
-  transform: translateY(calc(var(--fp-lock-progress, 0) * -4px));
+  opacity: .48;
+  transform: translateY(0);
   transition: opacity .12s ease, transform .12s ease;
 }
 
 .fp-voice-recording-bar.fp-voice-cancel-arming .fp-voice-record-hint { color: #ff7a7a; opacity: 1; }
-.fp-voice-recording-bar.fp-voice-lock-arming .fp-voice-lock-cue { color: var(--accent, #3390ec); opacity: 1; }
+.fp-voice-recording-bar.fp-voice-lock-arming .fp-voice-lock-cue { color: var(--accent, #3390ec); opacity: 1; transform: translateY(-4px); }
 
 .fp-voice-record-delete,
 .fp-voice-record-stop,
