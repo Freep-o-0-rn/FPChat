@@ -107,7 +107,14 @@
   }
 
   installSettingsStyles();
-  state.notif = normalizeNotificationSettings(state.notif);
+  // app.js from older builds knows only the original notification fields and
+  // therefore drops notifySystemEvents while booting. Read the raw stored value
+  // before writing normalized settings back, so OFF survives reload/PWA restart.
+  const persistedNotificationSettings = STORAGE.get(STORAGE.notif) || {};
+  state.notif = normalizeNotificationSettings({
+    ...state.notif,
+    notifySystemEvents: persistedNotificationSettings.notifySystemEvents,
+  });
   STORAGE.set(STORAGE.notif, state.notif);
 
   renderSettings = function renderSettingsAutoSave() {
@@ -193,6 +200,11 @@
     const lifecycleScript = document.createElement('script');
     lifecycleScript.id = 'fpchat-room-lifecycle-js';
     lifecycleScript.src = '/room-lifecycle.js?v=98';
+    lifecycleScript.onload = () => {
+      if (state.notif.enabled && getNotificationPermission() === 'granted') {
+        void syncPushPresentationSettings();
+      }
+    };
     document.body.appendChild(lifecycleScript);
   }
 })();
