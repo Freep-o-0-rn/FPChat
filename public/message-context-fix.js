@@ -67,6 +67,7 @@
       const file = Array.isArray(data?.files) ? data.files[0] : null;
       const fp = file instanceof File && String(file.name || '').startsWith('FPChat-');
       const kind = String(file?.type || '').startsWith('video/') ? 'video' : 'image';
+      if (fp) document.querySelectorAll('.media-save-progress').forEach((el) => { el.style.visibility = 'hidden'; el.style.opacity = '0'; });
       const result = await nativeShare(data);
       if (fp) toast(kind, true);
       return result;
@@ -82,14 +83,26 @@
     const show = () => { el.style.visibility = 'visible'; el.style.opacity = '1'; };
     hide();
     let timer = null;
+    let hadRealWork = false;
     const sync = () => {
       clearTimeout(timer);
       if (!el.isConnected) return;
       if (el.classList.contains('is-error')) { show(); return; }
       if (el.classList.contains('is-success')) { hide(); return; }
       const m = String(el.getAttribute('aria-label') || '').match(/(\d{1,3})%/);
-      if (m) { Number(m[1]) >= 100 ? hide() : show(); return; }
-      timer = setTimeout(() => { if (el.isConnected && !el.classList.contains('is-success') && !/100%/.test(el.getAttribute('aria-label') || '')) show(); }, 120);
+      if (m) {
+        const percent = Math.max(0, Math.min(100, Number(m[1])));
+        if (percent < 100) { hadRealWork = true; show(); }
+        else if (hadRealWork) show();
+        else hide();
+        return;
+      }
+      timer = setTimeout(() => {
+        if (el.isConnected && !el.classList.contains('is-success') && !/100%/.test(el.getAttribute('aria-label') || '')) {
+          hadRealWork = true;
+          show();
+        }
+      }, 120);
     };
     const mo = new MutationObserver(sync);
     mo.observe(el, { attributes: true, attributeFilter: ['class', 'aria-label'] });
