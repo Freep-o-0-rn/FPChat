@@ -27,12 +27,6 @@
   stroke-linejoin: round;
 }
 
-.fp-voice-play svg path:first-child,
-.fp-voice-preview-play svg path:first-child {
-  fill: currentColor;
-  stroke: none;
-}
-
 #sendForm.fp-voice-mic-mode #sendBtn { display: none !important; }
 #sendForm.fp-voice-mic-mode .fp-voice-record-btn { display: inline-flex; }
 
