@@ -197,10 +197,19 @@
       messagePins114Css.href = `/message-pins-screen114.css${buildSuffix}`;
       document.head.appendChild(messagePins114Css);
 
+      const typingCss = document.createElement('link');
+      typingCss.rel = 'stylesheet';
+      typingCss.href = `/typing.css${buildSuffix}`;
+      document.head.appendChild(typingCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
       script.onload = () => {
+        const typing = document.createElement('script');
+        typing.src = `/typing.js${buildSuffix}`;
+        document.body.appendChild(typing);
+
         const settingsFix = document.createElement('script');
         settingsFix.src = `/settings-fix.js${buildSuffix}`;
         document.body.appendChild(settingsFix);
