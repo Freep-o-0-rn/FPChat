@@ -1,17 +1,21 @@
-/* Build 116: transient Telegram-like typing indicator. */
+/* Build 117: transient Telegram-like typing and media-upload activity indicator. */
 (() => {
-  const STOP_DELAY_MS = 2400;
+  const STOP_DELAY_MS = 3000;
   const START_HEARTBEAT_MS = 1500;
-  const REMOTE_SAFETY_MS = 5500;
+  const MEDIA_HEARTBEAT_MS = 1800;
+  const MEDIA_STOP_GRACE_MS = 280;
+  const REMOTE_SAFETY_MS = 7500;
 
   let attachedWs = null;
   let activeTypingRoomId = '';
   let typingStarted = false;
   let lastStartSentAt = 0;
   let stopTimer = null;
-  const remoteTyping = new Map();
+  const remoteActivity = new Map();
+  const localMediaUploads = new Map();
 
   const baseRenderPresenceStatus = typeof renderPresenceStatus === 'function' ? renderPresenceStatus : null;
+  const baseFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
 
   function currentRoomId() {
     try { return String(state?.roomId || ''); } catch { return ''; }
@@ -26,10 +30,12 @@
     try { return state?.ws && state.ws.readyState === WebSocket.OPEN; } catch { return false; }
   }
 
-  function sendTyping(type, roomId) {
+  function sendSignal(type, roomId, activity = '') {
     if (!roomId || !socketReady()) return false;
     try {
-      state.ws.send(JSON.stringify({ type, roomId }));
+      const payload = { type, roomId };
+      if (activity) payload.activity = activity;
+      state.ws.send(JSON.stringify(payload));
       return true;
     } catch {
       return false;
@@ -43,7 +49,7 @@
 
   function stopLocalTyping(roomId = activeTypingRoomId) {
     clearStopTimer();
-    if (typingStarted && roomId) sendTyping('typing:stop', roomId);
+    if (typingStarted && roomId) sendSignal('typing:stop', roomId, 'typing');
     typingStarted = false;
     lastStartSentAt = 0;
     if (!roomId || roomId === activeTypingRoomId) activeTypingRoomId = '';
@@ -54,9 +60,14 @@
     stopTimer = setTimeout(() => stopLocalTyping(), STOP_DELAY_MS);
   }
 
+  function hasLocalMediaUpload(roomId = currentRoomId()) {
+    const entry = localMediaUploads.get(roomId);
+    return Boolean(entry && (entry.photo > 0 || entry.video > 0));
+  }
+
   function pulseLocalTyping(input) {
     const roomId = currentRoomId();
-    if (!roomId || document.visibilityState !== 'visible' || input?.disabled) {
+    if (!roomId || document.visibilityState !== 'visible' || input?.disabled || hasLocalMediaUpload(roomId)) {
       stopLocalTyping();
       return;
     }
@@ -72,7 +83,7 @@
 
     const now = Date.now();
     if (!typingStarted || now - lastStartSentAt >= START_HEARTBEAT_MS) {
-      if (sendTyping('typing:start', roomId)) {
+      if (sendSignal('typing:start', roomId, 'typing')) {
         typingStarted = true;
         lastStartSentAt = now;
       }
@@ -80,20 +91,143 @@
     scheduleStop();
   }
 
+  function mediaActivity(entry) {
+    if (!entry) return '';
+    if (entry.photo > 0 && entry.video > 0) return 'media';
+    if (entry.video > 0) return 'video';
+    if (entry.photo > 0) return 'photo';
+    return '';
+  }
+
+  function clearMediaTimers(entry) {
+    if (!entry) return;
+    if (entry.stopTimer) clearTimeout(entry.stopTimer);
+    if (entry.heartbeatTimer) clearInterval(entry.heartbeatTimer);
+    entry.stopTimer = null;
+    entry.heartbeatTimer = null;
+  }
+
+  function sendMediaPulse(roomId, entry) {
+    const activity = mediaActivity(entry);
+    if (!activity) return false;
+    entry.lastActivity = activity;
+    return sendSignal('activity:start', roomId, activity);
+  }
+
+  function ensureMediaHeartbeat(roomId, entry) {
+    if (entry.heartbeatTimer) return;
+    entry.heartbeatTimer = setInterval(() => {
+      if (!localMediaUploads.has(roomId) || !mediaActivity(entry)) return;
+      sendMediaPulse(roomId, entry);
+    }, MEDIA_HEARTBEAT_MS);
+  }
+
+  function beginMediaUpload(roomId, kind) {
+    if (!roomId || (kind !== 'photo' && kind !== 'video')) return;
+    stopLocalTyping();
+    let entry = localMediaUploads.get(roomId);
+    if (!entry) {
+      entry = { photo: 0, video: 0, stopTimer: null, heartbeatTimer: null, lastActivity: '' };
+      localMediaUploads.set(roomId, entry);
+    }
+    if (entry.stopTimer) {
+      clearTimeout(entry.stopTimer);
+      entry.stopTimer = null;
+    }
+    entry[kind] += 1;
+    const activity = mediaActivity(entry);
+    if (activity !== entry.lastActivity) sendMediaPulse(roomId, entry);
+    else sendMediaPulse(roomId, entry);
+    ensureMediaHeartbeat(roomId, entry);
+  }
+
+  function finishMediaUpload(roomId, kind) {
+    const entry = localMediaUploads.get(roomId);
+    if (!entry || (kind !== 'photo' && kind !== 'video')) return;
+    entry[kind] = Math.max(0, entry[kind] - 1);
+    const nextActivity = mediaActivity(entry);
+    if (nextActivity) {
+      if (nextActivity !== entry.lastActivity) sendMediaPulse(roomId, entry);
+      return;
+    }
+    if (entry.stopTimer) clearTimeout(entry.stopTimer);
+    entry.stopTimer = setTimeout(() => {
+      const current = localMediaUploads.get(roomId);
+      if (current !== entry || mediaActivity(entry)) return;
+      clearMediaTimers(entry);
+      localMediaUploads.delete(roomId);
+      sendSignal('activity:stop', roomId, entry.lastActivity || kind);
+      if (roomId === currentRoomId() && document.visibilityState === 'visible') {
+        const input = document.getElementById('msgInput');
+        if (document.activeElement === input && String(input?.value || '').length > 0) pulseLocalTyping(input);
+      }
+    }, MEDIA_STOP_GRACE_MS);
+  }
+
+  function stopAllLocalMedia() {
+    for (const [roomId, entry] of localMediaUploads) {
+      clearMediaTimers(entry);
+      sendSignal('activity:stop', roomId, entry.lastActivity || mediaActivity(entry));
+    }
+    localMediaUploads.clear();
+  }
+
+  function parseMediaUpload(input, init) {
+    try {
+      const rawUrl = typeof input === 'string' ? input : input?.url;
+      if (!rawUrl) return null;
+      const url = new URL(rawUrl, window.location.href);
+      const match = url.pathname.match(/^\/api\/rooms\/([^/]+)\/media\/upload$/);
+      if (!match) return null;
+      const body = init?.body;
+      if (!(body instanceof FormData)) return null;
+      const mediaKind = String(body.get('mediaKind') || '').toLowerCase();
+      const kind = mediaKind === 'video' ? 'video' : mediaKind === 'image' ? 'photo' : '';
+      if (!kind) return null;
+      return { roomId: decodeURIComponent(match[1]), kind };
+    } catch {
+      return null;
+    }
+  }
+
+  if (baseFetch && !window.fetch.__fpActivityWrapped) {
+    const wrappedFetch = async function fpActivityFetch(input, init) {
+      const media = parseMediaUpload(input, init);
+      if (!media) return baseFetch(input, init);
+      beginMediaUpload(media.roomId, media.kind);
+      try {
+        return await baseFetch(input, init);
+      } finally {
+        finishMediaUpload(media.roomId, media.kind);
+      }
+    };
+    wrappedFetch.__fpActivityWrapped = true;
+    window.fetch = wrappedFetch;
+  }
+
   function isRoomClosed() {
     return document.querySelector('.chat-view')?.classList.contains('room-closed') === true;
   }
 
-  function renderRemoteTyping() {
+  function activityLabel(activity) {
+    if (activity === 'photo') return 'загружает фото…';
+    if (activity === 'video') return 'загружает видео…';
+    if (activity === 'media') return 'загружает фото и видео…';
+    return 'печатает…';
+  }
+
+  function renderRemoteActivity() {
     const roomId = currentRoomId();
-    const entry = remoteTyping.get(roomId);
+    const entry = remoteActivity.get(roomId);
     if (!roomId || !entry || entry.expiresAt <= Date.now() || isRoomClosed()) return false;
     const line = document.getElementById('presenceLine');
     if (!line) return false;
-    if (line.dataset.fpTypingDevice === entry.deviceId && line.classList.contains('fp-typing-active')) return true;
+    const label = activityLabel(entry.activity);
+    if (line.dataset.fpTypingDevice === entry.deviceId && line.dataset.fpActivity === entry.activity && line.classList.contains('fp-typing-active')) return true;
     line.dataset.fpTypingDevice = entry.deviceId;
+    line.dataset.fpActivity = entry.activity;
     line.classList.add('fp-typing-active');
-    line.innerHTML = "<span class='presence-dot online'></span><span class='fp-typing-label'>печатает…</span>";
+    line.innerHTML = `<span class='presence-dot online'></span><span class='fp-typing-label'>${label}</span>`;
     return true;
   }
 
@@ -102,32 +236,35 @@
     if (line) {
       line.classList.remove('fp-typing-active');
       delete line.dataset.fpTypingDevice;
+      delete line.dataset.fpActivity;
     }
     if (!isRoomClosed() && baseRenderPresenceStatus) {
       try { baseRenderPresenceStatus(); } catch {}
     }
   }
 
-  function clearRemoteTyping(roomId, deviceId = '') {
-    const entry = remoteTyping.get(roomId);
+  function clearRemoteActivity(roomId, deviceId = '') {
+    const entry = remoteActivity.get(roomId);
     if (!entry || (deviceId && entry.deviceId !== deviceId)) return;
     if (entry.timer) clearTimeout(entry.timer);
-    remoteTyping.delete(roomId);
+    remoteActivity.delete(roomId);
     if (roomId === currentRoomId()) restorePresence();
   }
 
-  function setRemoteTyping(roomId, deviceId, displayName) {
+  function setRemoteActivity(roomId, deviceId, displayName, activity = 'typing') {
     if (!roomId || !deviceId || deviceId === currentDeviceId(roomId)) return;
-    clearRemoteTyping(roomId);
+    clearRemoteActivity(roomId);
+    const safeActivity = ['typing', 'photo', 'video', 'media'].includes(activity) ? activity : 'typing';
     const entry = {
       deviceId,
       displayName: String(displayName || ''),
+      activity: safeActivity,
       expiresAt: Date.now() + REMOTE_SAFETY_MS,
       timer: null
     };
-    entry.timer = setTimeout(() => clearRemoteTyping(roomId, deviceId), REMOTE_SAFETY_MS);
-    remoteTyping.set(roomId, entry);
-    if (roomId === currentRoomId()) renderRemoteTyping();
+    entry.timer = setTimeout(() => clearRemoteActivity(roomId, deviceId), REMOTE_SAFETY_MS);
+    remoteActivity.set(roomId, entry);
+    if (roomId === currentRoomId()) renderRemoteActivity();
   }
 
   function handleWsMessage(event) {
@@ -137,8 +274,9 @@
     const roomId = String(payload.roomId || '');
     const deviceId = String(payload.deviceId || '');
     if (!roomId || !deviceId) return;
-    if (payload.typing === true) setRemoteTyping(roomId, deviceId, payload.displayName);
-    else clearRemoteTyping(roomId, deviceId);
+    const activity = String(payload.activity || (payload.typing === true ? 'typing' : ''));
+    if (payload.typing === true || activity) setRemoteActivity(roomId, deviceId, payload.displayName, activity || 'typing');
+    else clearRemoteActivity(roomId, deviceId);
   }
 
   function attachCurrentWs() {
@@ -150,15 +288,16 @@
     attachedWs = ws;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => {
+      for (const [roomId, entry] of localMediaUploads) sendMediaPulse(roomId, entry);
       const input = document.getElementById('msgInput');
-      if (document.activeElement === input && String(input?.value || '').length > 0) pulseLocalTyping(input);
+      if (!hasLocalMediaUpload() && document.activeElement === input && String(input?.value || '').length > 0) pulseLocalTyping(input);
     }, { once: true });
   }
 
   if (baseRenderPresenceStatus && !baseRenderPresenceStatus.__fpTypingWrapped) {
     const wrapped = function fpTypingRenderPresenceStatus(...args) {
       const result = baseRenderPresenceStatus.apply(this, args);
-      renderRemoteTyping();
+      renderRemoteActivity();
       return result;
     };
     wrapped.__fpTypingWrapped = true;
@@ -181,19 +320,35 @@
   }, true);
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') stopLocalTyping();
-    else {
+    if (document.visibilityState !== 'visible') {
+      stopLocalTyping();
+      stopAllLocalMedia();
+    } else {
       attachCurrentWs();
-      const entry = remoteTyping.get(currentRoomId());
-      if (entry?.expiresAt > Date.now()) renderRemoteTyping();
+      const entry = remoteActivity.get(currentRoomId());
+      if (entry?.expiresAt > Date.now()) renderRemoteActivity();
     }
   });
 
-  window.addEventListener('pagehide', () => stopLocalTyping());
+  window.addEventListener('pagehide', () => {
+    stopLocalTyping();
+    stopAllLocalMedia();
+  });
   window.addEventListener('offline', () => {
     typingStarted = false;
     lastStartSentAt = 0;
     clearStopTimer();
+    for (const entry of localMediaUploads.values()) {
+      if (entry.heartbeatTimer) clearInterval(entry.heartbeatTimer);
+      entry.heartbeatTimer = null;
+    }
+  });
+  window.addEventListener('online', () => {
+    attachCurrentWs();
+    for (const [roomId, entry] of localMediaUploads) {
+      sendMediaPulse(roomId, entry);
+      ensureMediaHeartbeat(roomId, entry);
+    }
   });
 
   let lastRoomId = currentRoomId();
@@ -203,7 +358,7 @@
     if (lastRoomId !== roomId) {
       if (activeTypingRoomId && activeTypingRoomId !== roomId) stopLocalTyping(activeTypingRoomId);
       lastRoomId = roomId;
-      if (!renderRemoteTyping() && !isRoomClosed() && baseRenderPresenceStatus) {
+      if (!renderRemoteActivity() && !isRoomClosed() && baseRenderPresenceStatus) {
         try { baseRenderPresenceStatus(); } catch {}
       }
     }
