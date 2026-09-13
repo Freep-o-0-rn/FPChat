@@ -1,4 +1,4 @@
-/* Build 118: transient Telegram-like typing and media-upload activity indicator. */
+/* Build 121: transient Telegram-like typing, media and voice activity indicator. */
 (() => {
   const STOP_DELAY_MS = 3000;
   const START_HEARTBEAT_MS = 1500;
@@ -255,6 +255,8 @@
     if (activity === 'photo') return 'загружает фото…';
     if (activity === 'video') return 'загружает видео…';
     if (activity === 'media') return 'загружает фото и видео…';
+    if (activity === 'recording_audio') return 'записывает аудио…';
+    if (activity === 'audio') return 'загружает аудио…';
     return 'печатает…';
   }
 
@@ -296,7 +298,7 @@
   function setRemoteActivity(roomId, deviceId, displayName, activity = 'typing') {
     if (!roomId || !deviceId || deviceId === currentDeviceId(roomId)) return;
     clearRemoteActivity(roomId);
-    const safeActivity = ['typing', 'photo', 'video', 'media'].includes(activity) ? activity : 'typing';
+    const safeActivity = ['typing', 'photo', 'video', 'media', 'recording_audio', 'audio'].includes(activity) ? activity : 'typing';
     const entry = {
       deviceId,
       displayName: String(displayName || ''),
