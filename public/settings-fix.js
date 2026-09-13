@@ -1,4 +1,4 @@
-/* Build 98: settings autosave, toggle layout, join/leave push preference. */
+/* Build 99: settings autosave, toggle layout, join/leave push preference. */
 (() => {
   const STYLE_ID = 'fpchat-settings-autosave-style';
   let notificationEnableSequence = 0;
@@ -193,18 +193,24 @@
     const lifecycleCss = document.createElement('link');
     lifecycleCss.id = 'fpchat-room-lifecycle-css';
     lifecycleCss.rel = 'stylesheet';
-    lifecycleCss.href = '/room-lifecycle.css?v=98';
+    lifecycleCss.href = '/room-lifecycle.css?v=99';
     document.head.appendChild(lifecycleCss);
   }
   if (!document.getElementById('fpchat-room-lifecycle-js')) {
     const lifecycleScript = document.createElement('script');
     lifecycleScript.id = 'fpchat-room-lifecycle-js';
-    lifecycleScript.src = '/room-lifecycle.js?v=98';
+    lifecycleScript.src = '/room-lifecycle.js?v=99';
     lifecycleScript.onload = () => {
       if (state.notif.enabled && getNotificationPermission() === 'granted') {
         void syncPushPresentationSettings();
       }
     };
     document.body.appendChild(lifecycleScript);
+  }
+  if (!document.getElementById('fpchat-viewport-fix-js')) {
+    const viewportFixScript = document.createElement('script');
+    viewportFixScript.id = 'fpchat-viewport-fix-js';
+    viewportFixScript.src = '/viewport-fix.js?v=99';
+    document.body.appendChild(viewportFixScript);
   }
 })();
