@@ -1,9 +1,9 @@
-/* Build 128: compatibility loader for stabilized pins plus isolated UI hotfixes. */
+/* Build 129: compatibility loader for stabilized pins plus isolated UI hotfixes. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=128'; }
-    catch { return '?v=128'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=129'; }
+    catch { return '?v=129'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -26,5 +26,12 @@
     hotfix.src = `/ui-hotfix128.js${suffix}`;
     hotfix.dataset.fpUiHotfix128 = '1';
     document.body.appendChild(hotfix);
+  }
+
+  if (!document.querySelector('script[data-fp-chat-opening129]')) {
+    const opening = document.createElement('script');
+    opening.src = `/chat-opening129.js${suffix}`;
+    opening.dataset.fpChatOpening129 = '1';
+    document.body.appendChild(opening);
   }
 })();
