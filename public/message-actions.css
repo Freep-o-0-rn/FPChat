@@ -1,0 +1,172 @@
+/* Build 108: edit/delete message actions. */
+.message-context-action.fp-message-action-danger {
+  color: var(--danger, #d45454);
+}
+
+.message-context-action.fp-message-action-danger:hover,
+.message-context-action.fp-message-action-danger:active {
+  background: var(--danger-soft, rgba(212,84,84,.14));
+}
+
+.message-edited-label {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.edit-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 12px 6px;
+  min-height: 52px;
+  padding: 7px 8px 7px 0;
+  border-radius: 14px;
+  background: var(--composer-input-bg);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.edit-composer-accent {
+  align-self: stretch;
+  width: 3px;
+  flex: 0 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.edit-composer-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.edit-composer-title {
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 700;
+}
+
+.edit-composer-preview {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-composer-close {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.edit-composer-close:hover {
+  background: rgba(120,130,145,.14);
+  color: var(--text);
+}
+
+.chat-view.fp-editing-message .reply-composer-bar {
+  display: none !important;
+}
+
+.message-delete-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(18px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));
+  background: rgba(7,12,18,.46);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.message-delete-dialog {
+  width: min(390px, 100%);
+  padding: 18px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 20px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 52px rgba(0,0,0,.30);
+}
+
+.message-delete-title {
+  margin-bottom: 7px;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 750;
+}
+
+.message-delete-text {
+  margin-bottom: 15px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.message-delete-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.message-delete-actions button {
+  width: 100%;
+  min-height: 46px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 13px;
+  background: rgba(120,130,145,.12);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.message-delete-actions button.danger {
+  background: var(--danger-soft, rgba(212,84,84,.14));
+  color: var(--danger, #d45454);
+}
+
+.message-delete-actions button.cancel {
+  background: transparent;
+  color: var(--muted);
+}
+
+.message-delete-actions button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+@media (max-width: 900px) {
+  .message-delete-overlay {
+    align-items: flex-end;
+    padding-left: calc(10px + env(safe-area-inset-left));
+    padding-right: calc(10px + env(safe-area-inset-right));
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .message-delete-dialog {
+    width: 100%;
+    border-radius: 22px;
+  }
+
+  .message-delete-actions button {
+    min-height: 50px;
+    font-size: 16px;
+  }
+}
