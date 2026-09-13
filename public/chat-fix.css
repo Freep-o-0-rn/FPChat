@@ -1,0 +1,14 @@
+/* Build 102: normal chat fixes only. */
+
+/* Keep unbroken text (URLs, hashes, invite codes, long IDs) inside the message bubble. */
+#messages .bubble-wrap.msg,
+#messages .bubble-wrap.msg .bubble,
+#messages .bubble-wrap.msg .message-text {
+  min-width: 0;
+}
+
+#messages .bubble-wrap.msg .message-text {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
