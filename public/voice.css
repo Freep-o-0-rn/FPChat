@@ -1,0 +1,189 @@
+/* Build 120: voice-message foundation. */
+.fp-voice-record-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fp-voice-record-btn svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#sendForm.fp-voice-mic-mode #sendBtn {
+  display: none !important;
+}
+
+#sendForm.fp-voice-mic-mode .fp-voice-record-btn {
+  display: inline-flex;
+}
+
+.fp-voice-recording-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+  border-radius: 18px;
+  background: var(--panel, rgba(127,127,127,.08));
+  overflow: hidden;
+}
+
+.fp-voice-recording-bar.hidden {
+  display: none !important;
+}
+
+#sendForm.fp-voice-recording .composer-attach,
+#sendForm.fp-voice-recording .composer-input-wrap,
+#sendForm.fp-voice-recording #sendBtn,
+#sendForm.fp-voice-recording .fp-voice-record-btn {
+  display: none !important;
+}
+
+.fp-voice-record-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-radius: 50%;
+  background: #e53935;
+  animation: fp-voice-record-pulse 1s ease-in-out infinite;
+}
+
+.fp-voice-record-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fp-voice-record-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .72;
+  font-size: 13px;
+}
+
+@keyframes fp-voice-record-pulse {
+  0%,100% { opacity: .45; transform: scale(.9); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.fp-voice-message .bubble {
+  min-width: min(280px, 72vw);
+}
+
+.fp-voice-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(300px, 68vw);
+  margin-top: 5px;
+  margin-bottom: 2px;
+}
+
+.fp-voice-play {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent, #3390ec);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fp-voice-loading .fp-voice-play {
+  opacity: .72;
+}
+
+.fp-voice-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fp-voice-progress {
+  --fp-voice-progress: 0%;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.fp-voice-progress::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent, #3390ec) 0 var(--fp-voice-progress), rgba(127,127,127,.3) var(--fp-voice-progress) 100%);
+}
+
+.fp-voice-progress::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  -webkit-appearance: none;
+  background: var(--accent, #3390ec);
+}
+
+.fp-voice-progress::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(127,127,127,.3);
+}
+
+.fp-voice-progress::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent, #3390ec);
+}
+
+.fp-voice-progress::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent, #3390ec);
+}
+
+.fp-voice-time {
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: .72;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .fp-voice-message .bubble {
+    min-width: min(260px, 76vw);
+  }
+  .fp-voice-player {
+    width: min(270px, 70vw);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-voice-record-dot { animation: none; }
+}
