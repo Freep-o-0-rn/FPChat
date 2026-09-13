@@ -124,7 +124,7 @@ if errorlevel 1 (
     taskkill /FI "WINDOWTITLE eq FPChat Server Launcher" /T /F >nul 2>&1
     timeout /t 2 /nobreak >nul
 )
-powershell -NoProfile -Command "$c=@(Get-NetTCPConnection -LocalPort %APP_PORT% -State Listen -ErrorAction SilentlyContinue); if($c.Count gt 0){exit 1}; exit 0" >nul 2>&1
+powershell -NoProfile -Command "$c=@(Get-NetTCPConnection -LocalPort %APP_PORT% -State Listen -ErrorAction SilentlyContinue); if($c.Count -gt 0){exit 1}; exit 0" >nul 2>&1
 if errorlevel 1 (
     set "SERVER_WAS_RUNNING=0"
     echo [ERROR] Port %APP_PORT% is still busy.
