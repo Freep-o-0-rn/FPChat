@@ -177,6 +177,11 @@
       messageContextFixCss.href = `/message-context-fix.css${buildSuffix}`;
       document.head.appendChild(messageContextFixCss);
 
+      const messageActionsCss = document.createElement('link');
+      messageActionsCss.rel = 'stylesheet';
+      messageActionsCss.href = `/message-actions.css${buildSuffix}`;
+      document.head.appendChild(messageActionsCss);
+
       const script = document.createElement('script');
       script.src = `/app.js${buildSuffix}`;
       script.defer = true;
@@ -194,6 +199,11 @@
         messageContext.onload = () => {
           const messageContextFix = document.createElement('script');
           messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
+          messageContextFix.onload = () => {
+            const messageActions = document.createElement('script');
+            messageActions.src = `/message-actions.js${buildSuffix}`;
+            document.body.appendChild(messageActions);
+          };
           document.body.appendChild(messageContextFix);
         };
         document.body.appendChild(messageContext);
