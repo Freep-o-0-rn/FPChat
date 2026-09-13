@@ -19,7 +19,7 @@
   };
   const drawerIsOpen = () => Boolean(document.getElementById("sidebar")?.classList.contains("open"));
   const blockedTarget = (target) => Boolean(target?.closest?.(
-    '.composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"]',
+    '.message-context-root, .message-context-root *, .composer, .composer *, .chat-header, .chat-header *, #backMob, #reloadBtn, #menuBtn, textarea, button, input, select, [contenteditable="true"]',
   ));
   const resetLegacyDrawerSwipe = () => {
     try {
