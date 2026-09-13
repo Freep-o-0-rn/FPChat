@@ -1,6 +1,6 @@
-/* Build 104: stabilization patch for the isolated message context layer.
+/* Build 105: stabilization patch for the isolated message context layer.
    Keeps the build-100 context implementation intact, preserves the build-101 geometry fixes,
-   and makes build-103 image-save progress distinguish preparation from confirmed completion. */
+   and fixes build-104 image-save progress on iOS. */
 (() => {
   const ROOT_SELECTOR = '.message-context-root';
   const COPY_SELECTOR = '.message-context-copy';
@@ -76,14 +76,9 @@
   function closeThroughExistingContextHandler(root) {
     const backdrop = root?.querySelector('.message-context-backdrop');
     if (!backdrop) return;
-    // The build-100 backdrop owns the real closeContext() call, including scroll restore.
-    // Reuse it instead of duplicating context state outside its private closure.
     backdrop.click();
   }
 
-  // In build 100 the cloned .bubble-wrap spans the whole context column, so visually empty
-  // space beside a large bubble still intercepted taps. Treat every tap outside the visible
-  // bubble/menu as backdrop without changing scrolling or the internal context state.
   document.addEventListener('click', (event) => {
     const root = event.target?.closest?.(ROOT_SELECTOR);
     if (!root) return;
@@ -91,14 +86,13 @@
     if (event.target.closest('.message-context-copy .bubble')) return;
 
     const backdrop = root.querySelector('.message-context-backdrop');
-    if (event.target === backdrop) return; // let the original listener handle the real backdrop
+    if (event.target === backdrop) return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
     closeThroughExistingContextHandler(root);
   }, true);
 
-  // Images inside a message are content, not draggable browser objects.
   document.addEventListener('dragstart', (event) => {
     if (!event.target?.closest?.('.bubble-wrap.msg, .message-context-root')) return;
     event.preventDefault();
@@ -115,34 +109,55 @@
     browserDownloadHandoffUntil = Date.now() + 2000;
   }
 
+  function setAriaLabel(element, value) {
+    if (!element || element.getAttribute('aria-label') === value) return;
+    element.setAttribute('aria-label', value);
+  }
+
+  function removeProgress(progress) {
+    if (!(progress instanceof Element) || !progress.isConnected) return;
+    const host = progress.closest('.media-tile');
+    progress.remove();
+    if (!host?.querySelector('.media-save-progress')) {
+      host?.classList.remove('media-save-progress-host');
+    }
+  }
+
   function normalizeSaveProgress(progress) {
     if (!(progress instanceof Element) || !progress.matches('.media-save-progress')) return;
 
     const currentLabel = String(progress.getAttribute('aria-label') || '');
+    let normalizedLabel = currentLabel;
+
     if (currentLabel.startsWith('Сохранение фото:')) {
-      progress.setAttribute('aria-label', currentLabel.replace('Сохранение фото:', 'Подготовка фото:'));
+      normalizedLabel = currentLabel.replace('Сохранение фото:', 'Подготовка фото:');
     } else if (currentLabel === 'Сохранение фото') {
-      progress.setAttribute('aria-label', 'Подготовка фото');
+      normalizedLabel = 'Подготовка фото';
     }
+
+    setAriaLabel(progress, normalizedLabel);
 
     if (progress.classList.contains('is-error')) {
-      progress.setAttribute('aria-label', 'Не удалось подготовить фото');
+      setAriaLabel(progress, 'Не удалось подготовить фото');
       return;
     }
 
-    if (!progress.classList.contains('is-success')) return;
-
-    if (Date.now() <= browserDownloadHandoffUntil) {
-      browserDownloadHandoffUntil = 0;
-      const host = progress.closest('.media-tile');
-      progress.remove();
-      host?.classList.remove('media-save-progress-host');
+    if (progress.classList.contains('is-success')) {
+      if (Date.now() <= browserDownloadHandoffUntil) {
+        browserDownloadHandoffUntil = 0;
+        removeProgress(progress);
+        return;
+      }
+      setAriaLabel(progress, 'Действие сохранения завершено');
       return;
     }
 
-    // Keep the check mark only when the native share API reports a successful action.
-    // A plain browser download has no reliable completion/cancel callback and is handled above.
-    progress.setAttribute('aria-label', 'Действие сохранения завершено');
+    // The ring represents only download/decryption preparation. Once preparation
+    // reaches 100%, remove it before control is handed to the iOS share/save UI.
+    // This also prevents a WebKit share promise from leaving a permanent spinner.
+    if (normalizedLabel === 'Подготовка фото: 100%') {
+      queueMicrotask(() => removeProgress(progress));
+    }
   }
 
   document.addEventListener('click', markBrowserDownloadHandoff, true);
