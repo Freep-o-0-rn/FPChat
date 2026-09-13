@@ -1,0 +1,146 @@
+/* Build 127: isolated voice-message integration for pinned messages. */
+.chat-pin-bar.fp-pin-voice127 .chat-pin-preview {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-pins114-card.fp-pins127-card .fp-pins114-content {
+  display: block;
+  min-width: 0;
+}
+
+.fp-pins114-card.fp-pins127-card .fp-pins114-thumb,
+.fp-pins114-card.fp-pins127-card .fp-pins114-text {
+  display: none !important;
+}
+
+.fp-pins127-player {
+  width: min(330px, 72vw);
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 3px;
+  color: inherit;
+  text-align: left;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fp-pins127-play {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent, #3390ec);
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fp-pins127-play svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+.fp-pins127-play.is-play svg path {
+  fill: currentColor;
+  stroke: none;
+  transform: translateX(1px) scale(.95);
+  transform-origin: 12px 12px;
+}
+
+.fp-pins127-play.is-loading::before {
+  content: '';
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: fp-pins127-spin .7s linear infinite;
+}
+
+.fp-pins127-play.is-loading svg { display: none; }
+
+.fp-pins127-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fp-pins127-wave {
+  width: 100%;
+  height: 30px;
+  display: block;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fp-pins127-footer {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: .78;
+}
+
+.fp-pins127-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fp-pins127-speed {
+  margin-left: auto;
+  padding: 1px 6px;
+  min-width: 29px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(127,127,127,.14);
+  font-size: 11px;
+  font-weight: 700;
+  opacity: .92;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes fp-pins127-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 430px) {
+  .fp-pins127-player {
+    width: min(305px, 70vw);
+    gap: 8px;
+  }
+  .fp-pins127-play {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+  .fp-pins127-wave { height: 28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-pins127-play.is-loading::before { animation: none; }
+}
