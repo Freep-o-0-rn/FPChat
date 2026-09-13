@@ -1,4 +1,4 @@
-/* Build 117: transient Telegram-like typing and media-upload activity indicator. */
+/* Build 118: transient Telegram-like typing and media-upload activity indicator. */
 (() => {
   const STOP_DELAY_MS = 3000;
   const START_HEARTBEAT_MS = 1500;
@@ -16,6 +16,9 @@
 
   const baseRenderPresenceStatus = typeof renderPresenceStatus === 'function' ? renderPresenceStatus : null;
   const baseFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+  const xhrProto = typeof XMLHttpRequest !== 'undefined' ? XMLHttpRequest.prototype : null;
+  const baseXhrOpen = xhrProto?.open;
+  const baseXhrSend = xhrProto?.send;
 
   function currentRoomId() {
     try { return String(state?.roomId || ''); } catch { return ''; }
@@ -135,9 +138,7 @@
       entry.stopTimer = null;
     }
     entry[kind] += 1;
-    const activity = mediaActivity(entry);
-    if (activity !== entry.lastActivity) sendMediaPulse(roomId, entry);
-    else sendMediaPulse(roomId, entry);
+    sendMediaPulse(roomId, entry);
     ensureMediaHeartbeat(roomId, entry);
   }
 
@@ -174,7 +175,7 @@
 
   function parseMediaUpload(input, init) {
     try {
-      const rawUrl = typeof input === 'string' ? input : input?.url;
+      const rawUrl = typeof input === 'string' ? input : input?.url || String(input || '');
       if (!rawUrl) return null;
       const url = new URL(rawUrl, window.location.href);
       const match = url.pathname.match(/^\/api\/rooms\/([^/]+)\/media\/upload$/);
@@ -203,6 +204,47 @@
     };
     wrappedFetch.__fpActivityWrapped = true;
     window.fetch = wrappedFetch;
+  }
+
+  // FPChat's current media pipeline uses XMLHttpRequest in
+  // uploadEncryptedMediaXhr(), not fetch(). Keep the existing upload function
+  // untouched and observe only the exact /media/upload request here.
+  if (xhrProto && baseXhrOpen && baseXhrSend && !xhrProto.__fpActivityWrapped) {
+    const wrappedOpen = function fpActivityXhrOpen(method, url, ...rest) {
+      this.__fpActivityRequestUrl = url;
+      return baseXhrOpen.call(this, method, url, ...rest);
+    };
+
+    const wrappedSend = function fpActivityXhrSend(body) {
+      const media = parseMediaUpload(this.__fpActivityRequestUrl, { body });
+      if (!media) return baseXhrSend.call(this, body);
+
+      beginMediaUpload(media.roomId, media.kind);
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        finishMediaUpload(media.roomId, media.kind);
+      };
+
+      this.addEventListener('loadend', finish, { once: true });
+      this.addEventListener('abort', finish, { once: true });
+      this.addEventListener('error', finish, { once: true });
+      this.addEventListener('timeout', finish, { once: true });
+
+      try {
+        return baseXhrSend.call(this, body);
+      } catch (error) {
+        finish();
+        throw error;
+      }
+    };
+
+    wrappedOpen.__fpActivityWrapped = true;
+    wrappedSend.__fpActivityWrapped = true;
+    xhrProto.open = wrappedOpen;
+    xhrProto.send = wrappedSend;
+    xhrProto.__fpActivityWrapped = true;
   }
 
   function isRoomClosed() {
