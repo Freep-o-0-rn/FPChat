@@ -1,4 +1,4 @@
-/* Build 112: isolated hybrid shared/personal message pins layer. */
+/* Build 113: isolated hybrid shared/personal message pins layer. */
 (() => {
   const ROOT = '.message-context-root';
   const MENU = '.message-context-menu';
@@ -139,6 +139,26 @@
     return selected;
   }
 
+  function pinCycleSignature(pins) {
+    return pins.map((pin) => String(pin.messageId)).join(',');
+  }
+
+  async function jumpToNextPinnedMessage(bar) {
+    const id = roomId();
+    const pins = pinsByRoom.get(id) || [];
+    if (!id || !bar || !pins.length) return;
+
+    const signature = pinCycleSignature(pins);
+    let index = Number(bar.dataset.pinCycleNextIndex);
+    const sameCycle = bar.dataset.pinCycleSignature === signature && Number.isInteger(index) && index >= 0 && index < pins.length;
+    if (!sameCycle) index = pins.length - 1;
+
+    const pin = pins[index];
+    bar.dataset.pinCycleSignature = signature;
+    bar.dataset.pinCycleNextIndex = String(index > 0 ? index - 1 : pins.length - 1);
+    await jumpToMessage(pin.messageId);
+  }
+
   function renderPinBar() {
     const id = roomId();
     const view = document.querySelector('.chat-view');
@@ -160,8 +180,7 @@
       bar.innerHTML = '<button type="button" class="chat-pin-main"><span class="chat-pin-rail" aria-hidden="true"></span><span class="chat-pin-copy"><span class="chat-pin-title"></span><span class="chat-pin-preview"></span></span></button><button type="button" class="chat-pin-all" aria-label="Все закреплённые сообщения"><span class="chat-pin-stack" aria-hidden="true">▤</span><span class="chat-pin-count"></span></button>';
       view.insertBefore(bar, box);
       bar.querySelector('.chat-pin-main')?.addEventListener('click', () => {
-        const messageId = numericId(bar.dataset.messageId);
-        if (messageId) void jumpToMessage(messageId);
+        void jumpToNextPinnedMessage(bar);
       });
       bar.querySelector('.chat-pin-all')?.addEventListener('click', openPinsScreen);
     }
