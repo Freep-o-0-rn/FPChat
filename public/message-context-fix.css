@@ -1,0 +1,42 @@
+/* Build 101: visual/stability fixes layered on top of message-context.css. */
+
+/* Long unbroken fragments (hashes, URLs, ids) must stay inside the selected bubble. */
+.message-context-copy .bubble,
+.message-context-copy .message-text,
+.message-context-copy .reply-block-author,
+.message-context-copy .reply-block-preview {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* A photo is message content, not a browser-draggable object. */
+.bubble-wrap.msg img,
+.bubble-wrap.msg video,
+.bubble-wrap.msg .media-tile,
+.message-context-root img,
+.message-context-root video,
+.message-context-root .media-tile {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Keep the selected media under the context scroller and remove transient transforms. */
+.message-context-copy .media-grid,
+.message-context-copy .media-tile,
+.message-context-copy .media-thumb {
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.message-context-copy .media-tile {
+  touch-action: pan-y;
+}
+
+/* Let the tile receive taps while the image itself cannot start native drag/selection. */
+.message-context-copy .media-thumb {
+  pointer-events: none;
+}
