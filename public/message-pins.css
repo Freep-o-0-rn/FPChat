@@ -1,0 +1,69 @@
+/* Build 112: hybrid shared/personal pins UI. */
+.chat-pin-bar {
+  flex: 0 0 auto;
+  min-height: 58px;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, rgba(120,130,145,.24)) 70%, transparent);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  backdrop-filter: blur(18px) saturate(1.08);
+  z-index: 6;
+}
+.chat-pin-main,.chat-pin-all{appearance:none;border:0;background:transparent;color:var(--text);font:inherit;cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.chat-pin-main{min-width:0;flex:1;display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:12px;text-align:left}
+.chat-pin-main:hover,.chat-pin-all:hover{background:rgba(120,130,145,.10)}
+.chat-pin-rail{width:3px;height:38px;flex:0 0 3px;border-radius:999px;background:var(--accent)}
+.chat-pin-bar.is-personal .chat-pin-rail{background:color-mix(in srgb,var(--accent) 64%,#39d98a)}
+.chat-pin-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
+.chat-pin-title{overflow:hidden;color:var(--accent);font-size:12px;line-height:16px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+.chat-pin-preview{overflow:hidden;color:var(--text);font-size:13px;line-height:17px;text-overflow:ellipsis;white-space:nowrap}
+.chat-pin-all{min-width:50px;flex:0 0 50px;display:grid;place-items:center;grid-template-rows:24px 14px;padding:5px;border-radius:12px}
+.chat-pin-stack{font-size:23px;line-height:1}
+.chat-pin-count{min-width:18px;height:18px;display:inline-grid;place-items:center;padding:0 5px;border-radius:999px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);font-size:11px;font-weight:800;line-height:18px}
+.chat-view.fp-selection-mode .chat-pin-bar{display:none!important}
+.message-context-action.fp-message-pin-action{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.message-pin-overlay{position:fixed;inset:0;z-index:1940;display:flex;align-items:center;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(18px + env(safe-area-inset-left));background:rgba(7,12,18,.46);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.message-pin-dialog{width:min(390px,100%);padding:18px;border:1px solid rgba(255,255,255,.10);border-radius:20px;background:var(--panel);color:var(--text);box-shadow:0 18px 52px rgba(0,0,0,.30)}
+.message-pin-title{margin-bottom:7px;font-size:18px;line-height:24px;font-weight:750}
+.message-pin-text{margin-bottom:15px;color:var(--muted);font-size:14px;line-height:20px}
+.message-pin-actions{display:flex;flex-direction:column;gap:7px}
+.message-pin-actions button{width:100%;min-height:46px;padding:9px 13px;border:0;border-radius:13px;background:rgba(120,130,145,.12);color:var(--text);font:inherit;font-size:15px;font-weight:650;cursor:pointer}
+.message-pin-actions button[data-pin-scope='shared']{color:var(--accent)}
+.message-pin-actions button[data-pin-scope='personal']{color:color-mix(in srgb,var(--accent) 58%,#39d98a)}
+.message-pin-actions button.cancel{background:transparent;color:var(--muted)}
+.message-pin-actions button:disabled{opacity:.5;cursor:default}
+body.message-pins-screen-open{overflow:hidden}
+.message-pins-screen{position:fixed;inset:0;z-index:1880;display:flex;justify-content:center;background:rgba(7,12,18,.36);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.message-pins-panel{position:relative;width:min(720px,100%);height:100%;display:flex;flex-direction:column;background:var(--bg,#0e1621);color:var(--text);box-shadow:0 0 48px rgba(0,0,0,.30)}
+.message-pins-header{flex:0 0 auto;min-height:60px;display:grid;grid-template-columns:54px 1fr minmax(82px,auto);align-items:center;gap:8px;padding:env(safe-area-inset-top) calc(10px + env(safe-area-inset-right)) 0 calc(10px + env(safe-area-inset-left));border-bottom:1px solid color-mix(in srgb,var(--border,rgba(120,130,145,.24)) 70%,transparent);background:color-mix(in srgb,var(--panel) 97%,transparent)}
+.message-pins-close,.message-pins-filter{appearance:none;min-height:42px;border:0;border-radius:12px;background:transparent;color:var(--text);font:inherit;cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.message-pins-close{width:46px;font-size:24px}
+.message-pins-filter{padding:0 10px;color:var(--accent);font-size:14px;font-weight:700}
+.message-pins-close:hover,.message-pins-filter:hover{background:rgba(120,130,145,.11)}
+.message-pins-heading{min-width:0;overflow:hidden;font-size:18px;font-weight:780;text-align:center;text-overflow:ellipsis;white-space:nowrap}
+.message-pins-filter-menu{position:absolute;top:calc(58px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));z-index:4;width:170px;padding:6px;border:1px solid rgba(255,255,255,.10);border-radius:15px;background:color-mix(in srgb,var(--panel) 96%,transparent);box-shadow:0 12px 34px rgba(0,0,0,.25);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.message-pins-filter-menu.hidden{display:none}
+.message-pins-filter-menu button{width:100%;min-height:42px;padding:8px 11px;border:0;border-radius:10px;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.message-pins-filter-menu button.active{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);font-weight:700}
+.message-pins-search-wrap{flex:0 0 auto;padding:10px 12px;background:var(--panel)}
+.message-pins-search{box-sizing:border-box;width:100%;min-height:42px;padding:9px 13px;border:1px solid color-mix(in srgb,var(--border,rgba(120,130,145,.24)) 80%,transparent);border-radius:13px;outline:none;background:var(--composer-input-bg,rgba(120,130,145,.10));color:var(--text);font:inherit}
+.message-pins-search:focus{border-color:color-mix(in srgb,var(--accent) 68%,transparent)}
+.message-pins-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding:8px 10px calc(18px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.message-pin-item{appearance:none;width:100%;min-height:74px;display:flex;align-items:stretch;gap:10px;margin:0 0 6px;padding:10px 12px;border:0;border-radius:14px;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.message-pin-item:hover,.message-pin-item:active{background:rgba(120,130,145,.10)}
+.message-pin-item-side{width:3px;flex:0 0 3px;border-radius:999px;background:var(--accent)}
+.message-pin-item-body{min-width:0;flex:1;display:flex;flex-direction:column;gap:7px}
+.message-pin-item-top{min-width:0;display:flex;align-items:center;gap:7px}
+.message-pin-badge{flex:0 0 auto;padding:2px 7px;border-radius:999px;font-size:11px;line-height:17px;font-weight:800}
+.message-pin-badge.shared{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+.message-pin-badge.personal{background:color-mix(in srgb,#39d98a 14%,transparent);color:color-mix(in srgb,#39d98a 78%,var(--text))}
+.message-pin-author{min-width:0;flex:1;overflow:hidden;font-size:13px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.message-pin-time{flex:0 0 auto;color:var(--muted);font-size:11px}
+.message-pin-item-preview{min-width:0;display:flex;align-items:center;gap:7px;color:var(--text);font-size:14px;line-height:20px}
+.message-pin-type-icon{flex:0 0 auto;color:var(--accent)}
+.message-pin-preview-text{min-width:0;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
+.message-pins-empty{min-height:180px;display:grid;place-items:center;padding:24px;color:var(--muted);font-size:14px;text-align:center}
+@media (max-width:900px){.chat-pin-bar{padding-left:calc(5px + env(safe-area-inset-left));padding-right:calc(5px + env(safe-area-inset-right))}.message-pin-overlay{align-items:flex-end;padding-left:calc(10px + env(safe-area-inset-left));padding-right:calc(10px + env(safe-area-inset-right));padding-bottom:calc(10px + env(safe-area-inset-bottom))}.message-pin-dialog{width:100%;border-radius:22px}.message-pin-actions button{min-height:50px;font-size:16px}.message-pins-panel{width:100%}.message-pins-header{grid-template-columns:48px 1fr minmax(74px,auto)}.message-pins-heading{font-size:17px}}
