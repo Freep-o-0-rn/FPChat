@@ -1,4 +1,4 @@
-/* Build 121: Telegram-like locked recording, waveform playback and responsive voice UI. */
+/* Build 122: Telegram-like locked recording, waveform playback and responsive voice UI. */
 .fp-voice-record-btn {
   display: none;
   align-items: center;
@@ -47,6 +47,16 @@
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+#sendForm.fp-voice-recording {
+  position: relative;
+  overflow: visible;
+}
+
+.fp-voice-recording-bar {
+  position: relative;
+  overflow: visible;
 }
 
 .fp-voice-recording-bar.hidden,
@@ -111,19 +121,28 @@
 }
 
 .fp-voice-lock-cue {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  position: absolute;
+  right: 6px;
+  bottom: 92px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  opacity: .48;
-  transform: translateY(0);
-  transition: opacity .12s ease, transform .12s ease;
+  border-radius: 50%;
+  background: var(--panel, rgba(28,40,52,.96));
+  border: 1px solid rgba(148,163,184,.24);
+  box-shadow: 0 7px 18px rgba(0,0,0,.22);
+  opacity: .72;
+  transform: translateY(0) scale(.96);
+  transition: opacity .12s ease, transform .12s ease, color .12s ease;
+  pointer-events: none;
+  z-index: 8;
 }
 
 .fp-voice-recording-bar.fp-voice-cancel-arming .fp-voice-record-hint { color: #ff7a7a; opacity: 1; }
-.fp-voice-recording-bar.fp-voice-lock-arming .fp-voice-lock-cue { color: var(--accent, #3390ec); opacity: 1; transform: translateY(-4px); }
+.fp-voice-recording-bar.fp-voice-lock-arming .fp-voice-lock-cue { color: var(--accent, #3390ec); opacity: 1; transform: translateY(-8px) scale(1); }
 
 .fp-voice-record-delete,
 .fp-voice-record-stop,
