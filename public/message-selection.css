@@ -1,4 +1,4 @@
-/* Build 110: isolated multiple-message selection UI. */
+/* Build 111: stable isolated multiple-message selection UI. */
 body.fp-message-selection-open {
   -webkit-user-select: none;
   user-select: none;
@@ -131,7 +131,7 @@ body.fp-message-selection-open .message-context-root {
   fill: currentColor;
 }
 
-body.fp-message-selection-open #messages .bubble-wrap.msg {
+body.fp-message-selection-open #messages .bubble-wrap.msg:not(.system-event-wrap) {
   position: relative;
   cursor: pointer;
   -webkit-touch-callout: none;
@@ -139,7 +139,7 @@ body.fp-message-selection-open #messages .bubble-wrap.msg {
   user-select: none;
 }
 
-body.fp-message-selection-open #messages .bubble-wrap.msg:not(.mine) {
+body.fp-message-selection-open #messages .bubble-wrap.msg:not(.system-event-wrap):not(.mine) {
   box-sizing: border-box;
   padding-left: 46px !important;
 }
