@@ -1,4 +1,4 @@
-/* Build 136: OS-aware mobile viewport polish.
+/* Build 137: OS-aware mobile viewport polish.
    Extends the stable Build 99 viewport fix without replacing chat scroll,
    unread/lazy-history, gestures or message rendering.
 
@@ -7,6 +7,8 @@
    - detect when the software keyboard actually occupies the visual viewport;
    - on iOS, do not add the home-indicator safe-area a second time while the
      keyboard/input assistant already owns the bottom of the screen;
+   - normalize the iOS top safe-area from the very first chat-list render so
+     startup looks the same as returning to the chat list later;
    - keep the normal safe-area untouched when the keyboard is closed.
 */
 (() => {
@@ -33,6 +35,21 @@
   style.id = STYLE_ID;
   style.textContent = `
     @media (max-width: 900px) {
+      /* Build 137: on first PWA launch iOS may paint the list's panel color
+         into the top safe-area until the first pane transition. Paint only
+         that protected strip with the app background from the start. */
+      html.fp-os-ios #appRoot[data-pane="list"]::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: env(safe-area-inset-top);
+        background: var(--bg);
+        pointer-events: none;
+        z-index: 2;
+      }
+
       /* iOS already reserves its keyboard/input-assistant region. Keeping the
          home-indicator safe area here as well creates an extra dark strip. */
       html.fp-os-ios.fp-keyboard-open #appRoot.fpchat-mobile-chat-viewport .chat-view .composer {
