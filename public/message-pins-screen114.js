@@ -1,9 +1,9 @@
-/* Build 140: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 141: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=140'; }
-    catch { return '?v=140'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=141'; }
+    catch { return '?v=141'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
