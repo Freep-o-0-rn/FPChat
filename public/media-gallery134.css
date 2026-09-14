@@ -1,0 +1,121 @@
+/* Build 134: room-wide Telegram-like media gallery. */
+#mediaViewerRoot .media-viewer-overlay.fp-gallery134 {
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fp-gallery134 .fp-gallery134-counter {
+  position: absolute;
+  z-index: 4;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,.82);
+  font-size: 13px;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+.fp-gallery134 .media-viewer-close {
+  z-index: 5;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+}
+
+.fp-gallery134-stage {
+  position: absolute;
+  inset: calc(54px + env(safe-area-inset-top)) 0 calc(18px + env(safe-area-inset-bottom));
+  overflow: hidden;
+  touch-action: none;
+  will-change: transform, opacity;
+  transform-origin: center center;
+}
+
+.fp-gallery134-track {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  transform: translate3d(-100%,0,0);
+  will-change: transform;
+}
+
+.fp-gallery134-track.fp-gallery134-anim {
+  transition: transform .18s cubic-bezier(.22,.72,.28,1);
+}
+
+.fp-gallery134-stage.fp-gallery134-stage-reset {
+  transition: transform .18s ease-out, opacity .18s ease-out;
+}
+
+.fp-gallery134-stage.fp-gallery134-stage-close {
+  transition: transform .15s ease-in, opacity .15s ease-in;
+}
+
+.fp-gallery134-slide {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fp-gallery134 .media-viewer-content {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fp-gallery134 .media-viewer-content img,
+.fp-gallery134 .media-viewer-content video {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.fp-gallery134 .media-viewer-content img {
+  touch-action: none;
+  -webkit-user-drag: none;
+}
+
+.fp-gallery134 .media-viewer-content video {
+  touch-action: manipulation;
+}
+
+.fp-gallery134 .media-error-box {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+.fp-gallery134 .media-viewer-nav {
+  z-index: 5;
+  width: 42px;
+  height: 42px;
+}
+
+.fp-gallery134 .media-viewer-nav:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .fp-gallery134 .media-viewer-nav {
+    display: none;
+  }
+  .fp-gallery134 .media-viewer-content {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
