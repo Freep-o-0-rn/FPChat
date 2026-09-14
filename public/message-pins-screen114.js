@@ -1,9 +1,9 @@
-/* Build 139: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 140: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=139'; }
-    catch { return '?v=139'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=140'; }
+    catch { return '?v=140'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -48,6 +48,13 @@
     settings.src = `/settings-ui131.js${suffix}`;
     settings.dataset.fpSettingsUi131 = '1';
     document.body.appendChild(settings);
+  }
+
+  if (!document.querySelector('script[data-fp-username-profile140]')) {
+    const usernameProfile = document.createElement('script');
+    usernameProfile.src = `/username-profile140.js${suffix}`;
+    usernameProfile.dataset.fpUsernameProfile140 = '1';
+    document.body.appendChild(usernameProfile);
   }
 
   if (!document.querySelector('script[data-fp-gesture-manager135]')) {
