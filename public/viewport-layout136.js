@@ -1,4 +1,4 @@
-/* Build 137: OS-aware mobile viewport polish.
+/* Build 138: OS-aware mobile viewport polish.
    Extends the stable Build 99 viewport fix without replacing chat scroll,
    unread/lazy-history, gestures or message rendering.
 
@@ -35,9 +35,9 @@
   style.id = STYLE_ID;
   style.textContent = `
     @media (max-width: 900px) {
-      /* Build 137: on first PWA launch iOS may paint the list's panel color
-         into the top safe-area until the first pane transition. Paint only
-         that protected strip with the app background from the start. */
+      /* Build 138: on first PWA launch paint the iOS top safe-area with the
+         same panel color as the chat list. This matches the state after a
+         chat -> list transition and avoids the darker startup strip. */
       html.fp-os-ios #appRoot[data-pane="list"]::before {
         content: '';
         position: fixed;
@@ -45,7 +45,7 @@
         left: 0;
         right: 0;
         height: env(safe-area-inset-top);
-        background: var(--bg);
+        background: var(--panel);
         pointer-events: none;
         z-index: 2;
       }
