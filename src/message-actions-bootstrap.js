@@ -1,4 +1,4 @@
-/* Build 121: inject isolated message-actions, message-pins, typing and voice server layers without rewriting server.js. */
+/* Build 140: inject isolated message-actions, message-pins, typing, username and voice server layers without rewriting server.js. */
 const fs = require('fs');
 const path = require('path');
 const Module = require('module');
@@ -16,10 +16,10 @@ Module._extensions['.js'] = function fpchatBuild121Loader(module, filename) {
   let source = fs.readFileSync(filename, 'utf8');
   const marker = '\ncleanupExpiredSoloRooms();\nsetInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);\nserver.listen(APP_PORT, APP_HOST, () => console.log(`FPChat listening on http://${APP_HOST}:${APP_PORT}`));';
   if (!source.includes(marker)) {
-    throw new Error('FPChat Build 121 bootstrap: server.js startup marker was not found');
+    throw new Error('FPChat Build 140 bootstrap: server.js startup marker was not found');
   }
 
-  const install = `\nrequire('./src/message-actions-server').installMessageActionsServer({\n  app,\n  db,\n  q,\n  socketsByDevice,\n  sendWsJson,\n  sendToRoomParticipants,\n  broadcastUnreadState,\n  toIsoUtc,\n  safeUnlink,\n  isRoomOpen,\n  roomStatePayload\n});\n\nrequire('./src/message-pins-server').installMessagePinsServer({\n  app,\n  db,\n  q,\n  socketsByDevice,\n  sendWsJson,\n  sendToRoomParticipants,\n  toIsoUtc,\n  isRoomOpen,\n  roomStatePayload\n});\n\nrequire('./src/typing-server').installTypingServer({\n  wss,\n  q,\n  sendToRoomParticipants,\n  isRoomOpen\n});\n\nrequire('./src/voice-server').installVoiceServer({\n  app,\n  db,\n  q,\n  upload,\n  UPLOAD_DIR,\n  fs,\n  path,\n  randomToken,\n  safeUnlink,\n  isRoomOpen\n});\n`;
+  const install = `\nrequire('./src/message-actions-server').installMessageActionsServer({\n  app,\n  db,\n  q,\n  socketsByDevice,\n  sendWsJson,\n  sendToRoomParticipants,\n  broadcastUnreadState,\n  toIsoUtc,\n  safeUnlink,\n  isRoomOpen,\n  roomStatePayload\n});\n\nrequire('./src/message-pins-server').installMessagePinsServer({\n  app,\n  db,\n  q,\n  socketsByDevice,\n  sendWsJson,\n  sendToRoomParticipants,\n  toIsoUtc,\n  isRoomOpen,\n  roomStatePayload\n});\n\nrequire('./src/typing-server').installTypingServer({\n  wss,\n  q,\n  sendToRoomParticipants,\n  isRoomOpen\n});\n\nrequire('./src/username-server').installUsernameServer({\n  app,\n  db\n});\n\nrequire('./src/voice-server').installVoiceServer({\n  app,\n  db,\n  q,\n  upload,\n  UPLOAD_DIR,\n  fs,\n  path,\n  randomToken,\n  safeUnlink,\n  isRoomOpen\n});\n`;
 
   source = source.replace(marker, `${install}${marker}`);
   module._compile(source, filename);
