@@ -35,6 +35,14 @@
     document.body.appendChild(opening);
   }
 
+  if (!document.querySelector('link[data-fp-settings-ui131]')) {
+    const settingsCss = document.createElement('link');
+    settingsCss.rel = 'stylesheet';
+    settingsCss.href = `/settings-ui131.css${suffix}`;
+    settingsCss.dataset.fpSettingsUi131 = '1';
+    document.head.appendChild(settingsCss);
+  }
+
   if (!document.querySelector('script[data-fp-settings-ui131]')) {
     const settings = document.createElement('script');
     settings.src = `/settings-ui131.js${suffix}`;
