@@ -1,4 +1,4 @@
-/* Build 144: exact @username lookup with clickable public-profile preview.
+/* Build 145: exact @username lookup, public-profile preview and isolated chat-request action.
    Existing local chat filtering remains untouched. */
 (() => {
   if (window.__fpUsernameSearch143Installed) return;
@@ -40,7 +40,13 @@
     .fp-profile144-badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:9px}
     .fp-profile144-badge{display:inline-flex;padding:3px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:750}
     .fp-profile144-info{margin-top:18px;padding:13px 14px;border-radius:14px;background:rgba(120,130,145,.07);color:var(--muted);font-size:13px;line-height:1.5}
-    .fp-profile144-info b{color:inherit}
+    .fp-profile145-actions{margin-top:13px}
+    .fp-profile145-request{width:100%;min-height:44px;border:0;border-radius:13px;padding:0 14px;background:var(--accent);color:#fff;font:inherit;font-size:14px;font-weight:750;cursor:pointer;transition:opacity .15s,transform .12s}
+    .fp-profile145-request:active:not(:disabled){transform:scale(.992)}
+    .fp-profile145-request:disabled{cursor:default;opacity:.58}
+    .fp-profile145-status{min-height:18px;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.45;text-align:center}
+    .fp-profile145-status.success{color:#3bc47d}
+    .fp-profile145-status.error{color:var(--danger)}
     @media(max-width:600px){
       .fp-profile144-overlay{align-items:flex-end;padding:0}
       .fp-profile144-sheet{width:100%;max-height:min(78dvh,720px);border-radius:22px 22px 0 0;border-left:0;border-right:0;border-bottom:0;padding:22px 20px calc(22px + env(safe-area-inset-bottom))}
@@ -83,6 +89,35 @@
     return raw.toUpperCase() || 'FP';
   }
 
+  async function getRequestStatus(user) {
+    const deviceId = getDeviceId();
+    if (!deviceId) return { ok: false, code: 'DEVICE_ID_REQUIRED' };
+    const params = new URLSearchParams({ deviceId, targetUsername: user.username });
+    const response = await fetch(`/api/chat-requests/status?${params.toString()}`, { cache: 'no-store' });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw Object.assign(new Error('request status unavailable'), { data, status: response.status });
+    return data;
+  }
+
+  async function sendChatRequest(user) {
+    const senderDeviceId = getDeviceId();
+    if (!senderDeviceId) throw Object.assign(new Error('device unavailable'), { code: 'DEVICE_ID_REQUIRED' });
+    const response = await fetch('/api/chat-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ senderDeviceId, targetUsername: user.username })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) {
+      const error = new Error('chat request failed');
+      error.code = data?.code || 'CHAT_REQUEST_FAILED';
+      error.data = data;
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
+
   function closeProfile() {
     if (!profileOverlay) return;
     document.removeEventListener('keydown', onProfileKey, true);
@@ -94,6 +129,48 @@
     if (event.key === 'Escape') {
       event.preventDefault();
       closeProfile();
+    }
+  }
+
+  function setRequestStatus(el, text, kind = '') {
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = `fp-profile145-status${kind ? ` ${kind}` : ''}`;
+  }
+
+  async function hydrateRequestAction(user, button, status) {
+    if (!button || user.isSelf) return;
+    button.disabled = true;
+    button.textContent = 'Проверяем…';
+    setRequestStatus(status, '');
+    try {
+      const data = await getRequestStatus(user);
+      if (!data.senderHasProfile) {
+        button.textContent = 'Сначала установите username';
+        setRequestStatus(status, 'Чтобы отправлять запросы, задайте свой username в Настройки → Профиль.');
+        return;
+      }
+      if (data.pending?.direction === 'outgoing') {
+        button.textContent = 'Запрос уже отправлен';
+        setRequestStatus(status, 'Запрос ожидает ответа пользователя.', 'success');
+        return;
+      }
+      if (data.pending?.direction === 'incoming') {
+        button.textContent = 'Есть входящий запрос';
+        setRequestStatus(status, 'Этот пользователь уже отправил вам запрос. Откройте системный чат.');
+        return;
+      }
+      if (!data.canSend) {
+        button.textContent = 'Запрос недоступен';
+        return;
+      }
+      button.disabled = false;
+      button.textContent = 'Отправить запрос на чат';
+      setRequestStatus(status, 'Пользователь получит запрос в системном чате.');
+    } catch {
+      button.textContent = 'Повторить проверку';
+      button.disabled = false;
+      setRequestStatus(status, 'Не удалось проверить состояние запроса.', 'error');
     }
   }
 
@@ -150,11 +227,64 @@
     info.className = 'fp-profile144-info';
     info.textContent = user.isSelf
       ? 'Это ваш публичный профиль. Другие пользователи смогут находить его только по точному @username.'
-      : 'Профиль найден по точному @username. Начало общения будет происходить только через отдельный запрос на чат.';
+      : 'Профиль найден по точному @username. Новый чат создаётся только после отдельного запроса и согласия пользователя.';
 
     head.append(avatar, name, handle);
     if (badges.childElementCount) head.appendChild(badges);
     sheet.append(close, head, info);
+
+    let requestButton = null;
+    let requestStatus = null;
+    if (!user.isSelf) {
+      const actions = document.createElement('div');
+      actions.className = 'fp-profile145-actions';
+      requestButton = document.createElement('button');
+      requestButton.type = 'button';
+      requestButton.className = 'fp-profile145-request';
+      requestButton.textContent = 'Проверяем…';
+      requestButton.disabled = true;
+      requestStatus = document.createElement('div');
+      requestStatus.className = 'fp-profile145-status';
+      actions.append(requestButton, requestStatus);
+      sheet.appendChild(actions);
+
+      requestButton.onclick = async () => {
+        if (requestButton.disabled) return;
+        const label = requestButton.textContent;
+        if (label === 'Повторить проверку') {
+          await hydrateRequestAction(user, requestButton, requestStatus);
+          return;
+        }
+        requestButton.disabled = true;
+        requestButton.textContent = 'Отправляем…';
+        setRequestStatus(requestStatus, '');
+        try {
+          await sendChatRequest(user);
+          requestButton.textContent = 'Запрос отправлен';
+          setRequestStatus(requestStatus, 'Запрос доставлен в системный чат пользователя и ожидает ответа.', 'success');
+        } catch (error) {
+          if (error.code === 'SENDER_PROFILE_REQUIRED') {
+            requestButton.textContent = 'Сначала установите username';
+            setRequestStatus(requestStatus, 'Чтобы отправлять запросы, задайте свой username в Настройки → Профиль.');
+            return;
+          }
+          if (error.code === 'CHAT_REQUEST_ALREADY_PENDING') {
+            requestButton.textContent = 'Запрос уже отправлен';
+            setRequestStatus(requestStatus, 'Запрос уже ожидает ответа пользователя.', 'success');
+            return;
+          }
+          if (error.code === 'CHAT_REQUEST_INCOMING_PENDING') {
+            requestButton.textContent = 'Есть входящий запрос';
+            setRequestStatus(requestStatus, 'Этот пользователь уже отправил вам запрос. Откройте системный чат.');
+            return;
+          }
+          requestButton.textContent = 'Повторить';
+          requestButton.disabled = false;
+          setRequestStatus(requestStatus, 'Не удалось отправить запрос.', 'error');
+        }
+      };
+    }
+
     overlay.appendChild(sheet);
     document.body.appendChild(overlay);
 
@@ -165,6 +295,7 @@
     document.addEventListener('keydown', onProfileKey, true);
     profileOverlay = overlay;
     queueMicrotask(() => close.focus({ preventScroll: true }));
+    if (requestButton) void hydrateRequestAction(user, requestButton, requestStatus);
   }
 
   function clear() {
