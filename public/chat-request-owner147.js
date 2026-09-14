@@ -28,6 +28,9 @@
     delete all[String(roomId)];
     return writeAll(all);
   };
+  const notifyChanged = () => {
+    try { window.dispatchEvent(new CustomEvent('fpchat:chat-request-changed')); } catch {}
+  };
 
   function nick() {
     try { if (typeof state !== 'undefined' && state?.nick) return String(state.nick).trim(); } catch {}
@@ -105,6 +108,7 @@
       const data = await clone.json();
       if (data?.ok && data?.request) {
         put(room.roomId, { ...room, requestId: data.request.id || null, targetUsername: body.targetUsername, inviteExpiresAt: data.request.expiresAt || room.inviteExpiresAt || null });
+        notifyChanged();
       }
     } catch {}
     return response;
