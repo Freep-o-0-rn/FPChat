@@ -1,4 +1,4 @@
-/* Build 147: request decisions, 24-hour countdown and sender-room promotion in the FPChat system chat. */
+/* Build 150: request decisions, countdown and authoritative request preview in the existing system-chat layer. */
 (() => {
   if (window.__fpChatRequestSystem147Installed) return;
   window.__fpChatRequestSystem147Installed = true;
@@ -26,6 +26,7 @@
   let countdownTimer = 0;
   let refreshAtZero = false;
   let hostObserver = null;
+  let authoritativeRowPreview = '';
   const joining = new Set();
 
   const api = () => window.FPSystem144 || null;
@@ -65,7 +66,7 @@
         requests = new Map(rows.map((row) => [String(row.requestId || ''), row]));
         window.FPChatRequestOwner147?.reconcile?.(rows);
         ensureSystemRow(rows);
-        void decorateRow(rows);
+        await decorateRow(rows);
         return rows;
       } finally { syncPromise = null; }
     })();
@@ -102,6 +103,11 @@
     const pending = syntheticPending(rows); if (!pending) return;
     host.hidden = false; host.replaceChildren(buildSystemRow(pending));
   }
+  function applyAuthoritativeRowPreview() {
+    if (!authoritativeRowPreview) return;
+    const last = document.querySelector('#fpSystemChatHost145 .fp-system145-row .last');
+    if (last && last.textContent !== authoritativeRowPreview) last.textContent = authoritativeRowPreview;
+  }
   async function decorateRow(rows = [...requests.values()]) {
     const row = document.querySelector('.fp-system145-row'); if (!row) return;
     try {
@@ -111,7 +117,8 @@
       const requestMs = dateOf(request?.updatedAt || request?.createdAt)?.getTime() || 0;
       let text = requestMs > eventMs ? preview(request) : '';
       if (!text && event) text = preview(reqFor(event)) || (event.type === 'chat_request_expired' ? 'Срок запроса истёк' : event.type === 'chat_request_rejected' ? 'Запрос на чат отклонён' : 'Новое системное уведомление');
-      const last = row.querySelector('.last'); if (last && text) last.textContent = text;
+      if (text) authoritativeRowPreview = text;
+      applyAuthoritativeRowPreview();
     } catch {}
   }
 
@@ -160,7 +167,7 @@
         if (!await joinByInviteText(claim.inviteCode)) throw Object.assign(new Error('join'), { code:'CHAT_REQUEST_JOIN_FAILED' });
       }
       await postAction(id, 'complete');
-      closeOverlay(); await api()?.refresh?.(); await syncRequests();
+      closeOverlay(); await syncRequests(); await api()?.refresh?.(); applyAuthoritativeRowPreview();
     } catch (error) {
       busy(actions, false);
       errorText(card, ['CHAT_REQUEST_ALREADY_RESOLVED','CHAT_REQUEST_INVITE_EXPIRED','CHAT_REQUEST_INVITE_UNAVAILABLE','CHAT_REQUEST_ROOM_CLOSED'].includes(error?.code) ? 'Запрос больше не действует.' : 'Не удалось принять запрос. Попробуйте ещё раз.');
@@ -169,14 +176,14 @@
   }
   async function reject(request, card, actions) {
     busy(actions,true); errorText(card,'');
-    try { await postAction(request.requestId,'reject'); await refreshOverlay(); await api()?.refresh?.(); }
+    try { await postAction(request.requestId,'reject'); await refreshOverlay(); await api()?.refresh?.(); applyAuthoritativeRowPreview(); }
     catch { busy(actions,false); errorText(card,'Не удалось отклонить запрос.'); }
   }
   async function block(request, card, actions, profile) {
     const who = profile?.displayName || (profile?.username ? `@${profile.username}` : 'этого пользователя');
     if (!confirm(`Заблокировать ${who}? Он больше не сможет отправлять вам запросы на чат.`)) return;
     busy(actions,true); errorText(card,'');
-    try { await postAction(request.requestId,'block'); await refreshOverlay(); await api()?.refresh?.(); }
+    try { await postAction(request.requestId,'block'); await refreshOverlay(); await api()?.refresh?.(); applyAuthoritativeRowPreview(); }
     catch { busy(actions,false); errorText(card,'Не удалось заблокировать пользователя.'); }
   }
 
@@ -229,7 +236,7 @@
       el.textContent=`Истекает через ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
       el.classList.toggle('expiring', remaining <= 3600000);
     });
-    if (zero && !refreshAtZero) { refreshAtZero=true; setTimeout(async()=>{ try { await refreshOverlay(); await api()?.refresh?.(); } finally { refreshAtZero=false; } },250); }
+    if (zero && !refreshAtZero) { refreshAtZero=true; setTimeout(async()=>{ try { await refreshOverlay(); await api()?.refresh?.(); applyAuthoritativeRowPreview(); } finally { refreshAtZero=false; } },250); }
   }
   function startCountdown() { clearInterval(countdownTimer); updateCountdowns(); countdownTimer=setInterval(updateCountdowns,1000); }
   function stopCountdown() { clearInterval(countdownTimer); countdownTimer=0; }
@@ -241,7 +248,7 @@
     if (!items.length) { const e=document.createElement('div'); e.className='fp-system145-empty'; e.textContent='Системных уведомлений пока нет.'; feed.appendChild(e); }
     else { for (const item of items) feed.appendChild(item.request || reqId(item.event) ? card(item.event,item.request || reqFor(item.event)) : generic(item.event)); feed.scrollTop=feed.scrollHeight; }
     const unread = events.filter((e)=>!e.readAt).map((e)=>e.id);
-    if (unread.length) { try { await api().markRead(unread); } catch {} try { await api().refresh(); } catch {} ensureSystemRow(rows); }
+    if (unread.length) { try { await api().markRead(unread); } catch {} try { await api().refresh(); } catch {} ensureSystemRow(rows); applyAuthoritativeRowPreview(); }
     startCountdown();
   }
   function closeOverlay() { if (!overlay) return; document.removeEventListener('keydown', keydown,true); stopCountdown(); overlay.remove(); overlay=null; }
@@ -259,7 +266,7 @@
     try { await render(root,feed); } catch { if (overlay===root) feed.innerHTML='<div class="fp-system145-empty">Не удалось загрузить системный чат.</div>'; }
   }
   async function refreshOverlay() {
-    const rows=await syncRequests().catch(()=>[]); if (!overlay) { ensureSystemRow(rows); return; }
+    const rows=await syncRequests().catch(()=>[]); if (!overlay) { ensureSystemRow(rows); applyAuthoritativeRowPreview(); return; }
     const feed=overlay.querySelector('.fp-system145-feed'); if (feed) await render(overlay,feed).catch(()=>{});
   }
 
@@ -267,9 +274,15 @@
     document.addEventListener('click',(event)=>{const row=event.target?.closest?.('.fp-system145-row');if(!row)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();void openOverlay();},true);
     document.addEventListener('keydown',(event)=>{const row=event.target?.closest?.('.fp-system145-row');if(!row||!['Enter',' '].includes(event.key))return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();void openOverlay();},true);
     const host=document.getElementById('fpSystemChatHost145');
-    if (host) { hostObserver=new MutationObserver(()=>queueMicrotask(()=>ensureSystemRow())); hostObserver.observe(host,{childList:true,attributes:true,attributeFilter:['hidden']}); }
-    document.getElementById('chatSearch')?.addEventListener('input',()=>queueMicrotask(()=>ensureSystemRow()));
-    const periodic=async()=>{if(!api())return;try{await api().refresh();const rows=await syncRequests();ensureSystemRow(rows);if(overlay)await refreshOverlay();}catch{}};
+    if (host) {
+      hostObserver=new MutationObserver(()=>{
+        applyAuthoritativeRowPreview();
+        queueMicrotask(()=>{ ensureSystemRow(); applyAuthoritativeRowPreview(); });
+      });
+      hostObserver.observe(host,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['hidden']});
+    }
+    document.getElementById('chatSearch')?.addEventListener('input',()=>queueMicrotask(()=>{ensureSystemRow();applyAuthoritativeRowPreview();}));
+    const periodic=async()=>{if(!api())return;try{const rows=await syncRequests();await api().refresh();ensureSystemRow(rows);applyAuthoritativeRowPreview();if(overlay)await refreshOverlay();}catch{}};
     void periodic(); window.addEventListener('focus',()=>{if(document.visibilityState==='visible')void periodic();}); window.addEventListener('pageshow',()=>void periodic()); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void periodic();}); setInterval(()=>{if(document.visibilityState==='visible')void periodic();},10000);
   }
   function wait(n=0){if(api())install();else if(n<100)setTimeout(()=>wait(n+1),100);}
