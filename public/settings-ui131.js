@@ -1,9 +1,9 @@
-/* Build 131: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 132: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 131;
+  const BUILD = 132;
   let attempts = 0;
 
   const boot = () => {
@@ -148,12 +148,13 @@
 
     function installBackSwipe(root, goBack) {
       if (typeof PointerEvent === 'undefined') return () => {};
+      const EDGE_PX = 32;
       let gesture = null;
       let suppressClickUntil = 0;
       const editable = (t) => Boolean(t.closest('input,textarea,select,[contenteditable="true"]'));
 
       const down = (e) => {
-        if (e.pointerType === 'mouse' || e.button !== 0 || editable(e.target)) return;
+        if (e.pointerType === 'mouse' || e.button !== 0 || editable(e.target) || e.clientX > EDGE_PX) return;
         gesture = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), mode: null, dx: 0 };
         try { root.setPointerCapture(e.pointerId); } catch {}
       };
