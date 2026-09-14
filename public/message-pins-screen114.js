@@ -1,9 +1,9 @@
-/* Build 150: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 151: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=150'; }
-    catch { return '?v=150'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=151'; }
+    catch { return '?v=151'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -26,6 +26,13 @@
     hotfix.src = `/ui-hotfix128.js${suffix}`;
     hotfix.dataset.fpUiHotfix128 = '1';
     document.body.appendChild(hotfix);
+  }
+
+  if (!document.querySelector('script[data-fp-room-menu-touch151]')) {
+    const roomMenuTouch = document.createElement('script');
+    roomMenuTouch.src = `/room-menu-touch151.js${suffix}`;
+    roomMenuTouch.dataset.fpRoomMenuTouch151 = '1';
+    document.body.appendChild(roomMenuTouch);
   }
 
   if (!document.querySelector('script[data-fp-chat-opening129]')) {
