@@ -1,9 +1,9 @@
-/* Build 136: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 137: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 136;
+  const BUILD = 137;
   let attempts = 0;
 
   const boot = () => {
@@ -47,8 +47,6 @@
       const root = els.content.querySelector('.fp-settings131');
       root.querySelector('.fp-settings131-back').onclick = onBack;
       blockNativeLongPress(root);
-      // Build 133: the existing global touch layer owns the left-edge swipe.
-      // Keeping one gesture owner avoids PointerEvent/touch event races on iOS.
       swipeCleanup = () => {};
       return root;
     }
