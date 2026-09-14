@@ -1,4 +1,4 @@
-/* Build 138: OS-aware mobile viewport polish.
+/* Build 139: OS-aware mobile viewport polish.
    Extends the stable Build 99 viewport fix without replacing chat scroll,
    unread/lazy-history, gestures or message rendering.
 
@@ -7,8 +7,8 @@
    - detect when the software keyboard actually occupies the visual viewport;
    - on iOS, do not add the home-indicator safe-area a second time while the
      keyboard/input assistant already owns the bottom of the screen;
-   - normalize the iOS top safe-area from the very first chat-list render so
-     startup looks the same as returning to the chat list later;
+   - keep the iOS document surface equal to the chat-list panel while the list
+     pane is active, including the very first cold PWA render;
    - keep the normal safe-area untouched when the keyboard is closed.
 */
 (() => {
@@ -17,6 +17,7 @@
 
   const STYLE_ID = 'fpchat-viewport-layout136-style';
   const root = document.documentElement;
+  const appRoot = document.getElementById('appRoot');
   const mobileQuery = window.matchMedia('(max-width: 900px)');
   const vv = window.visualViewport;
 
@@ -35,19 +36,12 @@
   style.id = STYLE_ID;
   style.textContent = `
     @media (max-width: 900px) {
-      /* Build 138: on first PWA launch paint the iOS top safe-area with the
-         same panel color as the chat list. This matches the state after a
-         chat -> list transition and avoids the darker startup strip. */
-      html.fp-os-ios #appRoot[data-pane="list"]::before {
-        content: '';
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: env(safe-area-inset-top);
-        background: var(--panel);
-        pointer-events: none;
-        z-index: 2;
+      /* Build 139: iOS may expose the document background above the list on a
+         cold PWA launch. Make the actual document surface use the list panel
+         color instead of trying to cover the safe-area with an overlay. */
+      html.fp-os-ios.fp-list-surface,
+      html.fp-os-ios.fp-list-surface body {
+        background: var(--panel) !important;
       }
 
       /* iOS already reserves its keyboard/input-assistant region. Keeping the
@@ -75,6 +69,17 @@
   let rafId = 0;
   let settleTimers = [];
   let transitionTimer = 0;
+
+  function syncListSurface() {
+    const useListSurface = Boolean(
+      isIOS
+      && mobileQuery.matches
+      && appRoot
+      && appRoot.dataset.pane === 'list'
+      && !appRoot.classList.contains('mobile-chat')
+    );
+    root.classList.toggle('fp-list-surface', useListSurface);
+  }
 
   const currentHeight = () => {
     const visual = Number(vv?.height);
@@ -112,6 +117,7 @@
 
   function syncNow() {
     rafId = 0;
+    syncListSurface();
     const height = currentHeight();
 
     if (!mobileQuery.matches || !chatIsOpen()) {
@@ -154,6 +160,26 @@
     }
   }
 
+  // Apply the list surface immediately. index.html already starts with
+  // data-pane="list", so no chat round-trip is needed to normalize iOS.
+  syncListSurface();
+
+  if (appRoot) {
+    const paneObserver = new MutationObserver(() => {
+      syncListSurface();
+      requestSync();
+    });
+    paneObserver.observe(appRoot, {
+      attributes: true,
+      attributeFilter: ['data-pane', 'class'],
+    });
+  }
+
+  mobileQuery.addEventListener?.('change', () => {
+    syncListSurface();
+    settle();
+  });
+
   // Capture an initial keyboard-closed height before any composer focus.
   baselineHeight = currentHeight();
   root.dataset.fpKeyboard = 'closed';
@@ -181,6 +207,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     baselineHeight = 0;
+    syncListSurface();
     settle();
   });
 
@@ -195,6 +222,7 @@
       return {
         os: root.dataset.fpOs || 'other',
         keyboard: keyboardOpen ? 'open' : 'closed',
+        listSurface: root.classList.contains('fp-list-surface'),
         baselineHeight: Math.round(baselineHeight || 0),
         visibleHeight: Math.round(currentHeight() || 0),
         composerFocused: composerIsFocused(),
