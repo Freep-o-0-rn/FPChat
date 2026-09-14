@@ -3,7 +3,8 @@
    Isolated from room, WebSocket, push and update logic.
    Build 122: voice waveform canvases own their horizontal gestures.
    Build 132: modern settings own their one-level edge-back navigation.
-   Build 133: centralize modern settings edge-back in this touch layer to avoid iOS PointerEvent races. */
+   Build 133: centralize modern settings edge-back in this touch layer to avoid iOS PointerEvent races.
+   Build 134: fullscreen media viewer owns all swipe directions while it is open. */
 (() => {
   const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
@@ -15,6 +16,7 @@
   const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
   const chatIsOpen = () => Boolean(document.querySelector(".chat-view") && document.getElementById("messages"));
   const modernSettingsRoot = () => document.querySelector('.fp-settings131');
+  const mediaViewerIsOpen = () => Boolean(document.querySelector('#mediaViewerRoot .media-viewer-overlay'));
   const settingsIsOpen = () => {
     if (modernSettingsRoot()) return true;
     try {
@@ -31,6 +33,10 @@
     try {
       if (typeof edgeSwipe !== "undefined" && edgeSwipe) edgeSwipe.tracking = false;
     } catch {}
+  };
+  const deferLegacyDrawerReset = () => {
+    try { queueMicrotask(resetLegacyDrawerSwipe); }
+    catch { setTimeout(resetLegacyDrawerSwipe, 0); }
   };
   const resetModernSettingsVisual = (animate = true) => {
     const root = modernSettingsRoot();
@@ -94,7 +100,17 @@
 
   document.addEventListener("touchstart", (event) => {
     swipe = null;
-    if (!isMobile() || drawerIsOpen() || event.touches?.length !== 1) return;
+    if (!isMobile() || event.touches?.length !== 1) return;
+
+    if (mediaViewerIsOpen()) {
+      const touch = event.touches[0];
+      resetLegacyDrawerSwipe();
+      deferLegacyDrawerReset();
+      if (touch.clientX <= EDGE_PX && event.cancelable) event.preventDefault();
+      return;
+    }
+
+    if (drawerIsOpen()) return;
 
     const modernSettings = modernSettingsRoot();
     if (modernSettings) {
@@ -136,6 +152,11 @@
   }, { capture: true, passive: false });
 
   document.addEventListener("touchmove", (event) => {
+    if (mediaViewerIsOpen()) {
+      swipe = null;
+      resetLegacyDrawerSwipe();
+      return;
+    }
     if (!swipe || swipe.canceled || event.touches?.length !== 1) return;
     const touch = event.touches[0];
     swipe.dx = touch.clientX - swipe.startX;
@@ -169,6 +190,11 @@
   }, { capture: true, passive: false });
 
   document.addEventListener("touchend", (event) => {
+    if (mediaViewerIsOpen()) {
+      swipe = null;
+      resetLegacyDrawerSwipe();
+      return;
+    }
     if (!swipe) return;
     const current = swipe;
     swipe = null;
