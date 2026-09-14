@@ -29,7 +29,7 @@ set "STAGE=%BACKUP_ROOT%\_stage_%STAMP%"
 
 echo.
 echo ========================================
-echo        FPChat safe update, build 149
+echo        FPChat safe update, build 150
 echo ========================================
 echo.
 
