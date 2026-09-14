@@ -1,7 +1,8 @@
 /* Build 97: keep iOS left-edge right-swipes inside FPChat.
    Open chat -> chat list. Settings -> chat list. Main screens -> navigation/settings drawer.
    Isolated from room, WebSocket, push and update logic.
-   Build 122: voice waveform canvases own their horizontal gestures. */
+   Build 122: voice waveform canvases own their horizontal gestures.
+   Build 132: modern settings own their one-level edge-back navigation. */
 (() => {
   const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
@@ -146,6 +147,10 @@
 
     if (current.mode === "settings") {
       if (!settingsIsOpen()) return;
+      // Build 131+ settings have their own hierarchical edge-back handler.
+      // Keep this global layer only as the iOS native-back guard, otherwise it
+      // would skip the settings root and jump straight to the chat list.
+      if (document.querySelector('.fp-settings131')) return;
       document.activeElement?.blur?.();
       try {
         if (typeof setView === "function") setView("chats");
