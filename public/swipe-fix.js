@@ -4,7 +4,8 @@
    Build 122: voice waveform canvases own their horizontal gestures.
    Build 132: modern settings own their one-level edge-back navigation.
    Build 133: centralize modern settings edge-back in this touch layer to avoid iOS PointerEvent races.
-   Build 134: fullscreen media viewer owns all swipe directions while it is open. */
+   Build 134: fullscreen media viewer owns all swipe directions while it is open.
+   Build 135: global navigation consults the centralized gesture/layer arbiter. */
 (() => {
   const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
@@ -17,6 +18,7 @@
   const chatIsOpen = () => Boolean(document.querySelector(".chat-view") && document.getElementById("messages"));
   const modernSettingsRoot = () => document.querySelector('.fp-settings131');
   const mediaViewerIsOpen = () => Boolean(document.querySelector('#mediaViewerRoot .media-viewer-overlay'));
+  const gestureManager = () => window.FPGesture135 || null;
   const settingsIsOpen = () => {
     if (modernSettingsRoot()) return true;
     try {
@@ -102,6 +104,8 @@
     swipe = null;
     if (!isMobile() || event.touches?.length !== 1) return;
 
+    // Build 134 fallback. Build 135 normally rejects this through the manager,
+    // but keep the proven viewer guard if the manager has not loaded yet.
     if (mediaViewerIsOpen()) {
       const touch = event.touches[0];
       resetLegacyDrawerSwipe();
@@ -123,10 +127,15 @@
 
     const touch = event.touches[0];
     const mode = chatIsOpen() ? "chat" : settingsIsOpen() ? "settings" : "drawer";
+    const manager = gestureManager();
+    if (manager && !manager.canNavigate(mode, event.target, event)) {
+      resetLegacyDrawerSwipe();
+      return;
+    }
 
-    // Main/settings navigation gestures are deliberately edge-only. This
-    // mirrors Telegram and lets normal horizontal/vertical touches elsewhere pass.
-    if ((mode === "drawer" || mode === "settings") && touch.clientX > EDGE_PX) return;
+    // Main/settings navigation gestures are deliberately edge-only. Chat back
+    // remains edge-only as well; left-swipe reply stays owned by the message.
+    if ((mode === "drawer" || mode === "settings" || mode === "chat") && touch.clientX > EDGE_PX) return;
 
     swipe = {
       mode,
@@ -158,6 +167,15 @@
       return;
     }
     if (!swipe || swipe.canceled || event.touches?.length !== 1) return;
+
+    const manager = gestureManager();
+    if (manager && !manager.canNavigate(swipe.mode, event.target, event)) {
+      if (swipe.modernSettings) resetModernSettingsVisual();
+      swipe = null;
+      resetLegacyDrawerSwipe();
+      return;
+    }
+
     const touch = event.touches[0];
     swipe.dx = touch.clientX - swipe.startX;
     swipe.dy = touch.clientY - swipe.startY;
@@ -199,6 +217,13 @@
     const current = swipe;
     swipe = null;
 
+    const manager = gestureManager();
+    if (manager && !manager.canNavigate(current.mode, event.target, event)) {
+      if (current.modernSettings) resetModernSettingsVisual();
+      resetLegacyDrawerSwipe();
+      return;
+    }
+
     if (!current.owned) {
       if (current.modernSettings) {
         resetLegacyDrawerSwipe();
@@ -235,9 +260,8 @@
       if (!settingsIsOpen()) return;
       document.activeElement?.blur?.();
 
-      // Build 133: the visible Back button already knows the correct parent
-      // page. Triggering it gives us one-level hierarchical navigation:
-      // child settings -> settings root -> chat list.
+      // The visible Back button already knows the correct parent page.
+      // Triggering it keeps one-level hierarchical navigation.
       if (current.modernSettings && commitModernSettingsBack()) return;
 
       try {
