@@ -8,7 +8,8 @@
 
   const boot = () => {
     const ready = typeof renderSettings === 'function'
-      && window.els?.content
+      && typeof els !== 'undefined'
+      && els?.content
       && document.getElementById('fpchat-settings-autosave-style');
     if (!ready) {
       if (attempts++ < 100) setTimeout(boot, 50);
