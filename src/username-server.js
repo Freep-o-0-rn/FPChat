@@ -1,7 +1,8 @@
-/* Build 142: optional device-scoped username/public-profile registry.
+/* Build 143: optional device-scoped username/public-profile registry.
    Isolated from rooms, participants, messages, invites and recovery. */
 const {
-  validatePublicUsername
+  validatePublicUsername,
+  validateUsernameSyntax
 } = require('./username-rules');
 
 function ensureUsernameProfileSchema(db) {
@@ -121,6 +122,34 @@ function installUsernameServer({ app, db }) {
       username: validation.username,
       available: !owner || current,
       current
+    });
+  });
+
+  // Exact public lookup only. No directory, prefix search or target device id is exposed.
+  app.get('/api/users/by-username', (req, res) => {
+    const validation = validateUsernameSyntax(req.query?.username);
+    if (!validation.ok) {
+      return res.status(400).json({
+        ok: false,
+        found: false,
+        code: validation.code,
+        error: validation.error
+      });
+    }
+
+    const viewerDeviceId = safeDeviceId(req.query?.deviceId);
+    const profile = q.findByUsername.get(validation.username);
+    if (!profile) return res.json({ ok: true, found: false });
+
+    return res.json({
+      ok: true,
+      found: true,
+      user: {
+        username: profile.username,
+        displayName: profile.display_name || 'Пользователь FPChat',
+        role: profile.role === 'service' ? 'service' : 'user',
+        isSelf: Boolean(viewerDeviceId && profile.device_id === viewerDeviceId)
+      }
     });
   });
 
