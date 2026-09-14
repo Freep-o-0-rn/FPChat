@@ -1,4 +1,4 @@
-/* Build 148: system-chat edge back swipe and stable system preview over existing layers. */
+/* Build 149: system-chat edge back swipe and stable system preview over existing layers. */
 (() => {
   if (window.__fpSystemUi148Installed) return;
   window.__fpSystemUi148Installed = true;
@@ -96,6 +96,14 @@
     if (!gestureOwnsSystem(event)) return;
     const root = visibleSystemOverlay();
     if (!root) return;
+
+    // iOS can reserve a left-edge gesture for native page/history navigation
+    // before touchmove has travelled far enough for our direction lock. Claim
+    // the already-approved system-chat edge gesture at touchstart, while it is
+    // still cancelable, so the browser never starts moving/reloading the page
+    // behind the FPChat layer.
+    if (event.cancelable) event.preventDefault();
+
     try { window.FPGesture135?.resetLegacyDrawerSwipe?.(); } catch {}
     queueMicrotask(() => { try { window.FPGesture135?.resetLegacyDrawerSwipe?.(); } catch {} });
     clearTransform(root);
@@ -257,7 +265,7 @@
     return true;
   }
 
-  document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+  document.addEventListener('touchstart', onTouchStart, { capture: true, passive: false });
   document.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
   document.addEventListener('touchend', () => finishSwipe(false), { capture: true, passive: true });
   document.addEventListener('touchcancel', () => finishSwipe(true), { capture: true, passive: true });
