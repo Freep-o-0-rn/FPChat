@@ -1,0 +1,30 @@
+/* Build 131: isolated settings presentation. */
+.fp-settings131{
+  --s-border:rgba(0,0,0,.08);width:min(720px,100%);margin:0 auto;
+  padding:12px 16px calc(28px + env(safe-area-inset-bottom));box-sizing:border-box;
+  touch-action:pan-y;-webkit-touch-callout:none;user-select:none;will-change:transform,opacity
+}
+:root[data-theme='dark'] .fp-settings131{--s-border:rgba(148,163,184,.18)}
+.fp-settings131 input,.fp-settings131 textarea,.fp-settings131 select,.fp-settings131 [contenteditable='true']{-webkit-touch-callout:default;user-select:text}
+.fp-settings131-header{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;min-height:48px;margin-bottom:12px}
+.fp-settings131-header h2{margin:0;text-align:center;font-size:21px;line-height:1.2}
+.fp-settings131-back{border:0;background:transparent;color:inherit;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;padding:0;cursor:pointer}
+.fp-settings131-back:active{background:rgba(127,145,165,.16)}
+.fp-settings131-back svg,.fp-settings131-next svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.fp-settings131-group,.fp-settings131-card{background:var(--panel);border:1px solid var(--s-border);border-radius:18px;overflow:hidden;box-shadow:0 8px 28px rgba(0,0,0,.07)}
+.fp-settings131-row{width:100%;min-height:68px;border:0;border-bottom:1px solid var(--s-border);background:transparent;color:inherit;padding:10px 14px 10px 12px;display:grid;grid-template-columns:44px minmax(0,1fr) auto 18px;gap:12px;align-items:center;text-align:left;font:inherit;cursor:pointer}
+.fp-settings131-row:last-child{border-bottom:0}.fp-settings131-row:active{background:rgba(127,145,165,.10)}
+.fp-settings131-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff}
+.fp-settings131-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.fp-settings131-icon.profile{background:#3390ec}.fp-settings131-icon.appearance{background:#8e5cf6}.fp-settings131-icon.notifications{background:#f5a623}.fp-settings131-icon.storage{background:#35b97f}.fp-settings131-icon.about{background:#778899}
+.fp-settings131-copy{min-width:0}.fp-settings131-copy b{display:block;font-size:16px;line-height:1.25}.fp-settings131-copy small{display:block;color:var(--muted);font-size:13px;line-height:1.25;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-settings131-value{color:var(--muted);font-size:14px;white-space:nowrap}.fp-settings131-next{display:grid;place-items:center;color:var(--muted)}.fp-settings131-next svg{width:18px;height:18px}
+.fp-settings131-card{padding:16px}.fp-settings131-card label{display:block;margin:0 0 8px;font-size:14px;font-weight:650}.fp-settings131-card p{margin:10px 0 0;color:var(--muted);font-size:13px;line-height:1.45}
+.fp-settings131-dev{min-height:180px;display:grid;place-items:center;text-align:center;color:var(--muted)}.fp-settings131-dev b{display:block;font-size:16px;margin-bottom:6px}.fp-settings131-dev span{font-size:13px}
+.fp-settings131-about{text-align:center;padding:8px 6px 18px}.fp-settings131-about>b{display:block;font-size:22px}.fp-settings131-about>span{display:block;margin-top:4px;color:var(--muted);font-size:14px}
+.fp-settings131-logo{width:72px;height:72px;margin:0 auto 12px;border-radius:22px;display:grid;place-items:center;font-size:24px;font-weight:850;background:linear-gradient(145deg,#7b2cff,#3390ec);color:#fff;box-shadow:0 10px 28px rgba(69,74,220,.28)}
+.fp-settings131-link{margin-top:12px;display:flex;align-items:center;gap:10px;min-height:48px;padding:0 4px;color:inherit;text-decoration:none}.fp-settings131-link svg{width:22px;height:22px;fill:currentColor}
+.fp-settings131 .notification-settings{margin:0;padding:8px 16px 14px;border:1px solid var(--s-border);border-radius:18px;background:var(--panel)}
+.fp-settings131 .notification-settings>h3{display:none}.fp-settings131 .notification-settings .notification-option{min-height:52px}.fp-settings131 .notification-settings .settings-hint{margin:10px 0}.fp-settings131 .notification-settings .btn{width:100%}.fp-settings131 .settings-section{margin-top:0}
+.fp-settings131-anim{transition:transform .16s ease,opacity .16s ease}
+@media(max-width:700px){.fp-settings131{padding:8px 12px calc(24px + env(safe-area-inset-bottom))}.fp-settings131-row{min-height:66px}}
