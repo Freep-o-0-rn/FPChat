@@ -6,10 +6,6 @@ function installVoiceServer({ app, db, q, upload, UPLOAD_DIR, fs, path, randomTo
   if (app.__fpVoiceInstalled) return;
   app.__fpVoiceInstalled = true;
 
-  // Build 140: username is an optional, device-scoped layer. It is installed
-  // alongside existing isolated server modules and does not alter voice logic.
-  require('./username-server').installUsernameServer({ app, db });
-
   const MAX_VOICE_BYTES = 25 * 1024 * 1024;
   const MIN_DURATION_SECONDS = 0.65;
   const MAX_DURATION_SECONDS = 600.5;
