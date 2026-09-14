@@ -1,9 +1,9 @@
-/* Build 146: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 147: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=146'; }
-    catch { return '?v=146'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=147'; }
+    catch { return '?v=147'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -57,7 +57,22 @@
     document.body.appendChild(usernameProfile);
   }
 
-  if (!document.querySelector('script[data-fp-username-search143]')) {
+  // Build 147 request sending must initialize the hidden sender-owned room layer
+  // before the username search UI can submit a request.
+  if (!document.querySelector('script[data-fp-chat-request-owner147]')) {
+    const requestOwner = document.createElement('script');
+    requestOwner.src = `/chat-request-owner147.js${suffix}`;
+    requestOwner.dataset.fpChatRequestOwner147 = '1';
+    requestOwner.onload = () => {
+      if (!document.querySelector('script[data-fp-username-search143]')) {
+        const usernameSearch = document.createElement('script');
+        usernameSearch.src = `/username-search143.js${suffix}`;
+        usernameSearch.dataset.fpUsernameSearch143 = '1';
+        document.body.appendChild(usernameSearch);
+      }
+    };
+    document.body.appendChild(requestOwner);
+  } else if (!document.querySelector('script[data-fp-username-search143]')) {
     const usernameSearch = document.createElement('script');
     usernameSearch.src = `/username-search143.js${suffix}`;
     usernameSearch.dataset.fpUsernameSearch143 = '1';
@@ -68,14 +83,20 @@
     const systemChat = document.createElement('script');
     systemChat.src = `/system-chat144.js${suffix}`;
     systemChat.dataset.fpSystemChat144 = '1';
+    systemChat.onload = () => {
+      if (!document.querySelector('script[data-fp-chat-request-system147]')) {
+        const requestSystem = document.createElement('script');
+        requestSystem.src = `/chat-request-system147.js${suffix}`;
+        requestSystem.dataset.fpChatRequestSystem147 = '1';
+        document.body.appendChild(requestSystem);
+      }
+    };
     document.body.appendChild(systemChat);
-  }
-
-  if (!document.querySelector('script[data-fp-chat-request-actions146]')) {
-    const requestActions = document.createElement('script');
-    requestActions.src = `/chat-request-actions146.js${suffix}`;
-    requestActions.dataset.fpChatRequestActions146 = '1';
-    document.body.appendChild(requestActions);
+  } else if (!document.querySelector('script[data-fp-chat-request-system147]')) {
+    const requestSystem = document.createElement('script');
+    requestSystem.src = `/chat-request-system147.js${suffix}`;
+    requestSystem.dataset.fpChatRequestSystem147 = '1';
+    document.body.appendChild(requestSystem);
   }
 
   if (!document.querySelector('script[data-fp-gesture-manager135]')) {
