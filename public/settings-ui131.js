@@ -1,9 +1,9 @@
-/* Build 146: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 147: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 146;
+  const BUILD = 147;
   let attempts = 0;
 
   const boot = () => {
