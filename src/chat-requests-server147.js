@@ -1,4 +1,4 @@
-/* Build 155: sender-owned hidden rooms for @username chat requests with target privacy enforcement. */
+/* Build 160: sender-owned hidden rooms for @username requests with privacy and anti-spam enforcement. */
 const { validateUsernameSyntax } = require('./username-rules');
 const { ensureUserPrivacySchema } = require('./username-server');
 const { createChatRequestStore, ensureChatRequestsSchema, utcMs } = require('./chat-requests-store147');
@@ -39,6 +39,15 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
   }
   const roomFor = (row) => row?.room_public_id ? roomQ.findRoomByPublicId.get(row.room_public_id) : null;
   const targetJoined = (row) => { const room = roomFor(row); return Boolean(room && roomQ.findParticipant.get(room.id, row.target_device_id)); };
+  const antiSpamJson = (guard) => ({
+    ok: false,
+    code: guard.code,
+    retryAfterSeconds: guard.retryAfterSeconds,
+    retryAt: guard.retryAt,
+    ...(Number.isFinite(guard.rejectCount) ? { rejectCount: guard.rejectCount } : {}),
+    ...(Number.isFinite(guard.limit) ? { limit: guard.limit } : {}),
+    ...(Number.isFinite(guard.windowSeconds) ? { windowSeconds: guard.windowSeconds } : {})
+  });
 
   function removePendingRoom(row) {
     const room = roomFor(row);
@@ -109,12 +118,15 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     const pending = isSelf ? null : store.pendingBetween(deviceId, target.profile.device_id);
     const blocked = !isSelf && Boolean(q.blocked.get(target.profile.device_id, deviceId));
     const targetAllowsRequests = isSelf || allowsChatRequests(target.profile.device_id);
+    const baseCanSend = Boolean(sender?.username) && !isSelf && !pending && !blocked && targetAllowsRequests;
+    const restriction = baseCanSend ? store.sendGuard(deviceId, target.profile.device_id) : null;
     return res.json({
       ok: true,
       senderHasProfile: Boolean(sender?.username),
       isSelf,
       pending,
-      canSend: Boolean(sender?.username) && !isSelf && !pending && !blocked && targetAllowsRequests
+      canSend: baseCanSend && Boolean(restriction?.ok),
+      restriction: restriction && !restriction.ok ? antiSpamJson(restriction) : null
     });
   });
 
@@ -142,12 +154,15 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     if (q.blocked.get(target.profile.device_id, senderId)) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_NOT_AVAILABLE' });
     const existing = store.pendingBetween(senderId, target.profile.device_id);
     if (existing) return res.status(409).json({ ok: false, code: existing.direction === 'outgoing' ? 'CHAT_REQUEST_ALREADY_PENDING' : 'CHAT_REQUEST_INCOMING_PENDING', request: existing });
+    const guard = store.sendGuard(senderId, target.profile.device_id);
+    if (!guard.ok) return res.status(429).json(antiSpamJson(guard));
     const binding = validateSenderRoom(senderId, roomId, inviteCode);
     if (!binding.ok) return res.status(409).json({ ok: false, code: binding.code });
     try {
       const result = tx.create.immediate(sender, target.profile, roomId, inviteCode, binding.invite.expires_at);
       if (!result.ok) {
         if (result.blocked) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_NOT_AVAILABLE' });
+        if (result.antiSpam) return res.status(429).json(antiSpamJson(result.antiSpam));
         if (result.roomBound) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_ROOM_ALREADY_BOUND' });
         if (result.existing) return res.status(409).json({ ok: false, code: result.existing.direction === 'outgoing' ? 'CHAT_REQUEST_ALREADY_PENDING' : 'CHAT_REQUEST_INCOMING_PENDING', request: result.existing });
       }
