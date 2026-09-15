@@ -105,9 +105,28 @@ function createChatRequestStore(db) {
     blockById: db.prepare(`SELECT public_id, blocker_device_id, blocked_device_id, created_at FROM chat_request_blocks WHERE public_id=? AND blocker_device_id=? LIMIT 1`),
     listBlocks: db.prepare(`
       SELECT b.public_id, b.blocked_device_id, b.created_at,
-             p.username, p.display_name, p.role
+             COALESCE(NULLIF(p.username,''), json_extract(se.payload_json,'$.sender.username')) AS username,
+             COALESCE(
+               NULLIF(p.display_name,''),
+               json_extract(se.payload_json,'$.sender.displayName'),
+               NULLIF(p.username,''),
+               json_extract(se.payload_json,'$.sender.username')
+             ) AS display_name,
+             COALESCE(NULLIF(p.role,''),'user') AS role
       FROM chat_request_blocks b
       LEFT JOIN user_profiles p ON p.device_id=b.blocked_device_id
+      LEFT JOIN chat_requests cr ON cr.id=(
+        SELECT MAX(cr2.id)
+        FROM chat_requests cr2
+        WHERE cr2.sender_device_id=b.blocked_device_id
+          AND cr2.target_device_id=b.blocker_device_id
+          AND cr2.status='blocked'
+      )
+      LEFT JOIN system_events se
+        ON se.device_id=b.blocker_device_id
+       AND se.event_type='chat_request_received'
+       AND se.ref_type='chat_request'
+       AND se.ref_id=cr.public_id
       WHERE b.blocker_device_id=?
       ORDER BY b.id DESC
     `),
