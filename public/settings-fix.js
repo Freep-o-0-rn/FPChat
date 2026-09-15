@@ -210,7 +210,7 @@
   if (!document.getElementById('fpchat-viewport-fix-js')) {
     const viewportFixScript = document.createElement('script');
     viewportFixScript.id = 'fpchat-viewport-fix-js';
-    viewportFixScript.src = '/viewport-fix.js?v=99';
+    viewportFixScript.src = '/viewport-fix.js?v=158';
     document.body.appendChild(viewportFixScript);
   }
 })();
