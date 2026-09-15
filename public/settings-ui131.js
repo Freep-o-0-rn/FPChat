@@ -1,9 +1,9 @@
-/* Build 154: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 155: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 154;
+  const BUILD = 155;
   let attempts = 0;
 
   const boot = () => {
@@ -37,6 +37,13 @@
     const themeValue = () => localStorage.getItem(STORAGE.theme) || 'auto';
     const themeLabel = () => ({ auto: 'Авто', light: 'Светлая', dark: 'Тёмная' }[themeValue()] || 'Авто');
     const notifLabel = () => state.notif?.enabled === false ? 'Выключены' : 'Включены';
+
+    function settingsDeviceId() {
+      try {
+        if (typeof getOrCreateDeviceId === 'function') return String(getOrCreateDeviceId() || '').trim();
+      } catch {}
+      return String(localStorage.getItem('fpchat:device-id') || '').trim();
+    }
 
     function header(title) {
       return `<div class="fp-settings131-header"><button class="fp-settings131-back" type="button" aria-label="Назад">${icons.back}</button><h2>${safeText(title)}</h2><span></span></div>`;
@@ -99,7 +106,83 @@
 
     function renderPrivacy() {
       currentPage = 'privacy';
-      mount('Конфиденциальность', '<div class="fp-settings131-card fp-settings131-dev"><div><b>Раздел готов к настройке</b><span>Настройки конфиденциальности добавим следующим шагом.</span></div></div>', renderMain);
+      const root = mount('Конфиденциальность', `<div class="fp-settings131-card fp-privacy155-card">
+        <label class="fp-privacy155-option" for="fpPrivacySearch155">
+          <span class="fp-privacy155-copy"><b>Разрешить поиск по @username</b><small>Другие пользователи смогут находить ваш профиль по точному @username.</small></span>
+          <span class="fp-privacy155-switch"><input id="fpPrivacySearch155" type="checkbox" checked disabled><span class="fp-privacy155-track"></span></span>
+        </label>
+        <label class="fp-privacy155-option" for="fpPrivacyRequests155">
+          <span class="fp-privacy155-copy"><b>Разрешить запросы на новый чат</b><small>Другие пользователи смогут отправлять вам запросы на новый приватный чат.</small></span>
+          <span class="fp-privacy155-switch"><input id="fpPrivacyRequests155" type="checkbox" checked disabled><span class="fp-privacy155-track"></span></span>
+        </label>
+      </div><div id="fpPrivacyStatus155" class="fp-privacy155-status">Загружаем настройки…</div>`, renderMain);
+
+      const search = root.querySelector('#fpPrivacySearch155');
+      const requests = root.querySelector('#fpPrivacyRequests155');
+      const status = root.querySelector('#fpPrivacyStatus155');
+      const deviceId = settingsDeviceId();
+      let statusTimer = 0;
+
+      const setBusy = (value) => {
+        search.disabled = value;
+        requests.disabled = value;
+      };
+      const setStatus = (text, kind = '') => {
+        clearTimeout(statusTimer);
+        status.textContent = text || '';
+        status.className = `fp-privacy155-status${kind ? ` ${kind}` : ''}`;
+      };
+      const applyPrivacy = (data) => {
+        search.checked = data?.allowUsernameSearch !== false;
+        requests.checked = data?.allowChatRequests !== false;
+      };
+
+      async function saveToggle(input, field) {
+        const wanted = input.checked;
+        const previous = !wanted;
+        setBusy(true);
+        setStatus('Сохраняем…');
+        try {
+          const response = await fetch('/api/profile/privacy', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId, [field]: wanted })
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.ok) throw new Error('privacy save failed');
+          applyPrivacy(data);
+          setStatus('Сохранено', 'success');
+          statusTimer = setTimeout(() => {
+            if (status.isConnected && status.textContent === 'Сохранено') setStatus('');
+          }, 1200);
+        } catch {
+          input.checked = previous;
+          setStatus('Не удалось сохранить настройку.', 'error');
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      search.addEventListener('change', () => saveToggle(search, 'allowUsernameSearch'));
+      requests.addEventListener('change', () => saveToggle(requests, 'allowChatRequests'));
+
+      (async () => {
+        if (!deviceId) {
+          setStatus('Не удалось определить это устройство.', 'error');
+          return;
+        }
+        try {
+          const params = new URLSearchParams({ deviceId });
+          const response = await fetch(`/api/profile/privacy?${params.toString()}`, { cache: 'no-store' });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.ok) throw new Error('privacy load failed');
+          applyPrivacy(data);
+          setStatus('');
+          setBusy(false);
+        } catch {
+          setStatus('Не удалось загрузить настройки конфиденциальности.', 'error');
+        }
+      })();
     }
 
     function renderAppearance() {
