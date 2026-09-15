@@ -1,9 +1,9 @@
-/* Build 153: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 154: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 153;
+  const BUILD = 154;
   let attempts = 0;
 
   const boot = () => {
@@ -24,8 +24,9 @@
 
     const icons = {
       profile: '<svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></svg>',
-      appearance: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.6-.5-1-1-1h-3.2a2.8 2.8 0 0 1-2.8-2.8V5c0-1.1-.9-2-2-2Z"/><path d="M7.5 10.5h.01M9.5 15h.01M6.5 14h.01"/></svg>',
       notifications: '<svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg>',
+      privacy: '<svg viewBox="0 0 24 24"><path d="M12 3 5.5 5.8v5.1c0 4.3 2.6 8.2 6.5 10.1 3.9-1.9 6.5-5.8 6.5-10.1V5.8L12 3Z"/><rect x="9" y="10.5" width="6" height="4.8" rx="1.2"/><path d="M10.5 10.5V9a1.5 1.5 0 0 1 3 0v1.5"/></svg>',
+      appearance: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.6-.5-1-1-1h-3.2a2.8 2.8 0 0 1-2.8-2.8V5c0-1.1-.9-2-2-2Z"/><path d="M7.5 10.5h.01M9.5 15h.01M6.5 14h.01"/></svg>',
       storage: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
       about: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v7M12 7h.01"/></svg>',
       back: '<svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>',
@@ -59,8 +60,9 @@
       currentPage = 'main';
       const root = mount('Настройки', `<div class="fp-settings131-group">
         ${row('profile', 'profile', 'Профиль', state.nick || '')}
-        ${row('appearance', 'appearance', 'Оформление', '', themeLabel())}
         ${row('notifications', 'notifications', 'Уведомления', '', notifLabel())}
+        ${row('privacy', 'privacy', 'Конфиденциальность')}
+        ${row('appearance', 'appearance', 'Оформление', '', themeLabel())}
         ${row('storage', 'storage', 'Данные и хранилище', 'Раздел в разработке')}
         ${row('about', 'about', 'О приложении', 'FPChat', `Build ${BUILD}`)}
       </div>`, () => setView('chats'));
@@ -80,14 +82,6 @@
       input.onblur = () => { if (!input.value.trim()) input.value = state.nick; };
     }
 
-    function renderAppearance() {
-      currentPage = 'appearance';
-      const root = mount('Оформление', `<div class="fp-settings131-card"><label for="fpTheme131">Тема</label><select id="fpTheme131"><option value="auto">Авто</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select><p>Шрифты, размер текста, превью тем и собственные обои добавим позже.</p></div>`, renderMain);
-      const select = root.querySelector('#fpTheme131');
-      select.value = themeValue();
-      select.onchange = () => applyTheme(select.value);
-    }
-
     function renderNotifications() {
       currentPage = 'notifications';
       baseRenderSettings();
@@ -101,6 +95,19 @@
       section.remove();
       const root = mount('Уведомления', '<div id="fpNotifHost131"></div>', renderMain);
       root.querySelector('#fpNotifHost131').appendChild(section);
+    }
+
+    function renderPrivacy() {
+      currentPage = 'privacy';
+      mount('Конфиденциальность', '<div class="fp-settings131-card fp-settings131-dev"><div><b>Раздел готов к настройке</b><span>Настройки конфиденциальности добавим следующим шагом.</span></div></div>', renderMain);
+    }
+
+    function renderAppearance() {
+      currentPage = 'appearance';
+      const root = mount('Оформление', `<div class="fp-settings131-card"><label for="fpTheme131">Тема</label><select id="fpTheme131"><option value="auto">Авто</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select><p>Шрифты, размер текста, превью тем и собственные обои добавим позже.</p></div>`, renderMain);
+      const select = root.querySelector('#fpTheme131');
+      select.value = themeValue();
+      select.onchange = () => applyTheme(select.value);
     }
 
     function renderStorage() {
@@ -128,8 +135,9 @@
 
     function openPage(page) {
       if (page === 'profile') return renderProfile();
-      if (page === 'appearance') return renderAppearance();
       if (page === 'notifications') return renderNotifications();
+      if (page === 'privacy') return renderPrivacy();
+      if (page === 'appearance') return renderAppearance();
       if (page === 'storage') return renderStorage();
       if (page === 'about') return renderAbout();
       renderMain();
