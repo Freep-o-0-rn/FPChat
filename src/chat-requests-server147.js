@@ -1,4 +1,4 @@
-/* Build 160: sender-owned hidden rooms for @username requests with privacy and anti-spam enforcement. */
+/* Build 162: @username requests with privacy, anti-spam, blacklist and duplicate-chat guard. */
 const { validateUsernameSyntax } = require('./username-rules');
 const { ensureUserPrivacySchema } = require('./username-server');
 const { createChatRequestStore, ensureChatRequestsSchema, utcMs } = require('./chat-requests-store147');
@@ -10,6 +10,10 @@ const cleanId = (value, min = 8, max = 128) => {
 const cleanToken = (value, min = 16, max = 96) => {
   const text = String(value || '').trim();
   return text.length >= min && text.length <= max && /^[A-Za-z0-9_-]+$/.test(text) ? text : '';
+};
+const cleanRoomList = (value) => {
+  const raw = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(raw.map((item) => cleanToken(item, 8)).filter(Boolean))].slice(0, 100);
 };
 
 function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCascade }) {
@@ -48,6 +52,17 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     ...(Number.isFinite(guard.limit) ? { limit: guard.limit } : {}),
     ...(Number.isFinite(guard.windowSeconds) ? { windowSeconds: guard.windowSeconds } : {})
   });
+
+  function findExistingListedChat(senderId, targetId, listedRoomIds) {
+    for (const publicId of cleanRoomList(listedRoomIds)) {
+      const room = roomQ.findRoomByPublicId.get(publicId);
+      if (!room || (typeof isRoomOpen === 'function' && !isRoomOpen(room))) continue;
+      if (!roomQ.findParticipant.get(room.id, senderId)) continue;
+      if (!roomQ.findParticipant.get(room.id, targetId)) continue;
+      return room.public_id;
+    }
+    return null;
+  }
 
   function removePendingRoom(row) {
     const room = roomFor(row);
@@ -115,19 +130,45 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     if (!target.ok) return res.status(target.code === 'TARGET_NOT_FOUND' ? 404 : 400).json({ ok: false, code: target.code });
     const sender = q.profileByDevice.get(deviceId);
     const isSelf = target.profile.device_id === deviceId;
-    const pending = isSelf ? null : store.pendingBetween(deviceId, target.profile.device_id);
-    const blocked = !isSelf && Boolean(q.blocked.get(target.profile.device_id, deviceId));
+    const existingChatRoomId = isSelf ? null : findExistingListedChat(deviceId, target.profile.device_id, req.query?.listedRooms);
+    const pending = isSelf || existingChatRoomId ? null : store.pendingBetween(deviceId, target.profile.device_id);
+    const blockedByTarget = !isSelf && Boolean(q.blocked.get(target.profile.device_id, deviceId));
+    const yourBlock = !isSelf ? q.blockRecord.get(deviceId, target.profile.device_id) : null;
     const targetAllowsRequests = isSelf || allowsChatRequests(target.profile.device_id);
-    const baseCanSend = Boolean(sender?.username) && !isSelf && !pending && !blocked && targetAllowsRequests;
+    const baseCanSend = Boolean(sender?.username) && !isSelf && !existingChatRoomId && !pending && !blockedByTarget && !yourBlock && targetAllowsRequests;
     const restriction = baseCanSend ? store.sendGuard(deviceId, target.profile.device_id) : null;
     return res.json({
       ok: true,
       senderHasProfile: Boolean(sender?.username),
       isSelf,
+      existingChatRoomId,
       pending,
+      youBlockedTarget: Boolean(yourBlock),
+      blockId: yourBlock?.public_id || null,
       canSend: baseCanSend && Boolean(restriction?.ok),
       restriction: restriction && !restriction.ok ? antiSpamJson(restriction) : null
     });
+  });
+
+  app.get('/api/chat-requests/blocks', (req, res) => {
+    const deviceId = cleanId(req.query?.deviceId);
+    if (!deviceId) return res.status(400).json({ ok: false, code: 'DEVICE_ID_REQUIRED' });
+    const blocks = q.listBlocks.all(deviceId).slice(0, 250).map(store.blockDto);
+    return res.json({ ok: true, blocks });
+  });
+
+  app.delete('/api/chat-requests/blocks/:blockId', (req, res) => {
+    const deviceId = cleanId(req.body?.deviceId);
+    const blockId = cleanToken(req.params.blockId, 16, 128);
+    if (!deviceId || !blockId) return res.status(400).json({ ok: false, code: 'CHAT_REQUEST_UNBLOCK_FIELDS_REQUIRED' });
+    try {
+      const result = tx.unblock.immediate(blockId, deviceId);
+      if (!result.ok) return res.status(404).json({ ok: false, code: 'CHAT_REQUEST_BLOCK_NOT_FOUND' });
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error('Chat request unblock failed', error);
+      return res.status(500).json({ ok: false, code: 'CHAT_REQUEST_UNBLOCK_FAILED' });
+    }
   });
 
   app.get('/api/chat-requests/mine', (req, res) => {
@@ -150,6 +191,12 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     const target = resolveTarget(req.body?.targetUsername);
     if (!target.ok) return res.status(target.code === 'TARGET_NOT_FOUND' ? 404 : 400).json({ ok: false, code: target.code });
     if (target.profile.device_id === senderId) return res.status(400).json({ ok: false, code: 'CHAT_REQUEST_SELF' });
+
+    const existingChatRoomId = findExistingListedChat(senderId, target.profile.device_id, req.body?.listedRoomIds);
+    if (existingChatRoomId) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_EXISTING_CHAT', roomPublicId: existingChatRoomId });
+
+    const yourBlock = q.blockRecord.get(senderId, target.profile.device_id);
+    if (yourBlock) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_BLOCKED_BY_YOU', blockId: yourBlock.public_id });
     if (!allowsChatRequests(target.profile.device_id)) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_NOT_AVAILABLE' });
     if (q.blocked.get(target.profile.device_id, senderId)) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_NOT_AVAILABLE' });
     const existing = store.pendingBetween(senderId, target.profile.device_id);
