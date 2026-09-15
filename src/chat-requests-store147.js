@@ -1,7 +1,17 @@
-/* Build 147: SQLite store for username chat requests. */
+/* Build 160: SQLite store for username chat requests with server-side anti-spam guards. */
 const crypto = require('crypto');
 const { ensureUsernameProfileSchema } = require('./username-server');
 const { createSystemEventStore } = require('./system-events-server');
+
+const MINUTE = 60 * 1000;
+const DAY = 24 * 60 * MINUTE;
+const REJECTION_RESET_MS = 7 * DAY;
+const REJECTION_COOLDOWNS_MS = [MINUTE, 15 * MINUTE, 60 * MINUTE, 24 * 60 * MINUTE];
+const RATE_LIMITS = [
+  { windowMs: MINUTE, limit: 3 },
+  { windowMs: 10 * MINUTE, limit: 8 },
+  { windowMs: 60 * MINUTE, limit: 20 }
+];
 
 function utcMs(value) {
   if (!value) return NaN;
@@ -11,6 +21,10 @@ function utcMs(value) {
 function utcIso(value) {
   const ms = utcMs(value);
   return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+function retryPayload(code, retryAtMs, extra = {}) {
+  const retryAfterSeconds = Math.max(1, Math.ceil((retryAtMs - Date.now()) / 1000));
+  return { ok: false, code, retryAfterSeconds, retryAt: new Date(retryAtMs).toISOString(), ...extra };
 }
 
 function ensureChatRequestsSchema(db) {
@@ -36,6 +50,8 @@ function ensureChatRequestsSchema(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_requests_sender ON chat_requests(sender_device_id, id DESC);
     CREATE INDEX IF NOT EXISTS idx_chat_requests_target ON chat_requests(target_device_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_chat_requests_sender_created ON chat_requests(sender_device_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_chat_requests_pair_status ON chat_requests(sender_device_id, target_device_id, status, id DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_requests_pending_pair
       ON chat_requests(sender_device_id, target_device_id) WHERE status='pending';
     CREATE INDEX IF NOT EXISTS idx_chat_request_blocks_pair
@@ -61,6 +77,8 @@ function createChatRequestStore(db) {
     pendingBetween: db.prepare(`SELECT ${fields} FROM chat_requests WHERE status='pending' AND ((sender_device_id=? AND target_device_id=?) OR (sender_device_id=? AND target_device_id=?)) ORDER BY id DESC LIMIT 1`),
     listByDevice: db.prepare(`SELECT ${fields} FROM chat_requests WHERE sender_device_id=? OR target_device_id=? ORDER BY id DESC LIMIT ?`),
     listPending: db.prepare(`SELECT ${fields} FROM chat_requests WHERE status='pending' ORDER BY id ASC`),
+    rejectionHistory: db.prepare(`SELECT status, updated_at FROM chat_requests WHERE sender_device_id=? AND target_device_id=? AND status IN ('rejected','accepted') ORDER BY id DESC LIMIT 32`),
+    outgoingRecent: db.prepare(`SELECT created_at FROM chat_requests WHERE sender_device_id=? AND created_at >= datetime('now','-1 hour') ORDER BY id ASC`),
     insert: db.prepare(`INSERT INTO chat_requests(public_id,sender_device_id,target_device_id,status,room_public_id,invite_code,expires_at) VALUES(?,?,?,'pending',?,?,?)`),
     accept: db.prepare(`UPDATE chat_requests SET status='accepted',updated_at=datetime('now') WHERE public_id=? AND target_device_id=? AND status='pending'`),
     reject: db.prepare(`UPDATE chat_requests SET status='rejected',updated_at=datetime('now') WHERE public_id=? AND target_device_id=? AND status='pending'`),
@@ -86,6 +104,69 @@ function createChatRequestStore(db) {
       expiresAt: utcIso(row.expires_at), createdAt: row.created_at
     };
   }
+
+  function rejectionState(senderId, targetId, nowMs = Date.now()) {
+    const rows = q.rejectionHistory.all(senderId, targetId);
+    if (!rows.length || rows[0].status !== 'rejected') return { rejectCount: 0, active: false };
+    const lastRejectedMs = utcMs(rows[0].updated_at);
+    if (!Number.isFinite(lastRejectedMs) || nowMs - lastRejectedMs >= REJECTION_RESET_MS) return { rejectCount: 0, active: false };
+    let rejectCount = 0;
+    let newerRejectedMs = null;
+    for (const row of rows) {
+      if (row.status === 'accepted') break;
+      if (row.status !== 'rejected') continue;
+      const rejectedMs = utcMs(row.updated_at);
+      if (!Number.isFinite(rejectedMs)) break;
+      if (newerRejectedMs !== null && newerRejectedMs - rejectedMs >= REJECTION_RESET_MS) break;
+      rejectCount += 1;
+      newerRejectedMs = rejectedMs;
+    }
+    if (!rejectCount) return { rejectCount: 0, active: false };
+    const durationMs = REJECTION_COOLDOWNS_MS[Math.min(rejectCount, REJECTION_COOLDOWNS_MS.length) - 1];
+    const cooldownUntilMs = lastRejectedMs + durationMs;
+    return {
+      rejectCount,
+      active: cooldownUntilMs > nowMs,
+      lastRejectedAt: new Date(lastRejectedMs).toISOString(),
+      cooldownUntil: new Date(cooldownUntilMs).toISOString(),
+      retryAfterSeconds: cooldownUntilMs > nowMs ? Math.max(1, Math.ceil((cooldownUntilMs - nowMs) / 1000)) : 0
+    };
+  }
+
+  function rateLimitState(senderId, nowMs = Date.now()) {
+    const timestamps = q.outgoingRecent.all(senderId)
+      .map((row) => utcMs(row.created_at))
+      .filter(Number.isFinite);
+    let retryAtMs = 0;
+    let matchedRule = null;
+    for (const rule of RATE_LIMITS) {
+      const cutoff = nowMs - rule.windowMs;
+      const recent = timestamps.filter((value) => value > cutoff);
+      if (recent.length < rule.limit) continue;
+      const candidate = recent[recent.length - rule.limit] + rule.windowMs;
+      if (candidate > retryAtMs) {
+        retryAtMs = candidate;
+        matchedRule = rule;
+      }
+    }
+    if (!matchedRule || retryAtMs <= nowMs) return { active: false };
+    return {
+      active: true,
+      retryAt: new Date(retryAtMs).toISOString(),
+      retryAfterSeconds: Math.max(1, Math.ceil((retryAtMs - nowMs) / 1000)),
+      limit: matchedRule.limit,
+      windowSeconds: Math.round(matchedRule.windowMs / 1000)
+    };
+  }
+
+  function sendGuard(senderId, targetId, nowMs = Date.now()) {
+    const rejection = rejectionState(senderId, targetId, nowMs);
+    if (rejection.active) return retryPayload('CHAT_REQUEST_COOLDOWN', Date.parse(rejection.cooldownUntil), { rejectCount: rejection.rejectCount });
+    const rate = rateLimitState(senderId, nowMs);
+    if (rate.active) return retryPayload('CHAT_REQUEST_RATE_LIMIT', Date.parse(rate.retryAt), { limit: rate.limit, windowSeconds: rate.windowSeconds });
+    return { ok: true, rejectCount: rejection.rejectCount };
+  }
+
   function dto(row, viewer) {
     const direction = row.sender_device_id === viewer ? 'outgoing' : 'incoming';
     const peerId = direction === 'outgoing' ? row.target_device_id : row.sender_device_id;
@@ -109,6 +190,8 @@ function createChatRequestStore(db) {
       const existing = pendingBetween(sender.device_id, target.device_id);
       if (existing) return { ok: false, existing };
       if (q.blocked.get(target.device_id, sender.device_id)) return { ok: false, blocked: true };
+      const guard = sendGuard(sender.device_id, target.device_id);
+      if (!guard.ok) return { ok: false, antiSpam: guard };
       if (q.byRoom.get(roomId)) return { ok: false, roomBound: true };
       const id = crypto.randomBytes(18).toString('base64url');
       q.insert.run(id, sender.device_id, target.device_id, roomId, inviteCode, expiresAt);
@@ -123,7 +206,7 @@ function createChatRequestStore(db) {
     expire: db.transaction((id) => { const r = q.expire.run(id); if (!r.changes) return { ok: false }; const row = q.byId.get(id); expiredEvents(row); return { ok: true, row }; })
   };
 
-  return { q, tx, publicProfile, pendingBetween, dto, utcMs, utcIso };
+  return { q, tx, publicProfile, pendingBetween, rejectionState, rateLimitState, sendGuard, dto, utcMs, utcIso };
 }
 
 module.exports = { ensureChatRequestsSchema, createChatRequestStore, utcMs, utcIso };
