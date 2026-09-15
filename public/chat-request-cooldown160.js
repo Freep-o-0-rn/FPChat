@@ -1,4 +1,4 @@
-/* Build 160: live client countdown for server-enforced @username request cooldowns. */
+/* Build 162: live countdown for server-enforced @username request cooldowns. */
 (() => {
   if (window.__fpChatRequestCooldown160Installed) return;
   window.__fpChatRequestCooldown160Installed = true;
@@ -16,6 +16,15 @@
     } catch {}
     try { return String(localStorage.getItem('fpchat:device-id') || '').trim(); }
     catch { return ''; }
+  }
+
+  function listedRoomIds() {
+    try {
+      if (typeof state !== 'undefined' && Array.isArray(state?.chats)) {
+        return [...new Set(state.chats.map((chat) => String(chat?.roomId || '').trim()).filter(Boolean))].slice(0, 100);
+      }
+    } catch {}
+    return [];
   }
 
   function requestMeta(input, init) {
@@ -56,9 +65,10 @@
     const handle = overlay.querySelector('.fp-profile144-handle');
     const button = overlay.querySelector('.fp-profile145-request');
     const status = overlay.querySelector('.fp-profile145-status');
+    const unblock = overlay.querySelector('.fp-profile162-unblock');
     const username = normalizeUsername(handle?.textContent);
     if (!username || !button || !status) return null;
-    return { overlay, username, button, status };
+    return { overlay, username, button, status, unblock };
   }
 
   function formatRemaining(ms) {
@@ -82,6 +92,12 @@
     if (!button) return;
     button.disabled = disabled;
     if (button.textContent !== text) button.textContent = text;
+  }
+
+  function clearButtonAction(button) {
+    if (!button) return;
+    delete button.dataset.fpAction;
+    delete button.dataset.roomId;
   }
 
   function setStatus(status, text) {
@@ -109,11 +125,14 @@
     refreshPromise = (async () => {
       const profile = currentProfile();
       if (profile?.username === username) {
+        clearButtonAction(profile.button);
         setButton(profile.button, 'Проверяем…', true);
         setStatus(profile.status, 'Проверяем, можно ли снова отправить запрос…');
       }
       try {
         const params = new URLSearchParams({ deviceId, targetUsername: username });
+        const rooms = listedRoomIds();
+        if (rooms.length) params.set('listedRooms', rooms.join(','));
         const response = await baseFetch(`/api/chat-requests/status?${params.toString()}`, { cache: 'no-store' });
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.ok) return;
@@ -129,13 +148,28 @@
         restrictions.delete(username);
         const current = currentProfile();
         if (!current || current.username !== username) return;
+        clearButtonAction(current.button);
 
-        if (data.pending?.direction === 'outgoing') {
+        if (current.unblock) {
+          current.unblock.hidden = !data.youBlockedTarget;
+          if (data.youBlockedTarget && data.blockId) current.unblock.dataset.blockId = data.blockId;
+          else delete current.unblock.dataset.blockId;
+        }
+
+        if (data.existingChatRoomId) {
+          setButton(current.button, 'Открыть чат', false);
+          current.button.dataset.fpAction = 'open-chat';
+          current.button.dataset.roomId = data.existingChatRoomId;
+          setStatus(current.status, 'У вас уже есть активный чат с этим пользователем.');
+        } else if (data.pending?.direction === 'outgoing') {
           setButton(current.button, 'Запрос уже отправлен', true);
           setStatus(current.status, 'Запрос ожидает ответа пользователя.');
         } else if (data.pending?.direction === 'incoming') {
           setButton(current.button, 'Есть входящий запрос', true);
           setStatus(current.status, 'Этот пользователь уже отправил вам запрос. Откройте системный чат.');
+        } else if (data.youBlockedTarget) {
+          setButton(current.button, 'Запросы заблокированы', true);
+          setStatus(current.status, 'Пользователь находится в вашем чёрном списке.');
         } else if (data.canSend) {
           setButton(current.button, 'Отправить запрос на чат', false);
           setStatus(current.status, 'Пользователь получит запрос в системном чате.');
@@ -171,6 +205,7 @@
       return;
     }
 
+    clearButtonAction(profile.button);
     setButton(profile.button, 'Запрос недоступен', true);
     setStatus(profile.status, restrictionText(restriction, remaining));
   }
