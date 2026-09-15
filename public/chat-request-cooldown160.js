@@ -78,6 +78,12 @@
       : `Повторный запрос можно отправить через ${time}.`;
   }
 
+  function setButton(button, text, disabled = true) {
+    if (!button) return;
+    button.disabled = disabled;
+    if (button.textContent !== text) button.textContent = text;
+  }
+
   function setStatus(status, text) {
     if (!status) return;
     if (status.textContent !== text) status.textContent = text;
@@ -103,8 +109,7 @@
     refreshPromise = (async () => {
       const profile = currentProfile();
       if (profile?.username === username) {
-        profile.button.disabled = true;
-        profile.button.textContent = 'Проверяем…';
+        setButton(profile.button, 'Проверяем…', true);
         setStatus(profile.status, 'Проверяем, можно ли снова отправить запрос…');
       }
       try {
@@ -126,20 +131,16 @@
         if (!current || current.username !== username) return;
 
         if (data.pending?.direction === 'outgoing') {
-          current.button.disabled = true;
-          current.button.textContent = 'Запрос уже отправлен';
+          setButton(current.button, 'Запрос уже отправлен', true);
           setStatus(current.status, 'Запрос ожидает ответа пользователя.');
         } else if (data.pending?.direction === 'incoming') {
-          current.button.disabled = true;
-          current.button.textContent = 'Есть входящий запрос';
+          setButton(current.button, 'Есть входящий запрос', true);
           setStatus(current.status, 'Этот пользователь уже отправил вам запрос. Откройте системный чат.');
         } else if (data.canSend) {
-          current.button.disabled = false;
-          current.button.textContent = 'Отправить запрос на чат';
+          setButton(current.button, 'Отправить запрос на чат', false);
           setStatus(current.status, 'Пользователь получит запрос в системном чате.');
         } else {
-          current.button.disabled = true;
-          current.button.textContent = 'Запрос недоступен';
+          setButton(current.button, 'Запрос недоступен', true);
           setStatus(current.status, 'Запрос этому пользователю сейчас недоступен.');
         }
       } catch {}
@@ -170,8 +171,7 @@
       return;
     }
 
-    profile.button.disabled = true;
-    profile.button.textContent = 'Запрос недоступен';
+    setButton(profile.button, 'Запрос недоступен', true);
     setStatus(profile.status, restrictionText(restriction, remaining));
   }
 
