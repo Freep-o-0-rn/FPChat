@@ -154,16 +154,30 @@
 
   <script>
     (async () => {
-      // Build 152: app.js keeps its existing boot behaviour. A second identical
-      // splash sits above it while the late compatibility/UI layers initialize.
-      // This changes only when the UI becomes visible; feature ordering is intact.
+      // Build 153: keep the Build 152 readiness gate, and mirror the original
+      // boot status into it so the existing app update screen stays visible.
       const sourceSplash = document.getElementById('bootSplash');
+      let bootStatusObserver = null;
       if (sourceSplash && !document.getElementById('bootHold152')) {
         const hold = sourceSplash.cloneNode(true);
         hold.id = 'bootHold152';
         hold.setAttribute('aria-hidden', 'true');
         hold.querySelector('#bootTitle')?.removeAttribute('id');
         hold.querySelector('#bootText')?.removeAttribute('id');
+
+        const sourceTitle = sourceSplash.querySelector('#bootTitle');
+        const sourceText = sourceSplash.querySelector('#bootText');
+        const holdTitle = hold.querySelector('.boot-title');
+        const holdText = hold.querySelector('.boot-text');
+        const syncBootStatus = () => {
+          if (sourceTitle && holdTitle) holdTitle.textContent = sourceTitle.textContent || '';
+          if (sourceText && holdText) holdText.textContent = sourceText.textContent || '';
+        };
+        syncBootStatus();
+        bootStatusObserver = new MutationObserver(syncBootStatus);
+        if (sourceTitle) bootStatusObserver.observe(sourceTitle, { childList: true, subtree: true, characterData: true });
+        if (sourceText) bootStatusObserver.observe(sourceText, { childList: true, subtree: true, characterData: true });
+
         document.body.appendChild(hold);
       }
 
@@ -206,7 +220,10 @@
       window.FPBoot152 = Object.freeze({
         pendingCount: () => bootPending.size,
         errors: () => [...bootErrors],
-        stop: () => bootObserver.disconnect()
+        stop: () => {
+          bootObserver.disconnect();
+          bootStatusObserver?.disconnect();
+        }
       });
 
       // A failed optional asset must never leave FPChat permanently blocked.
@@ -216,8 +233,9 @@
         const root = document.getElementById('appRoot');
         if (gate && root && !root.classList.contains('hidden-boot')) {
           bootObserver.disconnect();
+          bootStatusObserver?.disconnect();
           gate.remove();
-          console.warn('[FPChat] Build 152 boot gate released by safety timeout.');
+          console.warn('[FPChat] Build 153 boot gate released by safety timeout.');
         }
       }, 15000);
 
