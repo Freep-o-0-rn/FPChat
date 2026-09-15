@@ -1,4 +1,4 @@
-/* Build 165: small presentation bridge for build labels. */
+/* Build 165: small presentation bridge for build labels and final system-card polish. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
@@ -13,7 +13,21 @@
     }
   }
 
-  const observer = new MutationObserver(patchBuildLabels);
-  observer.observe(document.body, { childList: true, subtree: true });
-  patchBuildLabels();
+  function patchBlockedInviteCardText() {
+    document.querySelectorAll('.fp-system145-event .fp-system145-request-text').forEach((node) => {
+      const text = String(node.textContent || '');
+      if (/Попытался присоединиться к вашему чату по invite-ссылке \d+ раз\./.test(text)) {
+        node.textContent = 'Повторно пытался присоединиться к вашему чату по invite-ссылке. Все попытки отклонены из-за блокировки.';
+      }
+    });
+  }
+
+  function patchUi() {
+    patchBuildLabels();
+    patchBlockedInviteCardText();
+  }
+
+  const observer = new MutationObserver(patchUi);
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+  patchUi();
 })();
