@@ -1,4 +1,4 @@
-/* Build 154: isolated Telegram-like settings presentation. */
+/* Build 155: isolated Telegram-like settings presentation. */
 .fp-settings131{
   --s-border:rgba(0,0,0,.08);width:min(720px,100%);margin:0 auto;
   padding:12px 16px calc(28px + env(safe-area-inset-bottom));box-sizing:border-box;
@@ -26,5 +26,15 @@
 .fp-settings131-link{margin-top:12px;display:flex;align-items:center;gap:10px;min-height:48px;padding:0 4px;color:inherit;text-decoration:none}.fp-settings131-link svg{width:22px;height:22px;fill:currentColor}
 .fp-settings131 .notification-settings{margin:0;padding:8px 16px 14px;border:1px solid var(--s-border);border-radius:18px;background:var(--panel)}
 .fp-settings131 .notification-settings>h3{display:none}.fp-settings131 .notification-settings .notification-option{min-height:52px}.fp-settings131 .notification-settings .settings-hint{margin:10px 0}.fp-settings131 .notification-settings .btn{width:100%}.fp-settings131 .settings-section{margin-top:0}
+.fp-privacy155-card{padding:0}
+.fp-settings131-card .fp-privacy155-option{min-height:68px;margin:0!important;padding:12px 14px 12px 16px;box-sizing:border-box;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--s-border);font-size:inherit;font-weight:400;cursor:pointer}
+.fp-settings131-card .fp-privacy155-option:last-child{border-bottom:0}
+.fp-privacy155-copy{min-width:0;flex:1;display:block}.fp-privacy155-copy b{display:block;font-size:15px;line-height:1.3}.fp-privacy155-copy small{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}
+.fp-privacy155-switch{position:relative;flex:0 0 48px;width:48px;height:28px;display:block}
+.fp-privacy155-switch input{position:absolute;width:1px!important;height:1px!important;margin:0!important;padding:0!important;opacity:0;pointer-events:none}
+.fp-privacy155-track{position:absolute;inset:0;border-radius:999px;background:rgba(127,145,165,.34);transition:background .16s ease,opacity .16s ease;box-shadow:inset 0 0 0 1px rgba(0,0,0,.05)}
+.fp-privacy155-track::after{content:'';position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.24);transition:transform .16s ease}
+.fp-privacy155-switch input:checked+.fp-privacy155-track{background:#3390ec}.fp-privacy155-switch input:checked+.fp-privacy155-track::after{transform:translateX(20px)}.fp-privacy155-switch input:disabled+.fp-privacy155-track{opacity:.55}
+.fp-privacy155-status{min-height:20px;padding:8px 4px 0;color:var(--muted);font-size:12px;line-height:1.35}.fp-privacy155-status.success{color:#3bc47d}.fp-privacy155-status.error{color:var(--danger)}
 .fp-settings131-anim{transition:transform .16s ease,opacity .16s ease}
-@media(max-width:700px){.fp-settings131{padding:8px 12px calc(24px + env(safe-area-inset-bottom))}.fp-settings131-row{min-height:66px}}
+@media(max-width:700px){.fp-settings131{padding:8px 12px calc(24px + env(safe-area-inset-bottom))}.fp-settings131-row{min-height:66px}.fp-settings131-card .fp-privacy155-option{min-height:66px;padding-left:14px}}
