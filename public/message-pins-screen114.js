@@ -1,9 +1,9 @@
-/* Build 156: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 160: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=156'; }
-    catch { return '?v=156'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=160'; }
+    catch { return '?v=160'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -84,6 +84,13 @@
     usernameSearch.src = `/username-search143.js${suffix}`;
     usernameSearch.dataset.fpUsernameSearch143 = '1';
     document.body.appendChild(usernameSearch);
+  }
+
+  if (!document.querySelector('script[data-fp-chat-request-cooldown160]')) {
+    const requestCooldown = document.createElement('script');
+    requestCooldown.src = `/chat-request-cooldown160.js${suffix}`;
+    requestCooldown.dataset.fpChatRequestCooldown160 = '1';
+    document.body.appendChild(requestCooldown);
   }
 
   // Build 156 only decorates the existing global search field. It does not
