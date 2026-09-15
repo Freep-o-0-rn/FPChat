@@ -1,5 +1,4 @@
-/* Build 144: isolated system-event foundation for future service notifications and chat requests.
-   This is deliberately separate from rooms/messages so existing chat semantics stay untouched. */
+/* Build 165: isolated personal system-event channel used by service notifications and chat requests. */
 function safeDeviceId(value) {
   const text = String(value || '').trim();
   if (text.length < 8 || text.length > 128) return '';
@@ -41,7 +40,7 @@ function createSystemEventStore(db) {
     SELECT id, event_type, ref_type, ref_id, payload_json, read_at, created_at
     FROM system_events
     WHERE device_id=?
-    ORDER BY id DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ?
   `);
   const state = db.prepare(`
