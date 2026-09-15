@@ -1,5 +1,6 @@
-/* Build 147: sender-owned hidden rooms for @username chat requests. */
+/* Build 155: sender-owned hidden rooms for @username chat requests with target privacy enforcement. */
 const { validateUsernameSyntax } = require('./username-rules');
+const { ensureUserPrivacySchema } = require('./username-server');
 const { createChatRequestStore, ensureChatRequestsSchema, utcMs } = require('./chat-requests-store147');
 
 const cleanId = (value, min = 8, max = 128) => {
@@ -18,6 +19,14 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
   }
   if (app.__fpChatRequests147Installed) return;
   app.__fpChatRequests147Installed = true;
+
+  ensureUserPrivacySchema(db);
+  const privacyByDevice = db.prepare(`
+    SELECT allow_chat_requests
+    FROM user_privacy_settings
+    WHERE device_id=?
+  `);
+  const allowsChatRequests = (deviceId) => Number(privacyByDevice.get(deviceId)?.allow_chat_requests ?? 1) !== 0;
 
   const store = createChatRequestStore(db);
   const { q, tx } = store;
@@ -99,7 +108,14 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     const isSelf = target.profile.device_id === deviceId;
     const pending = isSelf ? null : store.pendingBetween(deviceId, target.profile.device_id);
     const blocked = !isSelf && Boolean(q.blocked.get(target.profile.device_id, deviceId));
-    return res.json({ ok: true, senderHasProfile: Boolean(sender?.username), isSelf, pending, canSend: Boolean(sender?.username) && !isSelf && !pending && !blocked });
+    const targetAllowsRequests = isSelf || allowsChatRequests(target.profile.device_id);
+    return res.json({
+      ok: true,
+      senderHasProfile: Boolean(sender?.username),
+      isSelf,
+      pending,
+      canSend: Boolean(sender?.username) && !isSelf && !pending && !blocked && targetAllowsRequests
+    });
   });
 
   app.get('/api/chat-requests/mine', (req, res) => {
@@ -122,6 +138,7 @@ function installChatRequestsServer({ app, db, q: roomQ, isRoomOpen, removeRoomCa
     const target = resolveTarget(req.body?.targetUsername);
     if (!target.ok) return res.status(target.code === 'TARGET_NOT_FOUND' ? 404 : 400).json({ ok: false, code: target.code });
     if (target.profile.device_id === senderId) return res.status(400).json({ ok: false, code: 'CHAT_REQUEST_SELF' });
+    if (!allowsChatRequests(target.profile.device_id)) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_NOT_AVAILABLE' });
     if (q.blocked.get(target.profile.device_id, senderId)) return res.status(409).json({ ok: false, code: 'CHAT_REQUEST_NOT_AVAILABLE' });
     const existing = store.pendingBetween(senderId, target.profile.device_id);
     if (existing) return res.status(409).json({ ok: false, code: existing.direction === 'outgoing' ? 'CHAT_REQUEST_ALREADY_PENDING' : 'CHAT_REQUEST_INCOMING_PENDING', request: existing });
