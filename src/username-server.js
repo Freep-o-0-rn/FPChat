@@ -1,5 +1,4 @@
-/* Build 155: optional device-scoped username/public-profile registry plus privacy controls.
-   Isolated from rooms, participants, messages, invites and recovery. */
+/* Build 164: device identity is stored independently from optional @username. */
 const {
   validatePublicUsername,
   validateUsernameSyntax
@@ -16,6 +15,13 @@ function ensureUsernameProfileSchema(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_identities (
+      device_id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   const columns = db.prepare('PRAGMA table_info(user_profiles)').all();
@@ -29,6 +35,14 @@ function ensureUsernameProfileSchema(db) {
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_username_normalized
       ON user_profiles(username_normalized);
+  `);
+
+  // Build 164 migration: preserve existing display names before @username can be deleted.
+  db.exec(`
+    INSERT OR IGNORE INTO user_identities (device_id, display_name, created_at, updated_at)
+    SELECT device_id, display_name, COALESCE(created_at, datetime('now')), COALESCE(updated_at, datetime('now'))
+    FROM user_profiles
+    WHERE display_name IS NOT NULL AND trim(display_name)<>''
   `);
 }
 
@@ -60,14 +74,32 @@ function installUsernameServer({ app, db }) {
 
   const q = {
     findByDevice: db.prepare(`
-      SELECT device_id, username, username_normalized, display_name, role, created_at, updated_at
-      FROM user_profiles
-      WHERE device_id=?
+      SELECT p.device_id, p.username, p.username_normalized,
+             COALESCE(NULLIF(i.display_name,''), NULLIF(p.display_name,'')) AS display_name,
+             p.role, p.created_at, p.updated_at
+      FROM user_profiles p
+      LEFT JOIN user_identities i ON i.device_id=p.device_id
+      WHERE p.device_id=?
     `),
     findByUsername: db.prepare(`
-      SELECT device_id, username, username_normalized, display_name, role
-      FROM user_profiles
-      WHERE username_normalized=?
+      SELECT p.device_id, p.username, p.username_normalized,
+             COALESCE(NULLIF(i.display_name,''), NULLIF(p.display_name,'')) AS display_name,
+             p.role
+      FROM user_profiles p
+      LEFT JOIN user_identities i ON i.device_id=p.device_id
+      WHERE p.username_normalized=?
+    `),
+    identityByDevice: db.prepare(`
+      SELECT device_id, display_name, created_at, updated_at
+      FROM user_identities
+      WHERE device_id=?
+    `),
+    upsertIdentity: db.prepare(`
+      INSERT INTO user_identities (device_id, display_name, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(device_id) DO UPDATE SET
+        display_name=excluded.display_name,
+        updated_at=datetime('now')
     `),
     privacyByDevice: db.prepare(`
       SELECT allow_username_search, allow_chat_requests
@@ -92,12 +124,12 @@ function installUsernameServer({ app, db }) {
         role='user',
         updated_at=datetime('now')
     `),
-    updateDisplayName: db.prepare(`
+    updateProfileDisplayName: db.prepare(`
       UPDATE user_profiles
       SET display_name=?, updated_at=datetime('now')
       WHERE device_id=?
     `),
-    remove: db.prepare('DELETE FROM user_profiles WHERE device_id=?')
+    removeUsername: db.prepare('DELETE FROM user_profiles WHERE device_id=?')
   };
 
   const saveUsername = db.transaction((deviceId, username, displayName) => {
@@ -106,9 +138,19 @@ function installUsernameServer({ app, db }) {
 
     const owner = q.findByUsername.get(username);
     if (owner && owner.device_id !== deviceId) return { ok: false, taken: true };
-    const publicName = displayName || profile?.display_name || null;
+
+    const identity = q.identityByDevice.get(deviceId);
+    const publicName = displayName || identity?.display_name || profile?.display_name || null;
+    if (publicName) q.upsertIdentity.run(deviceId, publicName);
     q.upsertPublic.run(deviceId, username, username, publicName);
     return { ok: true, displayName: publicName };
+  });
+
+  const saveDisplayName = db.transaction((deviceId, displayName) => {
+    q.upsertIdentity.run(deviceId, displayName);
+    const profile = q.findByDevice.get(deviceId);
+    if (profile) q.updateProfileDisplayName.run(displayName, deviceId);
+    return profile;
   });
 
   function safeDeviceId(value) {
@@ -127,10 +169,11 @@ function installUsernameServer({ app, db }) {
     const deviceId = safeDeviceId(req.query?.deviceId);
     if (!deviceId) return res.status(400).json({ ok: false, code: 'DEVICE_ID_REQUIRED', error: 'valid deviceId required' });
     const row = q.findByDevice.get(deviceId);
+    const identity = q.identityByDevice.get(deviceId);
     return res.json({
       ok: true,
       username: row?.username || null,
-      displayName: row?.display_name || null,
+      displayName: identity?.display_name || row?.display_name || null,
       role: row?.role || 'user'
     });
   });
@@ -266,19 +309,14 @@ function installUsernameServer({ app, db }) {
       return res.status(400).json({ ok: false, code: 'DISPLAY_NAME_INVALID', error: 'valid displayName required' });
     }
 
-    const profile = q.findByDevice.get(deviceId);
-    if (!profile) {
-      return res.json({ ok: true, updated: false, profile: false });
-    }
-
-    q.updateDisplayName.run(displayName, deviceId);
+    const profile = saveDisplayName(deviceId, displayName);
     return res.json({
       ok: true,
       updated: true,
-      profile: true,
+      profile: Boolean(profile),
       displayName,
-      username: profile.username,
-      role: profile.role || 'user'
+      username: profile?.username || null,
+      role: profile?.role || 'user'
     });
   });
 
@@ -295,8 +333,14 @@ function installUsernameServer({ app, db }) {
       });
     }
 
-    q.remove.run(deviceId);
-    return res.json({ ok: true, removed: Boolean(previous), username: previous?.username || null });
+    q.removeUsername.run(deviceId);
+    const identity = q.identityByDevice.get(deviceId);
+    return res.json({
+      ok: true,
+      removed: Boolean(previous),
+      username: previous?.username || null,
+      displayName: identity?.display_name || previous?.display_name || null
+    });
   });
 }
 
