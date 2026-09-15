@@ -1,9 +1,9 @@
-/* Build 163: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 164: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 163;
+  const BUILD = 164;
   let attempts = 0;
 
   const boot = () => {
@@ -260,11 +260,15 @@
           copy.className = 'fp-blacklist162-copy';
           const name = document.createElement('b');
           name.textContent = user.displayName || user.username || 'Пользователь FPChat';
-          const handle = document.createElement('span');
-          handle.textContent = user.username ? `@${user.username}` : 'Username не установлен';
           const error = document.createElement('small');
           error.className = 'fp-blacklist162-error';
-          copy.append(name, handle, error);
+          copy.appendChild(name);
+          if (user.username) {
+            const handle = document.createElement('span');
+            handle.textContent = `@${user.username}`;
+            copy.appendChild(handle);
+          }
+          copy.appendChild(error);
 
           const button = document.createElement('button');
           button.type = 'button';
