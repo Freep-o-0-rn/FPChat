@@ -1,5 +1,5 @@
-/* Build 121: encrypted voice upload plus opaque encrypted waveform metadata. */
-function installVoiceServer({ app, db, q, upload, UPLOAD_DIR, fs, path, randomToken, safeUnlink, isRoomOpen }) {
+/* Build 165: encrypted voice upload plus opaque metadata with user-block guards. */
+function installVoiceServer({ app, db, q, upload, UPLOAD_DIR, fs, path, randomToken, safeUnlink, isRoomOpen, userBlocks }) {
   if (!app || !db || !q || !upload || !UPLOAD_DIR || !fs || !path || !randomToken) {
     throw new Error('voice server dependencies are missing');
   }
@@ -88,6 +88,8 @@ function installVoiceServer({ app, db, q, upload, UPLOAD_DIR, fs, path, randomTo
     const participant = q.findParticipant.get(room.id, deviceId);
     if (!participant) return res.status(403).json({ ok: false, error: 'forbidden' });
     if (!isRoomOpen?.(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });
+    const blockGuard = userBlocks?.roomSendGuard(room.id, deviceId);
+    if (blockGuard && !blockGuard.ok) return res.status(403).json({ ok: false, error: 'blocked', code: blockGuard.code });
 
     const encryptedFile = req.file;
     if (!encryptedFile?.buffer?.length) return res.status(400).json({ ok: false, error: 'encryptedFile required' });
