@@ -1,4 +1,4 @@
-/* Build 162: SQLite store for username chat requests, anti-spam and blacklist state. */
+/* Build 164: SQLite store for username chat requests, anti-spam and blacklist state. */
 const crypto = require('crypto');
 const { ensureUsernameProfileSchema } = require('./username-server');
 const { createSystemEventStore } = require('./system-events-server');
@@ -83,8 +83,22 @@ function createChatRequestStore(db) {
   const events = createSystemEventStore(db);
   const fields = 'public_id, sender_device_id, target_device_id, status, room_public_id, invite_code, expires_at, created_at, updated_at';
   const q = {
-    profileByDevice: db.prepare('SELECT device_id, username, username_normalized, display_name, role FROM user_profiles WHERE device_id=?'),
-    profileByUsername: db.prepare('SELECT device_id, username, username_normalized, display_name, role FROM user_profiles WHERE username_normalized=?'),
+    profileByDevice: db.prepare(`
+      SELECT p.device_id, p.username, p.username_normalized,
+             COALESCE(NULLIF(i.display_name,''), NULLIF(p.display_name,'')) AS display_name,
+             p.role
+      FROM user_profiles p
+      LEFT JOIN user_identities i ON i.device_id=p.device_id
+      WHERE p.device_id=?
+    `),
+    profileByUsername: db.prepare(`
+      SELECT p.device_id, p.username, p.username_normalized,
+             COALESCE(NULLIF(i.display_name,''), NULLIF(p.display_name,'')) AS display_name,
+             p.role
+      FROM user_profiles p
+      LEFT JOIN user_identities i ON i.device_id=p.device_id
+      WHERE p.username_normalized=?
+    `),
     byId: db.prepare(`SELECT ${fields} FROM chat_requests WHERE public_id=?`),
     byRoom: db.prepare(`SELECT ${fields} FROM chat_requests WHERE room_public_id=? ORDER BY id DESC LIMIT 1`),
     pendingBetween: db.prepare(`SELECT ${fields} FROM chat_requests WHERE status='pending' AND ((sender_device_id=? AND target_device_id=?) OR (sender_device_id=? AND target_device_id=?)) ORDER BY id DESC LIMIT 1`),
@@ -105,15 +119,15 @@ function createChatRequestStore(db) {
     blockById: db.prepare(`SELECT public_id, blocker_device_id, blocked_device_id, created_at FROM chat_request_blocks WHERE public_id=? AND blocker_device_id=? LIMIT 1`),
     listBlocks: db.prepare(`
       SELECT b.public_id, b.blocked_device_id, b.created_at,
-             COALESCE(NULLIF(p.username,''), json_extract(se.payload_json,'$.sender.username')) AS username,
+             NULLIF(p.username,'') AS username,
              COALESCE(
+               NULLIF(i.display_name,''),
                NULLIF(p.display_name,''),
-               json_extract(se.payload_json,'$.sender.displayName'),
-               NULLIF(p.username,''),
-               json_extract(se.payload_json,'$.sender.username')
+               json_extract(se.payload_json,'$.sender.displayName')
              ) AS display_name,
              COALESCE(NULLIF(p.role,''),'user') AS role
       FROM chat_request_blocks b
+      LEFT JOIN user_identities i ON i.device_id=b.blocked_device_id
       LEFT JOIN user_profiles p ON p.device_id=b.blocked_device_id
       LEFT JOIN chat_requests cr ON cr.id=(
         SELECT MAX(cr2.id)
