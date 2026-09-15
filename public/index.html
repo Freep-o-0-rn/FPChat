@@ -28,7 +28,8 @@
       display: none !important;
     }
 
-    #bootSplash {
+    #bootSplash,
+    #bootHold152 {
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -39,6 +40,14 @@
       color: #e7edf4;
       font-family: Segoe UI, Arial, sans-serif;
       padding: 24px;
+    }
+
+    #bootHold152 {
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      min-height: 100dvh;
+      box-sizing: border-box;
     }
 
     .boot-card {
@@ -145,6 +154,73 @@
 
   <script>
     (async () => {
+      // Build 152: app.js keeps its existing boot behaviour. A second identical
+      // splash sits above it while the late compatibility/UI layers initialize.
+      // This changes only when the UI becomes visible; feature ordering is intact.
+      const sourceSplash = document.getElementById('bootSplash');
+      if (sourceSplash && !document.getElementById('bootHold152')) {
+        const hold = sourceSplash.cloneNode(true);
+        hold.id = 'bootHold152';
+        hold.setAttribute('aria-hidden', 'true');
+        hold.querySelector('#bootTitle')?.removeAttribute('id');
+        hold.querySelector('#bootText')?.removeAttribute('id');
+        document.body.appendChild(hold);
+      }
+
+      // Track only resources dynamically appended during the existing startup
+      // chain. boot-ready152 waits for a short zero-pending quiet period.
+      const bootPending = new Set();
+      const bootTracked = new WeakSet();
+      const bootErrors = [];
+      const bootObserver = new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of record.addedNodes || []) trackBootResources(node);
+        }
+      });
+
+      function trackBootResource(element) {
+        if (!(element instanceof Element) || bootTracked.has(element)) return;
+        const isScript = element.matches('script[src]');
+        const isStyle = element.matches('link[rel="stylesheet"][href]');
+        if (!isScript && !isStyle) return;
+        bootTracked.add(element);
+        bootPending.add(element);
+        let settled = false;
+        const finish = (failed) => {
+          if (settled) return;
+          settled = true;
+          bootPending.delete(element);
+          if (failed) bootErrors.push(isScript ? element.src : element.href);
+        };
+        element.addEventListener('load', () => finish(false), { once: true });
+        element.addEventListener('error', () => finish(true), { once: true });
+      }
+
+      function trackBootResources(node) {
+        if (!(node instanceof Element)) return;
+        trackBootResource(node);
+        node.querySelectorAll?.('script[src],link[rel="stylesheet"][href]').forEach(trackBootResource);
+      }
+
+      bootObserver.observe(document.documentElement, { childList: true, subtree: true });
+      window.FPBoot152 = Object.freeze({
+        pendingCount: () => bootPending.size,
+        errors: () => [...bootErrors],
+        stop: () => bootObserver.disconnect()
+      });
+
+      // A failed optional asset must never leave FPChat permanently blocked.
+      // Normal startup releases much earlier through boot-ready152.js.
+      setTimeout(() => {
+        const gate = document.getElementById('bootHold152');
+        const root = document.getElementById('appRoot');
+        if (gate && root && !root.classList.contains('hidden-boot')) {
+          bootObserver.disconnect();
+          gate.remove();
+          console.warn('[FPChat] Build 152 boot gate released by safety timeout.');
+        }
+      }, 15000);
+
       let buildSuffix = '';
       try {
         const res = await fetch('/version.json', { cache: 'no-store' });
