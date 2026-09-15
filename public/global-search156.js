@@ -1,4 +1,4 @@
-/* Build 156: isolated global-search usability layer. Existing search mechanics stay untouched. */
+/* Build 157: isolated global-search usability layer. Existing search mechanics stay untouched. */
 (() => {
   if (window.__fpGlobalSearch156Installed) return;
   window.__fpGlobalSearch156Installed = true;
@@ -20,10 +20,10 @@
     .fp-global-search156-clear svg{width:21px;height:21px;display:block}
     .fp-global-search156-clear circle{fill:currentColor}
     .fp-global-search156-clear path{fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round}
-    .fp-global-search156-hint{padding:0 calc(14px + env(safe-area-inset-right)) 8px calc(14px + env(safe-area-inset-left));color:var(--muted);font-size:12px;line-height:1.3;opacity:.86;user-select:none;-webkit-user-select:none}
+    .fp-global-search156-hint{position:absolute;left:8px;top:calc(100% + 6px);z-index:70;max-width:calc(100% - 16px);padding:6px 9px;border:1px solid rgba(120,130,145,.18);border-radius:9px;background:var(--panel);box-shadow:0 6px 18px rgba(0,0,0,.14);color:var(--muted);font-size:12px;line-height:1.25;white-space:nowrap;pointer-events:none;user-select:none;-webkit-user-select:none}
     .fp-global-search156-hint[hidden]{display:none!important}
     .fp-global-search156-hint b{font-weight:700;color:color-mix(in srgb,var(--muted) 82%,var(--text) 18%)}
-    @media(max-width:900px){.fp-global-search156-clear{right:6px;width:32px;height:32px}.fp-global-search156-clear svg{width:22px;height:22px}}
+    @media(max-width:900px){.fp-global-search156-clear{right:6px;width:32px;height:32px}.fp-global-search156-clear svg{width:22px;height:22px}.fp-global-search156-hint{left:6px;max-width:calc(100% - 12px)}}
   `;
   document.head.appendChild(style);
 
@@ -44,12 +44,14 @@
   const hint = document.createElement('div');
   hint.className = 'fp-global-search156-hint';
   hint.innerHTML = '<b>@username</b> — поиск по пользователям';
-  searchTop.insertAdjacentElement('afterend', hint);
+  hint.hidden = true;
+  wrap.appendChild(hint);
 
   function sync() {
     const hasValue = search.value.length > 0;
+    const isActive = document.activeElement === search;
     clearButton.hidden = !hasValue;
-    hint.hidden = Boolean(search.value.trim());
+    hint.hidden = !isActive || Boolean(search.value.trim());
   }
 
   function clearSearch(event) {
@@ -70,6 +72,8 @@
     clearSearch(event);
   });
   clearButton.addEventListener('click', clearSearch);
+  search.addEventListener('focus', sync);
+  search.addEventListener('blur', sync);
   search.addEventListener('input', sync);
   search.addEventListener('search', sync);
   sync();
