@@ -157,7 +157,9 @@ function createUserBlocks165(db) {
     const id = Number(roomId);
     const viewer = safeDeviceId(deviceId);
     if (!Number.isSafeInteger(id) || id <= 0 || !viewer) return null;
-    return (activeOnly ? q.peerActive : q.peerAny).get(id, viewer) || null;
+    const peer = (activeOnly ? q.peerActive : q.peerAny).get(id, viewer) || null;
+    if (peer && String(peer.device_id || '').startsWith('blocked-attempt:')) return null;
+    return peer;
   }
 
   function roomSendGuard(roomId, senderId) {
@@ -261,13 +263,14 @@ function createUserBlocks165(db) {
     const viewerParticipant = q.participantAny.get(room.id, viewer);
     if (!viewerParticipant || Number(viewerParticipant.access_revoked)) return { ok: false, code: 'ACCESS_REVOKED' };
     const peer = roomPeer(room.id, viewer, { activeOnly: false });
-    if (!peer) return { ok: true, roomPublicId, peer: null, blockedByMe: false, blockId: null, communicationBlocked: false, presenceVisible: true, canSend: true };
+    if (!peer) return { ok: true, roomPublicId, roomStatus: String(room.status || 'open'), peer: null, blockedByMe: false, blockId: null, communicationBlocked: false, presenceVisible: true, canSend: true };
     const rel = relationship(viewer, peer.device_id);
     const identity = currentIdentity(peer.device_id, peer.display_name);
     const presenceVisible = canViewerSeePresence(viewer, peer.device_id);
     return {
       ok: true,
       roomPublicId,
+      roomStatus: String(room.status || 'open'),
       peer: {
         deviceId: peer.device_id,
         displayName: identity.displayName,
