@@ -1,4 +1,4 @@
-/* Build 143: optional device-scoped username/public-profile registry.
+/* Build 155: optional device-scoped username/public-profile registry plus privacy controls.
    Isolated from rooms, participants, messages, invites and recovery. */
 const {
   validatePublicUsername,
@@ -32,12 +32,31 @@ function ensureUsernameProfileSchema(db) {
   `);
 }
 
+function ensureUserPrivacySchema(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_privacy_settings (
+      device_id TEXT PRIMARY KEY,
+      allow_username_search INTEGER NOT NULL DEFAULT 1,
+      allow_chat_requests INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+function privacyDto(row) {
+  return {
+    allowUsernameSearch: row ? Number(row.allow_username_search) !== 0 : true,
+    allowChatRequests: row ? Number(row.allow_chat_requests) !== 0 : true
+  };
+}
+
 function installUsernameServer({ app, db }) {
   if (!app || !db) throw new Error('username server dependencies are missing');
   if (app.__fpUsername140Installed) return;
   app.__fpUsername140Installed = true;
 
   ensureUsernameProfileSchema(db);
+  ensureUserPrivacySchema(db);
 
   const q = {
     findByDevice: db.prepare(`
@@ -49,6 +68,19 @@ function installUsernameServer({ app, db }) {
       SELECT device_id, username, username_normalized, display_name, role
       FROM user_profiles
       WHERE username_normalized=?
+    `),
+    privacyByDevice: db.prepare(`
+      SELECT allow_username_search, allow_chat_requests
+      FROM user_privacy_settings
+      WHERE device_id=?
+    `),
+    upsertPrivacy: db.prepare(`
+      INSERT INTO user_privacy_settings (device_id, allow_username_search, allow_chat_requests, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(device_id) DO UPDATE SET
+        allow_username_search=excluded.allow_username_search,
+        allow_chat_requests=excluded.allow_chat_requests,
+        updated_at=datetime('now')
     `),
     upsertPublic: db.prepare(`
       INSERT INTO user_profiles (device_id, username, username_normalized, display_name, role, updated_at)
@@ -103,6 +135,31 @@ function installUsernameServer({ app, db }) {
     });
   });
 
+  app.get('/api/profile/privacy', (req, res) => {
+    const deviceId = safeDeviceId(req.query?.deviceId);
+    if (!deviceId) return res.status(400).json({ ok: false, code: 'DEVICE_ID_REQUIRED', error: 'valid deviceId required' });
+    return res.json({ ok: true, ...privacyDto(q.privacyByDevice.get(deviceId)) });
+  });
+
+  app.patch('/api/profile/privacy', (req, res) => {
+    const deviceId = safeDeviceId(req.body?.deviceId);
+    if (!deviceId) return res.status(400).json({ ok: false, code: 'DEVICE_ID_REQUIRED', error: 'valid deviceId required' });
+
+    const hasSearch = typeof req.body?.allowUsernameSearch === 'boolean';
+    const hasRequests = typeof req.body?.allowChatRequests === 'boolean';
+    if (!hasSearch && !hasRequests) {
+      return res.status(400).json({ ok: false, code: 'PRIVACY_FIELDS_REQUIRED', error: 'privacy boolean required' });
+    }
+
+    const current = privacyDto(q.privacyByDevice.get(deviceId));
+    const next = {
+      allowUsernameSearch: hasSearch ? req.body.allowUsernameSearch : current.allowUsernameSearch,
+      allowChatRequests: hasRequests ? req.body.allowChatRequests : current.allowChatRequests
+    };
+    q.upsertPrivacy.run(deviceId, next.allowUsernameSearch ? 1 : 0, next.allowChatRequests ? 1 : 0);
+    return res.json({ ok: true, ...next });
+  });
+
   app.get('/api/usernames/check', (req, res) => {
     const validation = validatePublicUsername(req.query?.username);
     if (!validation.ok) {
@@ -141,6 +198,10 @@ function installUsernameServer({ app, db }) {
     const profile = q.findByUsername.get(validation.username);
     if (!profile) return res.json({ ok: true, found: false });
 
+    const isSelf = Boolean(viewerDeviceId && profile.device_id === viewerDeviceId);
+    const privacy = privacyDto(q.privacyByDevice.get(profile.device_id));
+    if (!isSelf && !privacy.allowUsernameSearch) return res.json({ ok: true, found: false });
+
     return res.json({
       ok: true,
       found: true,
@@ -148,7 +209,7 @@ function installUsernameServer({ app, db }) {
         username: profile.username,
         displayName: profile.display_name || 'Пользователь FPChat',
         role: profile.role === 'service' ? 'service' : 'user',
-        isSelf: Boolean(viewerDeviceId && profile.device_id === viewerDeviceId)
+        isSelf
       }
     });
   });
@@ -239,4 +300,4 @@ function installUsernameServer({ app, db }) {
   });
 }
 
-module.exports = { installUsernameServer, ensureUsernameProfileSchema };
+module.exports = { installUsernameServer, ensureUsernameProfileSchema, ensureUserPrivacySchema };
