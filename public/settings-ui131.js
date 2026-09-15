@@ -1,9 +1,9 @@
-/* Build 161: isolated Telegram-like settings UI over stable Build 129 mechanics. */
+/* Build 162: isolated Telegram-like settings UI over stable Build 129 mechanics. */
 (() => {
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 161;
+  const BUILD = 162;
   let attempts = 0;
 
   const boot = () => {
@@ -26,6 +26,7 @@
       profile: '<svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></svg>',
       notifications: '<svg viewBox="0 0 24 24"><path d="M18 9a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></svg>',
       privacy: '<svg viewBox="0 0 24 24"><path d="M12 3 5.5 5.8v5.1c0 4.3 2.6 8.2 6.5 10.1 3.9-1.9 6.5-5.8 6.5-10.1V5.8L12 3Z"/><rect x="9" y="10.5" width="6" height="4.8" rx="1.2"/><path d="M10.5 10.5V9a1.5 1.5 0 0 1 3 0v1.5"/></svg>',
+      blocked: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0 1 9.2-5.9M16.5 15.5l4 4M20.5 15.5l-4 4"/></svg>',
       appearance: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.6-.5-1-1-1h-3.2a2.8 2.8 0 0 1-2.8-2.8V5c0-1.1-.9-2-2-2Z"/><path d="M7.5 10.5h.01M9.5 15h.01M6.5 14h.01"/></svg>',
       storage: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
       about: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 10v7M12 7h.01"/></svg>',
@@ -43,6 +44,15 @@
         if (typeof getOrCreateDeviceId === 'function') return String(getOrCreateDeviceId() || '').trim();
       } catch {}
       return String(localStorage.getItem('fpchat:device-id') || '').trim();
+    }
+
+    function settingsInitials(value) {
+      const clean = String(value || '').trim().replace(/\s+/g, ' ');
+      const parts = clean.split(' ').filter(Boolean);
+      const raw = parts.length > 1
+        ? `${parts[0][0] || ''}${parts[1][0] || ''}`
+        : (parts[0] || 'FP').slice(0, 2);
+      return raw.toUpperCase() || 'FP';
     }
 
     function header(title) {
@@ -115,13 +125,19 @@
           <span class="fp-privacy155-copy"><b>Разрешить запросы на новый чат</b><small>Другие пользователи смогут отправлять вам запросы на новый приватный чат.</small></span>
           <span class="fp-privacy155-switch"><input id="fpPrivacyRequests155" type="checkbox" checked disabled><span class="fp-privacy155-track"></span></span>
         </label>
-      </div><div id="fpPrivacyStatus155" class="fp-privacy155-status">Загружаем настройки…</div>`, renderMain);
+      </div>
+      <div class="fp-settings131-group fp-privacy162-nav">
+        ${row('blacklist', 'blocked', 'Чёрный список', 'Заблокированные пользователи')}
+      </div>
+      <div id="fpPrivacyStatus155" class="fp-privacy155-status">Загружаем настройки…</div>`, renderMain);
 
       const search = root.querySelector('#fpPrivacySearch155');
       const requests = root.querySelector('#fpPrivacyRequests155');
       const status = root.querySelector('#fpPrivacyStatus155');
       const deviceId = settingsDeviceId();
       let statusTimer = 0;
+
+      root.querySelector('[data-open="blacklist"]').onclick = () => openPage('blacklist');
 
       const setBusy = (value) => {
         search.disabled = value;
@@ -185,6 +201,99 @@
       })();
     }
 
+    function renderBlacklist() {
+      currentPage = 'blacklist';
+      const root = mount('Чёрный список', '<div id="fpBlacklist162" class="fp-blacklist162"><div class="fp-blacklist162-loading">Загружаем список…</div></div>', renderPrivacy);
+      const host = root.querySelector('#fpBlacklist162');
+      const deviceId = settingsDeviceId();
+
+      const renderEmpty = () => {
+        host.replaceChildren();
+        const empty = document.createElement('div');
+        empty.className = 'fp-blacklist162-empty';
+        const title = document.createElement('b');
+        title.textContent = 'Чёрный список пуст';
+        const text = document.createElement('span');
+        text.textContent = 'Здесь появятся пользователи, которых вы заблокировали в запросах на новый чат.';
+        empty.append(title, text);
+        host.appendChild(empty);
+      };
+
+      const removeBlock = async (item, blockId, button) => {
+        if (!blockId || button.disabled) return;
+        button.disabled = true;
+        button.textContent = 'Разблокируем…';
+        try {
+          const response = await fetch(`/api/chat-requests/blocks/${encodeURIComponent(blockId)}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceId })
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.ok) throw new Error('unblock failed');
+          item.remove();
+          try { window.dispatchEvent(new CustomEvent('fpchat:block-list-changed')); } catch {}
+          if (!host.querySelector('.fp-blacklist162-item')) renderEmpty();
+        } catch {
+          button.disabled = false;
+          button.textContent = 'Разблокировать';
+          const error = item.querySelector('.fp-blacklist162-error');
+          if (error) error.textContent = 'Не удалось разблокировать пользователя.';
+        }
+      };
+
+      const renderBlocks = (blocks) => {
+        host.replaceChildren();
+        if (!blocks.length) return renderEmpty();
+        const list = document.createElement('div');
+        list.className = 'fp-blacklist162-list';
+        for (const block of blocks) {
+          const user = block?.user || {};
+          const item = document.createElement('div');
+          item.className = 'fp-blacklist162-item';
+
+          const avatar = document.createElement('div');
+          avatar.className = 'fp-blacklist162-avatar';
+          avatar.textContent = settingsInitials(user.displayName || user.username);
+
+          const copy = document.createElement('div');
+          copy.className = 'fp-blacklist162-copy';
+          const name = document.createElement('b');
+          name.textContent = user.displayName || user.username || 'Пользователь FPChat';
+          const handle = document.createElement('span');
+          handle.textContent = user.username ? `@${user.username}` : 'Username не установлен';
+          const error = document.createElement('small');
+          error.className = 'fp-blacklist162-error';
+          copy.append(name, handle, error);
+
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'fp-blacklist162-unblock';
+          button.textContent = 'Разблокировать';
+          button.onclick = () => void removeBlock(item, block.blockId, button);
+
+          item.append(avatar, copy, button);
+          list.appendChild(item);
+        }
+        host.appendChild(list);
+      };
+
+      (async () => {
+        if (!deviceId) {
+          host.innerHTML = '<div class="fp-blacklist162-empty"><b>Не удалось определить устройство</b><span>Откройте настройки повторно.</span></div>';
+          return;
+        }
+        try {
+          const response = await fetch(`/api/chat-requests/blocks?${new URLSearchParams({ deviceId }).toString()}`, { cache: 'no-store' });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.ok) throw new Error('blacklist load failed');
+          renderBlocks(Array.isArray(data.blocks) ? data.blocks : []);
+        } catch {
+          host.innerHTML = '<div class="fp-blacklist162-empty"><b>Не удалось загрузить чёрный список</b><span>Проверьте соединение и откройте раздел снова.</span></div>';
+        }
+      })();
+    }
+
     function renderAppearance() {
       currentPage = 'appearance';
       const root = mount('Оформление', `<div class="fp-settings131-card"><label for="fpTheme131">Тема</label><select id="fpTheme131"><option value="auto">Авто</option><option value="light">Светлая</option><option value="dark">Тёмная</option></select><p>Шрифты, размер текста, превью тем и собственные обои добавим позже.</p></div>`, renderMain);
@@ -220,6 +329,7 @@
       if (page === 'profile') return renderProfile();
       if (page === 'notifications') return renderNotifications();
       if (page === 'privacy') return renderPrivacy();
+      if (page === 'blacklist') return renderBlacklist();
       if (page === 'appearance') return renderAppearance();
       if (page === 'storage') return renderStorage();
       if (page === 'about') return renderAbout();
