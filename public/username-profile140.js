@@ -1,5 +1,4 @@
-/* Build 142: optional username/public-profile controls for Settings -> Profile.
-   Keeps nickname autosave and existing settings/navigation mechanics intact. */
+/* Build 164: optional username/public-profile controls with nickname sync independent of @username. */
 (() => {
   if (window.__fpUsernameProfile140Installed) return;
   window.__fpUsernameProfile140Installed = true;
@@ -183,7 +182,7 @@
 
     async function syncDisplayName(force = false) {
       clearTimeout(nameSyncTimer);
-      if (!deviceId || !currentUsername) return;
+      if (!deviceId) return;
       const displayName = currentNick();
       if (!displayName || (!force && displayName === lastSyncedName)) return;
       try {
@@ -200,14 +199,13 @@
     function scheduleDisplayNameSync() {
       updateHero();
       clearTimeout(nameSyncTimer);
-      if (!currentUsername) return;
       nameSyncTimer = setTimeout(() => syncDisplayName(false), 500);
     }
 
     nickInput.addEventListener('input', scheduleDisplayNameSync);
     nickInput.addEventListener('blur', () => {
       updateHero();
-      if (currentUsername) syncDisplayName(false);
+      syncDisplayName(false);
     });
 
     async function checkUsername() {
@@ -349,7 +347,7 @@
         currentUsername = null;
         currentRole = 'user';
         checkedUsername = null;
-        lastSyncedName = '';
+        lastSyncedName = cleanDisplayName(data.displayName) || currentNick();
         input.value = '';
         save.hidden = true;
         renderActions();
@@ -382,7 +380,7 @@
         if (currentRole !== 'service') {
           setStatus(currentUsername ? `✓ @${currentUsername} — ваш текущий username` : 'Введите username, чтобы проверить доступность.', currentUsername ? 'success' : '');
         }
-        if (currentUsername && currentNick() && currentNick() !== lastSyncedName) syncDisplayName(true);
+        if (currentNick() && currentNick() !== lastSyncedName) syncDisplayName(true);
       } catch {
         setStatus('Не удалось загрузить username.', 'error');
       }
