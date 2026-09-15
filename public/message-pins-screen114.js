@@ -1,9 +1,9 @@
-/* Build 160: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 165: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=160'; }
-    catch { return '?v=160'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=165'; }
+    catch { return '?v=165'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -64,8 +64,6 @@
     document.body.appendChild(usernameProfile);
   }
 
-  // Build 147 request sending must initialize the hidden sender-owned room layer
-  // before the username search UI can submit a request.
   if (!document.querySelector('script[data-fp-chat-request-owner147]')) {
     const requestOwner = document.createElement('script');
     requestOwner.src = `/chat-request-owner147.js${suffix}`;
@@ -93,8 +91,13 @@
     document.body.appendChild(requestCooldown);
   }
 
-  // Build 156 only decorates the existing global search field. It does not
-  // replace local filtering or the exact @username lookup mechanics.
+  if (!document.querySelector('script[data-fp-user-blocks165]')) {
+    const userBlocks = document.createElement('script');
+    userBlocks.src = `/user-blocks165.js${suffix}`;
+    userBlocks.dataset.fpUserBlocks165 = '1';
+    document.body.appendChild(userBlocks);
+  }
+
   if (!document.querySelector('script[data-fp-global-search156]')) {
     const globalSearch = document.createElement('script');
     globalSearch.src = `/global-search156.js${suffix}`;
@@ -162,8 +165,6 @@
     document.body.appendChild(gallery);
   }
 
-  // Build 152/153 does not reorder or replace any existing layer. It only waits
-  // for the current startup stack to become ready before removing the cold-start gate.
   if (!document.querySelector('script[data-fp-boot-ready152]')) {
     const bootReady = document.createElement('script');
     bootReady.src = `/boot-ready152.js${suffix}`;
