@@ -1,4 +1,4 @@
-/* Build 131: isolated settings presentation. */
+/* Build 154: isolated Telegram-like settings presentation. */
 .fp-settings131{
   --s-border:rgba(0,0,0,.08);width:min(720px,100%);margin:0 auto;
   padding:12px 16px calc(28px + env(safe-area-inset-bottom));box-sizing:border-box;
@@ -16,7 +16,7 @@
 .fp-settings131-row:last-child{border-bottom:0}.fp-settings131-row:active{background:rgba(127,145,165,.10)}
 .fp-settings131-icon{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff}
 .fp-settings131-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.fp-settings131-icon.profile{background:#3390ec}.fp-settings131-icon.appearance{background:#8e5cf6}.fp-settings131-icon.notifications{background:#f5a623}.fp-settings131-icon.storage{background:#35b97f}.fp-settings131-icon.about{background:#778899}
+.fp-settings131-icon.profile{background:#3390ec}.fp-settings131-icon.notifications{background:#f5a623}.fp-settings131-icon.privacy{background:#34b27b}.fp-settings131-icon.appearance{background:#8e5cf6}.fp-settings131-icon.storage{background:#35b97f}.fp-settings131-icon.about{background:#778899}
 .fp-settings131-copy{min-width:0}.fp-settings131-copy b{display:block;font-size:16px;line-height:1.25}.fp-settings131-copy small{display:block;color:var(--muted);font-size:13px;line-height:1.25;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fp-settings131-value{color:var(--muted);font-size:14px;white-space:nowrap}.fp-settings131-next{display:grid;place-items:center;color:var(--muted)}.fp-settings131-next svg{width:18px;height:18px}
 .fp-settings131-card{padding:16px}.fp-settings131-card label{display:block;margin:0 0 8px;font-size:14px;font-weight:650}.fp-settings131-card p{margin:10px 0 0;color:var(--muted);font-size:13px;line-height:1.45}
