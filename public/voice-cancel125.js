@@ -1,4 +1,4 @@
-/* Build 126: isolated Telegram-like voice cancel hint. No voice/read-state mechanics changed. */
+/* Build 159: Telegram-like voice cancel hint plus isolated composer state resync. */
 (() => {
   if (window.__fpVoiceCancel126Installed) return;
   window.__fpVoiceCancel126Installed = true;
@@ -6,6 +6,8 @@
   const CANCEL_THRESHOLD_PX = 145;
   const GRAY = [148, 163, 184];
   const RED = [255, 107, 107];
+  const COMPOSER_SYNC_DELAYS = [0, 80, 220, 520, 900];
+  const composerSyncTimers = new WeakMap();
   let gesture = null;
 
   const TRASH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4.8h6V7M7.5 7l.8 12h7.4l.8-12M10 10.5v5M14 10.5v5"/></svg>';
@@ -155,6 +157,36 @@
     return ui;
   }
 
+  /*
+   * voice.js owns the real composer state and already has the correct
+   * empty/text/busy checks. Rarely, a freshly rebuilt chat can finish its
+   * room/voice cleanup after the first sync pass, leaving the old visual state
+   * until the chat is reopened. Nudge only voice.js' existing capture listener;
+   * stop this synthetic event before app.js' normal input handler so drafts,
+   * rendering and scroll behaviour are untouched.
+   */
+  function syncVoiceComposerState(form = document.getElementById('sendForm')) {
+    if (!form?.isConnected) return;
+    const input = form.querySelector('#msgInput');
+    const mic = form.querySelector('.fp-voice-record-btn');
+    if (!input || !mic) return;
+
+    const stopAfterVoice = (event) => event.stopImmediatePropagation();
+    input.addEventListener('input', stopAfterVoice, { capture: true, once: true });
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function scheduleVoiceComposerSync(form = document.getElementById('sendForm')) {
+    if (!form) return;
+    const previous = composerSyncTimers.get(form);
+    previous?.forEach((timer) => clearTimeout(timer));
+
+    const timers = COMPOSER_SYNC_DELAYS.map((delay) => setTimeout(() => {
+      if (form.isConnected) syncVoiceComposerState(form);
+    }, delay));
+    composerSyncTimers.set(form, timers);
+  }
+
   function resetUi(form) {
     const ui = ensureUi(form);
     if (!ui) return;
@@ -221,7 +253,32 @@
   document.addEventListener('pointerup', end, true);
   document.addEventListener('pointercancel', end, true);
 
-  const observer = new MutationObserver(() => ensureUi());
+  const observer = new MutationObserver((records) => {
+    ensureUi();
+    let composerChanged = false;
+    for (const record of records) {
+      for (const node of record.addedNodes || []) {
+        if (node.nodeType !== 1) continue;
+        if (
+          node.id === 'sendForm' ||
+          node.matches?.('.fp-voice-record-btn') ||
+          node.querySelector?.('#sendForm, .fp-voice-record-btn')
+        ) {
+          composerChanged = true;
+          break;
+        }
+      }
+      if (composerChanged) break;
+    }
+    if (composerChanged) scheduleVoiceComposerSync();
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') scheduleVoiceComposerSync();
+  });
+  window.addEventListener('pageshow', () => scheduleVoiceComposerSync(), { passive: true });
+
   ensureUi();
+  scheduleVoiceComposerSync();
 })();
