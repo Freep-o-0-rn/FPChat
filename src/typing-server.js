@@ -1,5 +1,5 @@
-/* Build 120: transient typing, media-upload and voice activity transport. No persistence. */
-function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
+/* Build 165: transient typing/media/voice activity transport with user-block privacy. */
+function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen, userBlocks }) {
   if (!wss || !q || !sendToRoomParticipants) throw new Error('typing server dependencies are missing');
   if (wss.__fpTypingInstalled) return;
   wss.__fpTypingInstalled = true;
@@ -56,6 +56,7 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
 
   function startActivity(ws, room, participant, activity) {
     if (!room || !participant || !activity || !isRoomOpen?.(room)) return;
+    if (userBlocks && !userBlocks.roomSendGuard(room.id, ws.deviceId).ok) return;
     if (ws.visible !== true || ws.activeRoomId !== room.public_id) return;
 
     const roomMap = getRoomMap(room.public_id);
@@ -69,7 +70,6 @@ function installTypingServer({ wss, q, sendToRoomParticipants, isRoomOpen }) {
     entry.sockets.add(ws);
     armTimeout(room.public_id, ws.deviceId, entry);
 
-    // Every heartbeat also refreshes the peer's client-side TTL.
     broadcast(room.public_id, ws.deviceId, entry.displayName, activity);
   }
 
