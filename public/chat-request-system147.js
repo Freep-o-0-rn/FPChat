@@ -1,4 +1,4 @@
-/* Build 150: request decisions, countdown and authoritative request preview in the existing system-chat layer. */
+/* Build 165: request decisions plus personal blocked-invite notifications in the system chat. */
 (() => {
   if (window.__fpChatRequestSystem147Installed) return;
   window.__fpChatRequestSystem147Installed = true;
@@ -16,6 +16,8 @@
     .fp-system147-status.accepted{background:rgba(59,196,125,.12);color:#3bc47d}
     .fp-system147-countdown{margin-top:8px;color:var(--muted);font-size:11px;font-weight:650}.fp-system147-countdown.expiring{color:var(--danger,#e85b5b)}
     .fp-system147-error{margin-top:8px;color:var(--danger,#e85b5b);font-size:11px;line-height:1.4}
+    .fp-system165-attempts{margin-top:8px;color:var(--muted);font-size:11px;font-weight:700}
+    .fp-system165-handle-empty{display:none!important}
     @media(max-width:600px){.fp-system147-actions{gap:7px}.fp-system147-btn{min-height:40px}}
   `;
   document.head.appendChild(style);
@@ -49,6 +51,28 @@
   function initials(value) {
     const p = String(value || '').trim().split(/\s+/).filter(Boolean);
     return (p.length > 1 ? `${p[0][0] || ''}${p[1][0] || ''}` : (p[0] || 'FP').slice(0,2)).toUpperCase() || 'FP';
+  }
+  function russianAttempts(count) {
+    const n = Math.max(1, Number(count) || 1);
+    const n10 = n % 10, n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return 'попытка';
+    if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return 'попытки';
+    return 'попыток';
+  }
+  function blockedInvitePreview(event) {
+    if (event?.type !== 'blocked_invite_attempt') return '';
+    const actor = event.payload?.actor || {};
+    const name = actor.displayName || 'Пользователь FPChat';
+    const who = actor.username ? `${name} (@${actor.username})` : name;
+    const count = Math.max(1, Number(event.payload?.attemptCount) || 1);
+    return count === 1 ? `${who} попытался войти по приглашению` : `${who}: ${count} ${russianAttempts(count)} входа`;
+  }
+  function eventPreview(event) {
+    const blocked = blockedInvitePreview(event);
+    if (blocked) return blocked;
+    if (event?.type === 'chat_request_expired') return 'Срок запроса истёк';
+    if (event?.type === 'chat_request_rejected') return 'Запрос на чат отклонён';
+    return '';
   }
 
   async function fetchRequests() {
@@ -116,7 +140,7 @@
       const eventMs = dateOf(event?.createdAt)?.getTime() || 0;
       const requestMs = dateOf(request?.updatedAt || request?.createdAt)?.getTime() || 0;
       let text = requestMs > eventMs ? preview(request) : '';
-      if (!text && event) text = preview(reqFor(event)) || (event.type === 'chat_request_expired' ? 'Срок запроса истёк' : event.type === 'chat_request_rejected' ? 'Запрос на чат отклонён' : 'Новое системное уведомление');
+      if (!text && event) text = preview(reqFor(event)) || eventPreview(event) || 'Новое системное уведомление';
       if (text) authoritativeRowPreview = text;
       applyAuthoritativeRowPreview();
     } catch {}
@@ -130,6 +154,11 @@
     const name = document.createElement('b'); name.textContent = profile?.displayName || 'Пользователь FPChat';
     const handle = document.createElement('span'); handle.textContent = profile?.username ? `@${profile.username}` : 'Пользователь FPChat';
     copy.append(name, handle); root.append(avatar, copy); return root;
+  }
+  function blockedHead(profile) {
+    const root = head(profile);
+    if (!profile?.username) root.querySelector('.fp-system145-request-copy span')?.classList.add('fp-system165-handle-empty');
+    return root;
   }
   function requestText(request, event) {
     const status = request?.status || event?.payload?.status || 'pending';
@@ -209,7 +238,104 @@
     const time = document.createElement('div'); time.className='fp-system145-event-time'; time.textContent=timeText(event?.createdAt || request?.createdAt); root.appendChild(time);
     return root;
   }
+
+  function roomAvailableLocally(roomId) {
+    const id = String(roomId || '');
+    if (!id) return false;
+    try {
+      if (!Array.isArray(state?.chats) || !state.chats.some((chat) => String(chat?.roomId || '') === id)) return false;
+      const local = STORAGE?.get?.(STORAGE.roomState(id));
+      return Boolean(local?.deviceId && local?.secret);
+    } catch { return false; }
+  }
+  async function pairStatus(targetDeviceId) {
+    const target = String(targetDeviceId || '').trim();
+    if (!target) return { ok:false, blockedByMe:false, blockId:null };
+    const params = new URLSearchParams({ deviceId: deviceId(), targetDeviceId: target });
+    const response = await fetch(`/api/user-blocks/pair-status?${params.toString()}`, { cache:'no-store' });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error('pair status unavailable');
+    return data;
+  }
+  async function deleteBlock(blockId) {
+    const response = await fetch(`/api/user-blocks/${encodeURIComponent(blockId)}`, {
+      method:'DELETE', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ deviceId:deviceId() })
+    });
+    if (response.status === 404) return true;
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error('unblock failed');
+    try { window.dispatchEvent(new CustomEvent('fpchat:block-list-changed')); } catch {}
+    return true;
+  }
+  async function openRoomFromSystem(roomId) {
+    const id = String(roomId || '');
+    if (!id || !roomAvailableLocally(id) || typeof openChat !== 'function') return false;
+    closeOverlay();
+    try { await openChat(id); return true; } catch { return false; }
+  }
+  async function hydrateBlockedInviteActions(event, root, actions, chip) {
+    const actorId = String(event?.payload?.actor?.deviceId || '').trim();
+    const roomId = String(event?.payload?.roomPublicId || '').trim();
+    const button = document.createElement('button');
+    button.type='button'; button.className='fp-system147-btn accept'; button.disabled=true; button.textContent='Проверяем…'; actions.appendChild(button);
+    try {
+      const status = await pairStatus(actorId);
+      if (!button.isConnected) return;
+      const canOpen = roomAvailableLocally(roomId);
+      if (status.blockedByMe && status.blockId) {
+        chip.textContent='Заблокирован'; chip.className='fp-system147-status blocked';
+        button.disabled=false;
+        button.textContent=canOpen ? 'Разблокировать и открыть чат' : 'Разблокировать';
+        button.onclick=async()=>{
+          if (button.disabled) return;
+          button.disabled=true; button.textContent='Разблокируем…'; errorText(root,'');
+          try {
+            await deleteBlock(status.blockId);
+            await api()?.refresh?.();
+            if (canOpen) {
+              if (!await openRoomFromSystem(roomId)) throw new Error('open failed');
+              return;
+            }
+            chip.textContent='Разблокирован'; chip.className='fp-system147-status accepted';
+            button.remove();
+          } catch {
+            button.disabled=false;
+            button.textContent=canOpen ? 'Разблокировать и открыть чат' : 'Разблокировать';
+            errorText(root,'Не удалось разблокировать пользователя.');
+          }
+        };
+        return;
+      }
+      chip.textContent='Разблокирован'; chip.className='fp-system147-status accepted';
+      if (canOpen) {
+        button.disabled=false; button.textContent='Открыть чат';
+        button.onclick=()=>void openRoomFromSystem(roomId);
+      } else button.remove();
+    } catch {
+      if (!button.isConnected) return;
+      button.disabled=false; button.className='fp-system147-btn reject'; button.textContent='Повторить';
+      button.onclick=()=>{ button.remove(); void hydrateBlockedInviteActions(event,root,actions,chip); };
+    }
+  }
+  function blockedInviteCard(event) {
+    const root=document.createElement('div'); root.className='fp-system145-event';
+    const actor=event?.payload?.actor || {};
+    root.appendChild(blockedHead(actor));
+    const count=Math.max(1,Number(event?.payload?.attemptCount)||1);
+    const text=document.createElement('div'); text.className='fp-system145-request-text';
+    text.textContent=count===1
+      ? 'Попытался присоединиться к вашему чату по invite-ссылке. Вход отклонён из-за блокировки.'
+      : `Попытался присоединиться к вашему чату по invite-ссылке ${count} раз. Все попытки отклонены из-за блокировки.`;
+    root.appendChild(text);
+    if(count>1){const attempts=document.createElement('div');attempts.className='fp-system165-attempts';attempts.textContent=`Попыток входа: ${count}`;root.appendChild(attempts);}
+    const chip=document.createElement('div');chip.className='fp-system147-status blocked';chip.textContent='Заблокирован';root.appendChild(chip);
+    const actions=document.createElement('div');actions.className='fp-system147-actions';root.appendChild(actions);
+    void hydrateBlockedInviteActions(event,root,actions,chip);
+    const time=document.createElement('div');time.className='fp-system145-event-time';time.textContent=timeText(event?.createdAt);root.appendChild(time);
+    return root;
+  }
   function generic(event) {
+    if (event?.type === 'blocked_invite_attempt') return blockedInviteCard(event);
     const root = document.createElement('div'); root.className='fp-system145-event';
     const text = document.createElement('div'); text.className='fp-system145-generic'; text.textContent='Системное уведомление FPChat'; root.appendChild(text);
     const time = document.createElement('div'); time.className='fp-system145-event-time'; time.textContent=timeText(event?.createdAt); root.appendChild(time); return root;
