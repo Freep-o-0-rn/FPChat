@@ -1,5 +1,5 @@
-/* Build 145: exact @username lookup, public-profile preview and isolated chat-request action.
-   Existing local chat filtering remains untouched. */
+/* Build 162: exact @username lookup, profile actions, blacklist unblock and active-chat reuse.
+   Existing local chat filtering and hidden-room semantics remain untouched. */
 (() => {
   if (window.__fpUsernameSearch143Installed) return;
   window.__fpUsernameSearch143Installed = true;
@@ -41,9 +41,12 @@
     .fp-profile144-badge{display:inline-flex;padding:3px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:750}
     .fp-profile144-info{margin-top:18px;padding:13px 14px;border-radius:14px;background:rgba(120,130,145,.07);color:var(--muted);font-size:13px;line-height:1.5}
     .fp-profile145-actions{margin-top:13px}
-    .fp-profile145-request{width:100%;min-height:44px;border:0;border-radius:13px;padding:0 14px;background:var(--accent);color:#fff;font:inherit;font-size:14px;font-weight:750;cursor:pointer;transition:opacity .15s,transform .12s}
-    .fp-profile145-request:active:not(:disabled){transform:scale(.992)}
-    .fp-profile145-request:disabled{cursor:default;opacity:.58}
+    .fp-profile145-request,.fp-profile162-unblock{width:100%;min-height:44px;border:0;border-radius:13px;padding:0 14px;font:inherit;font-size:14px;font-weight:750;cursor:pointer;transition:opacity .15s,transform .12s}
+    .fp-profile145-request{background:var(--accent);color:#fff}
+    .fp-profile162-unblock{margin-top:8px;background:rgba(120,130,145,.12);color:inherit}
+    .fp-profile162-unblock[hidden]{display:none!important}
+    .fp-profile145-request:active:not(:disabled),.fp-profile162-unblock:active:not(:disabled){transform:scale(.992)}
+    .fp-profile145-request:disabled,.fp-profile162-unblock:disabled{cursor:default;opacity:.58}
     .fp-profile145-status{min-height:18px;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.45;text-align:center}
     .fp-profile145-status.success{color:#3bc47d}
     .fp-profile145-status.error{color:var(--danger)}
@@ -70,6 +73,15 @@
     return String(localStorage.getItem('fpchat:device-id') || '').trim();
   }
 
+  function listedRoomIds() {
+    try {
+      if (typeof state !== 'undefined' && Array.isArray(state?.chats)) {
+        return [...new Set(state.chats.map((chat) => String(chat?.roomId || '').trim()).filter(Boolean))].slice(0, 100);
+      }
+    } catch {}
+    return [];
+  }
+
   function normalizeQuery(value) {
     const raw = String(value || '').trim();
     if (!raw.startsWith('@')) return null;
@@ -93,6 +105,8 @@
     const deviceId = getDeviceId();
     if (!deviceId) return { ok: false, code: 'DEVICE_ID_REQUIRED' };
     const params = new URLSearchParams({ deviceId, targetUsername: user.username });
+    const rooms = listedRoomIds();
+    if (rooms.length) params.set('listedRooms', rooms.join(','));
     const response = await fetch(`/api/chat-requests/status?${params.toString()}`, { cache: 'no-store' });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok) throw Object.assign(new Error('request status unavailable'), { data, status: response.status });
@@ -105,7 +119,7 @@
     const response = await fetch('/api/chat-requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ senderDeviceId, targetUsername: user.username })
+      body: JSON.stringify({ senderDeviceId, targetUsername: user.username, listedRoomIds: listedRoomIds() })
     });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok) {
@@ -116,6 +130,19 @@
       throw error;
     }
     return data;
+  }
+
+  async function unblock(blockId) {
+    const deviceId = getDeviceId();
+    if (!deviceId || !blockId) throw new Error('unblock data unavailable');
+    const response = await fetch(`/api/chat-requests/blocks/${encodeURIComponent(blockId)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId })
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error(data?.code || 'unblock failed');
+    try { window.dispatchEvent(new CustomEvent('fpchat:block-list-changed')); } catch {}
   }
 
   function closeProfile() {
@@ -138,16 +165,35 @@
     el.className = `fp-profile145-status${kind ? ` ${kind}` : ''}`;
   }
 
-  async function hydrateRequestAction(user, button, status) {
+  function setOpenChatAction(button, status, roomId) {
+    button.disabled = false;
+    button.textContent = 'Открыть чат';
+    button.dataset.fpAction = 'open-chat';
+    button.dataset.roomId = roomId;
+    setRequestStatus(status, 'У вас уже есть активный чат с этим пользователем.', 'success');
+  }
+
+  async function hydrateRequestAction(user, button, status, unblockButton) {
     if (!button || user.isSelf) return;
     button.disabled = true;
     button.textContent = 'Проверяем…';
+    delete button.dataset.fpAction;
+    delete button.dataset.roomId;
+    if (unblockButton) {
+      unblockButton.hidden = true;
+      unblockButton.disabled = false;
+      unblockButton.textContent = 'Разблокировать';
+      delete unblockButton.dataset.blockId;
+    }
     setRequestStatus(status, '');
     try {
       const data = await getRequestStatus(user);
-      if (!data.senderHasProfile) {
-        button.textContent = 'Сначала установите username';
-        setRequestStatus(status, 'Чтобы отправлять запросы, задайте свой username в Настройки → Профиль.');
+      if (data.youBlockedTarget && data.blockId && unblockButton) {
+        unblockButton.hidden = false;
+        unblockButton.dataset.blockId = data.blockId;
+      }
+      if (data.existingChatRoomId) {
+        setOpenChatAction(button, status, data.existingChatRoomId);
         return;
       }
       if (data.pending?.direction === 'outgoing') {
@@ -158,6 +204,16 @@
       if (data.pending?.direction === 'incoming') {
         button.textContent = 'Есть входящий запрос';
         setRequestStatus(status, 'Этот пользователь уже отправил вам запрос. Откройте системный чат.');
+        return;
+      }
+      if (!data.senderHasProfile) {
+        button.textContent = 'Сначала установите username';
+        setRequestStatus(status, 'Чтобы отправлять запросы, задайте свой username в Настройки → Профиль.');
+        return;
+      }
+      if (data.youBlockedTarget) {
+        button.textContent = 'Запросы заблокированы';
+        setRequestStatus(status, 'Пользователь находится в вашем чёрном списке.');
         return;
       }
       if (!data.canSend) {
@@ -235,6 +291,7 @@
 
     let requestButton = null;
     let requestStatus = null;
+    let unblockButton = null;
     if (!user.isSelf) {
       const actions = document.createElement('div');
       actions.className = 'fp-profile145-actions';
@@ -245,14 +302,27 @@
       requestButton.disabled = true;
       requestStatus = document.createElement('div');
       requestStatus.className = 'fp-profile145-status';
-      actions.append(requestButton, requestStatus);
+      unblockButton = document.createElement('button');
+      unblockButton.type = 'button';
+      unblockButton.className = 'fp-profile162-unblock';
+      unblockButton.textContent = 'Разблокировать';
+      unblockButton.hidden = true;
+      actions.append(requestButton, requestStatus, unblockButton);
       sheet.appendChild(actions);
 
       requestButton.onclick = async () => {
         if (requestButton.disabled) return;
+        if (requestButton.dataset.fpAction === 'open-chat' && requestButton.dataset.roomId) {
+          const roomId = requestButton.dataset.roomId;
+          closeProfile();
+          try {
+            if (typeof openChat === 'function') await openChat(roomId);
+          } catch {}
+          return;
+        }
         const label = requestButton.textContent;
         if (label === 'Повторить проверку') {
-          await hydrateRequestAction(user, requestButton, requestStatus);
+          await hydrateRequestAction(user, requestButton, requestStatus, unblockButton);
           return;
         }
         requestButton.disabled = true;
@@ -266,6 +336,20 @@
           if (error.code === 'SENDER_PROFILE_REQUIRED') {
             requestButton.textContent = 'Сначала установите username';
             setRequestStatus(requestStatus, 'Чтобы отправлять запросы, задайте свой username в Настройки → Профиль.');
+            return;
+          }
+          if (error.code === 'CHAT_REQUEST_EXISTING_CHAT' && error.data?.roomPublicId) {
+            setOpenChatAction(requestButton, requestStatus, error.data.roomPublicId);
+            return;
+          }
+          if (error.code === 'CHAT_REQUEST_BLOCKED_BY_YOU') {
+            requestButton.textContent = 'Запросы заблокированы';
+            requestButton.disabled = true;
+            setRequestStatus(requestStatus, 'Пользователь находится в вашем чёрном списке.');
+            if (error.data?.blockId) {
+              unblockButton.hidden = false;
+              unblockButton.dataset.blockId = error.data.blockId;
+            }
             return;
           }
           if (error.code === 'CHAT_REQUEST_ALREADY_PENDING') {
@@ -283,6 +367,21 @@
           setRequestStatus(requestStatus, 'Не удалось отправить запрос.', 'error');
         }
       };
+
+      unblockButton.onclick = async () => {
+        const blockId = unblockButton.dataset.blockId;
+        if (!blockId || unblockButton.disabled) return;
+        unblockButton.disabled = true;
+        unblockButton.textContent = 'Разблокируем…';
+        try {
+          await unblock(blockId);
+          await hydrateRequestAction(user, requestButton, requestStatus, unblockButton);
+        } catch {
+          unblockButton.disabled = false;
+          unblockButton.textContent = 'Разблокировать';
+          setRequestStatus(requestStatus, 'Не удалось разблокировать пользователя.', 'error');
+        }
+      };
     }
 
     overlay.appendChild(sheet);
@@ -295,7 +394,7 @@
     document.addEventListener('keydown', onProfileKey, true);
     profileOverlay = overlay;
     queueMicrotask(() => close.focus({ preventScroll: true }));
-    if (requestButton) void hydrateRequestAction(user, requestButton, requestStatus);
+    if (requestButton) void hydrateRequestAction(user, requestButton, requestStatus, unblockButton);
   }
 
   function clear() {
