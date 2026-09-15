@@ -98,6 +98,13 @@
     document.body.appendChild(userBlocks);
   }
 
+  if (!document.querySelector('script[data-fp-build165-ui]')) {
+    const buildUi = document.createElement('script');
+    buildUi.src = `/build165-ui.js${suffix}`;
+    buildUi.dataset.fpBuild165Ui = '1';
+    document.body.appendChild(buildUi);
+  }
+
   if (!document.querySelector('script[data-fp-global-search156]')) {
     const globalSearch = document.createElement('script');
     globalSearch.src = `/global-search156.js${suffix}`;
