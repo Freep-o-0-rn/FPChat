@@ -1,9 +1,9 @@
-/* Build 151: compatibility loader for stabilized pins plus isolated UI layers. */
+/* Build 152: compatibility loader for stabilized pins plus isolated UI layers. */
 (() => {
   const current = document.currentScript;
   const suffix = (() => {
-    try { return new URL(current?.src || '', window.location.href).search || '?v=151'; }
-    catch { return '?v=151'; }
+    try { return new URL(current?.src || '', window.location.href).search || '?v=152'; }
+    catch { return '?v=152'; }
   })();
 
   if (!document.querySelector('link[data-fp-pins-screen115]')) {
@@ -144,5 +144,14 @@
     gallery.src = `/media-gallery134.js${suffix}`;
     gallery.dataset.fpMediaGallery134 = '1';
     document.body.appendChild(gallery);
+  }
+
+  // Build 152 does not reorder or replace any existing layer. It only waits for
+  // the current startup stack to become ready before removing the cold-start gate.
+  if (!document.querySelector('script[data-fp-boot-ready152]')) {
+    const bootReady = document.createElement('script');
+    bootReady.src = `/boot-ready152.js${suffix}`;
+    bootReady.dataset.fpBootReady152 = '1';
+    document.body.appendChild(bootReady);
   }
 })();
