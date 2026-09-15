@@ -26,14 +26,8 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
 
   replaceOnce(
     "const db = createDb(DATABASE_PATH);",
-    "const db = createDb(DATABASE_PATH);\nconst fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);",
+    "const db = createDb(DATABASE_PATH);\nconst fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);\nconst fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db);",
     'database user-block initialization'
-  );
-
-  replaceOnce(
-    "  if (message?.event_type === SYSTEM_LEFT) return `${actor} покинул комнату`;\n  return 'Системное событие';",
-    "  if (message?.event_type === SYSTEM_LEFT) return `${actor} покинул комнату`;\n  if (String(message?.event_type || '').startsWith('blocked_invite_attempt:')) return `${actor} попытался войти по приглашению. Вход отклонён из-за блокировки.`;\n  return 'Системное событие';",
-    'system event text'
   );
 
   const participantMap = `const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({\n    deviceId: item.device_id,\n    displayName: item.display_name,\n    online: Boolean(item.online),\n    lastSeenAt: toIsoUtc(item.last_seen_at)\n  }));`;
@@ -70,7 +64,7 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
 
   replaceOnce(
     `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
-    `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);\n  if (!inviteBlock165.ok) {\n    if (inviteBlock165.code === 'INVITE_BLOCKED_BY_CREATOR') {\n      const attempt165 = fpUserBlocks165.noteBlockedInviteAttempt({ roomId: room.id, inviteId: invite.id, joinerId: safeDeviceId, fallbackName: safeName });\n      if (attempt165.created && attempt165.row) {\n        const event165 = messageToDto(attempt165.row);\n        broadcastRoomMessage(room, event165, safeDeviceId);\n        broadcastUnreadState(room);\n        void sendPushForSystemEvent(room, event165);\n      }\n      return res.status(403).json({ ok: false, error: 'Вход недоступен: пользователь вас заблокировал.', code: inviteBlock165.code });\n    }\n    return res.status(403).json({ ok: false, error: 'Сначала разблокируйте пользователя.', code: inviteBlock165.code });\n  }\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
+    `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);\n  if (!inviteBlock165.ok) {\n    if (inviteBlock165.code === 'INVITE_BLOCKED_BY_CREATOR') {\n      try {\n        fpBlockedInviteEvents165.note({ roomId: room.id, joinerId: safeDeviceId, fallbackName: safeName });\n      } catch (error) {\n        console.error('Blocked invite system event failed', error);\n      }\n      return res.status(403).json({ ok: false, error: 'Вход недоступен: пользователь вас заблокировал.', code: inviteBlock165.code });\n    }\n    return res.status(403).json({ ok: false, error: 'Сначала разблокируйте пользователя.', code: inviteBlock165.code });\n  }\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
     'invite block guard'
   );
 
