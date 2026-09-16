@@ -1,13 +1,13 @@
-/* Build 167: safe presentation bridge, explicit blocked-voice feedback and storage layer loader. */
+/* Build 168: safe presentation bridge, blocked-voice feedback and storage layers. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 167';
+  const BUILD_LABEL = 'Build 168';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=167'; }
-    catch { return '?v=167'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=168'; }
+    catch { return '?v=168'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
@@ -114,18 +114,33 @@
     };
   }
 
+  const loadStorage168 = () => {
+    if (document.querySelector('script[data-fp-storage168]')) return;
+    const storage168 = document.createElement('script');
+    storage168.src = `/storage168.js${storageSuffix}`;
+    storage168.dataset.fpStorage168 = '1';
+    document.body.appendChild(storage168);
+  };
+
   const loadStorageCacheFix = () => {
-    if (document.querySelector('script[data-fp-storage167-cache-fix]')) return;
+    const existing = document.querySelector('script[data-fp-storage167-cache-fix]');
+    if (existing) {
+      if (window.FPStorage167CacheFix) loadStorage168();
+      else existing.addEventListener('load', loadStorage168, { once: true });
+      return;
+    }
     const fix = document.createElement('script');
     fix.src = `/storage167-cache-fix.js${storageSuffix}`;
     fix.dataset.fpStorage167CacheFix = '1';
+    fix.onload = loadStorage168;
     document.body.appendChild(fix);
   };
 
   const loadStorageClearGuard = () => {
-    if (document.querySelector('script[data-fp-storage167-clear-guard]')) {
+    const existing = document.querySelector('script[data-fp-storage167-clear-guard]');
+    if (existing) {
       if (window.FPStorage167ClearGuard) loadStorageCacheFix();
-      else document.querySelector('script[data-fp-storage167-clear-guard]')?.addEventListener('load', loadStorageCacheFix, { once: true });
+      else existing.addEventListener('load', loadStorageCacheFix, { once: true });
       return;
     }
     const guard = document.createElement('script');
