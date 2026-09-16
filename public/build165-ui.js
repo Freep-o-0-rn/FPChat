@@ -114,11 +114,24 @@
     };
   }
 
+  const loadStorageCacheFix = () => {
+    if (document.querySelector('script[data-fp-storage167-cache-fix]')) return;
+    const fix = document.createElement('script');
+    fix.src = `/storage167-cache-fix.js${storageSuffix}`;
+    fix.dataset.fpStorage167CacheFix = '1';
+    document.body.appendChild(fix);
+  };
+
   const loadStorageClearGuard = () => {
-    if (document.querySelector('script[data-fp-storage167-clear-guard]')) return;
+    if (document.querySelector('script[data-fp-storage167-clear-guard]')) {
+      if (window.FPStorage167ClearGuard) loadStorageCacheFix();
+      else document.querySelector('script[data-fp-storage167-clear-guard]')?.addEventListener('load', loadStorageCacheFix, { once: true });
+      return;
+    }
     const guard = document.createElement('script');
     guard.src = `/storage167-clear-guard.js${storageSuffix}`;
     guard.dataset.fpStorage167ClearGuard = '1';
+    guard.onload = loadStorageCacheFix;
     document.body.appendChild(guard);
   };
 
