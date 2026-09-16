@@ -114,11 +114,25 @@
     };
   }
 
+  const loadStorageClearGuard = () => {
+    if (document.querySelector('script[data-fp-storage167-clear-guard]')) return;
+    const guard = document.createElement('script');
+    guard.src = `/storage167-clear-guard.js${storageSuffix}`;
+    guard.dataset.fpStorage167ClearGuard = '1';
+    document.body.appendChild(guard);
+  };
+
   if (!document.querySelector('script[data-fp-storage167]')) {
     const storage = document.createElement('script');
     storage.src = `/storage167.js${storageSuffix}`;
     storage.dataset.fpStorage167 = '1';
+    storage.onload = loadStorageClearGuard;
     document.body.appendChild(storage);
+  } else if (window.FPStorage167) {
+    loadStorageClearGuard();
+  } else {
+    const storage = document.querySelector('script[data-fp-storage167]');
+    storage?.addEventListener('load', loadStorageClearGuard, { once: true });
   }
 
   const observer = new MutationObserver(patchUi);
