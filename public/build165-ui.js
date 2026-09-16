@@ -1,9 +1,14 @@
-/* Build 166: safe presentation bridge plus explicit blocked-voice feedback. */
+/* Build 167: safe presentation bridge, explicit blocked-voice feedback and storage layer loader. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 166';
+  const BUILD_LABEL = 'Build 167';
+  const currentScript = document.currentScript;
+  const storageSuffix = (() => {
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=167'; }
+    catch { return '?v=167'; }
+  })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
@@ -107,6 +112,13 @@
       if (Date.now() < voiceBlockNoticeUntil && /^Не удалось отправить голосовое сообщение\./.test(text)) return;
       return baseAlert(message);
     };
+  }
+
+  if (!document.querySelector('script[data-fp-storage167]')) {
+    const storage = document.createElement('script');
+    storage.src = `/storage167.js${storageSuffix}`;
+    storage.dataset.fpStorage167 = '1';
+    document.body.appendChild(storage);
   }
 
   const observer = new MutationObserver(patchUi);
