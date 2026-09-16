@@ -12,6 +12,7 @@
 
   let inventoryPromise = null;
   let scanPromise = null;
+  let accountingSettled = false;
   let scanState = { phase: 'idle', done: 0, total: 0, found: 0, inventoryBytes: 0, error: '' };
 
   function deviceId() {
@@ -24,17 +25,6 @@
   function normalizeKind(value) {
     const kind = String(value || '').toLowerCase();
     return ['image', 'video', 'audio', 'file'].includes(kind) ? kind : 'file';
-  }
-
-  function formatBytes(value) {
-    const bytes = Math.max(0, Number(value || 0) || 0);
-    if (bytes < 1024) return `${Math.round(bytes)} Б`;
-    const units = ['КБ', 'МБ', 'ГБ', 'ТБ'];
-    let amount = bytes / 1024;
-    let index = 0;
-    while (amount >= 1024 && index < units.length - 1) { amount /= 1024; index += 1; }
-    const digits = amount >= 100 ? 0 : amount >= 10 ? 1 : 2;
-    return `${amount.toLocaleString('ru-RU', { maximumFractionDigits: digits })} ${units[index]}`;
   }
 
   function readMeta() {
@@ -237,6 +227,7 @@
   }
 
   async function ensureAccounting() {
+    if (accountingSettled) return;
     if (scanPromise) return scanPromise;
     scanPromise = (async () => {
       try {
@@ -252,13 +243,16 @@
           scanState.done = Number(previous.checked || 0);
           scanState.total = Number(previous.checked || 0);
           scanState.found = Number(previous.found || 0);
+          accountingSettled = true;
           renderStatus();
           return;
         }
         await migrateLegacyHttpCache(items);
+        if (!isClearing()) accountingSettled = true;
       } catch {
         scanState.phase = 'error';
         scanState.error = 'Не удалось проверить старый локальный кэш.';
+        accountingSettled = true;
         renderStatus();
       }
     })();
@@ -268,9 +262,7 @@
 
   function statusText() {
     if (scanState.phase === 'inventory') return 'Проверяем старые медиа и локальный кэш…';
-    if (scanState.phase === 'scanning') {
-      return `Проверяем ранее загруженные медиа: ${scanState.done} из ${scanState.total}…`;
-    }
+    if (scanState.phase === 'scanning') return `Проверяем ранее загруженные медиа: ${scanState.done} из ${scanState.total}…`;
     if (scanState.phase === 'error') return scanState.error;
     if (scanState.phase === 'done') return 'Размер кэша рассчитан с учётом ранее загруженных медиа, которые ещё сохранены браузером.';
     return '';
@@ -288,8 +280,9 @@
       node.className = 'fp-storage168-accounting';
       origin.insertAdjacentElement('afterend', node);
     }
-    node.textContent = statusText();
-    node.hidden = !node.textContent;
+    const next = statusText();
+    if (node.textContent !== next) node.textContent = next;
+    node.hidden = !next;
   }
 
   const style = document.createElement('style');
@@ -301,7 +294,7 @@
     const root = document.querySelector('.fp-settings131[data-page="storage167"]');
     if (!root) return;
     renderStatus();
-    void ensureAccounting();
+    if (!accountingSettled && !scanPromise) void ensureAccounting();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
