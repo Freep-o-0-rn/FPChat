@@ -1,4 +1,6 @@
+/* Build 167: preserve user-managed encrypted media cache while keeping existing PWA/push behavior. */
 const CACHE_NAME = 'fpchat-static-v1';
+const MEDIA_CACHE_PREFIX = 'fpchat-media-v';
 const VERSION_ENDPOINT = '/version.json';
 
 self.addEventListener('install', (event) => {
@@ -8,7 +10,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+    await Promise.all(keys.filter((key) => key !== CACHE_NAME && !key.startsWith(MEDIA_CACHE_PREFIX)).map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
 });
