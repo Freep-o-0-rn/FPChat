@@ -14,6 +14,7 @@
   const prefetchQueue = [];
   const prefetchQueued = new Set();
   let activePrefetch = 0;
+  let activeStorageRoot = null;
   const PREFETCH_CONCURRENCY = 2;
 
   const baseFetch = window.fetch.bind(window);
@@ -322,8 +323,8 @@
     }
   }
 
-  function scheduleAutoload(message, autoScroll) {
-    if (autoScroll === false || message?.type !== 'media' || !Array.isArray(message.media)) return;
+  function scheduleAutoload(message, autoScroll, mine) {
+    if (mine || autoScroll === false || message?.type !== 'media' || !Array.isArray(message.media)) return;
     const deviceId = currentRoomDeviceId();
     if (!deviceId) return;
     const prefs = getAutoload();
@@ -342,7 +343,7 @@
     const wrapped = function fpStorage167AppendMessage(box, message, text, mine, autoScroll = true) {
       if (Array.isArray(message?.media)) rememberMediaList(message.media);
       const result = base.call(this, box, message, text, mine, autoScroll);
-      scheduleAutoload(message, autoScroll);
+      scheduleAutoload(message, autoScroll, mine);
       return result;
     };
     wrapped.__fpStorage167 = true;
@@ -442,6 +443,7 @@
 
   function mountPage(title, bodyHtml, onBack, { swipe = true, hideBack = false } = {}) {
     if (!settingsReady()) return null;
+    activeStorageRoot = null;
     els.content.innerHTML = `<div class="fp-settings131" data-page="storage167"><div class="fp-settings131-header"><button class="fp-settings131-back${hideBack ? ' fp-storage167-disabled-back' : ''}" type="button" aria-label="Назад">${BACK_SVG}</button><h2>${escapeHtml167(title)}</h2><span></span></div><div class="fp-settings131-body">${bodyHtml}</div></div>`;
     const root = els.content.querySelector('.fp-settings131');
     const back = root?.querySelector('.fp-settings131-back');
@@ -518,6 +520,7 @@
         <div class="fp-storage167-note">Очистка удаляет только локальные зашифрованные копии медиа. Сообщения, комнаты, файлы на сервере, recovery, deviceId и настройки FPChat не удаляются.</div>
       </div>`, renderMainSettings);
     if (!root) return;
+    activeStorageRoot = root;
 
     const retentionSelect = root.querySelector('#fpStorage167Retention');
     retentionSelect.value = String(retention);
@@ -531,14 +534,6 @@
       input.addEventListener('change', () => setAutoload(input.dataset.autoload, input.checked));
     });
 
-    const changed = () => {
-      if (!root.isConnected) {
-        window.removeEventListener('fpchat:storage-changed', changed);
-        return;
-      }
-      void refreshStorageStats(root);
-    };
-    window.addEventListener('fpchat:storage-changed', changed);
     await refreshStorageStats(root);
   }
 
@@ -645,6 +640,11 @@
       if (back) back.onclick = () => void renderStorage();
     }
   }
+
+  window.addEventListener('fpchat:storage-changed', () => {
+    const root = activeStorageRoot;
+    if (root?.isConnected) void refreshStorageStats(root);
+  });
 
   function installStorageEntryPoint() {
     document.addEventListener('click', (event) => {
