@@ -1,16 +1,26 @@
-/* Build 168: safe presentation bridge, blocked-voice feedback and storage layers. */
+/* Build 169: safe presentation bridge, blocked-voice feedback, diagnostics and storage layers. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 168';
+  const BUILD_LABEL = 'Build 169';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=168'; }
-    catch { return '?v=168'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=169'; }
+    catch { return '?v=169'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
+
+  // Build 169 diagnostics are intentionally passive. Loading this module must not
+  // delay or replace any existing owner; failure to load it must not block FPChat.
+  if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
+    const runtime = document.createElement('script');
+    runtime.src = `/runtime169.js${storageSuffix}`;
+    runtime.dataset.fpRuntime169 = '1';
+    runtime.async = true;
+    document.body.appendChild(runtime);
+  }
 
   function patchBuildLabels() {
     document.querySelectorAll('.fp-settings131-value').forEach((node) => {
