@@ -11,9 +11,13 @@
   const longTasks = [];
   const owners = new Map();
   const trackedResources = new Map();
+  const measurements = [];
+  const captures = [];
   const errors = [];
   let nextResourceId = 1;
-  let bootReadyAt = null;
+  let nextMeasurementId = 1;
+  let bootReadyAt = Number(window.__fpBootReady169At || 0) || null;
+  let bootReadySource = bootReadyAt == null ? null : 'boot-ready-marker';
 
   const COVERAGE = Object.freeze({
     navigation: 'browser-performance-entry',
@@ -21,10 +25,12 @@
     longTasks: 'browser-dependent',
     memory: 'browser-dependent',
     lifecycleEvents: 'from-runtime-installation',
-    timers: 'partial-registered-only',
-    observers: 'partial-registered-only',
+    timers: 'partial-static-audit-and-registered-only',
+    observers: 'partial-static-audit-and-registered-only',
     websocket: 'snapshot-only',
-    server: 'not-collected-by-client-runtime'
+    roomOpenDuration: 'manual-measurement-api-until-build170-owner',
+    reconnectDuration: 'manual-measurement-api-until-build170-owner',
+    server: 'separate-optional-sampler'
   });
 
   const LEGACY_AUDIT = Object.freeze({
@@ -65,6 +71,13 @@
       'system-ui148',
       'storage168'
     ]
+  });
+
+  const KNOWN_LEGACY_COUNTS = Object.freeze({
+    pollingLoops: LEGACY_AUDIT.polling.length,
+    fetchOwners: LEGACY_AUDIT.fetchOwners.length,
+    appendMessageOwners: LEGACY_AUDIT.appendMessageOwners.length,
+    broadDomObservers: LEGACY_AUDIT.broadDomObservers.length
   });
 
   function inc(name, by = 1) {
@@ -151,10 +164,23 @@
   ]) {
     window.addEventListener(eventName, () => {
       inc(`event:${eventName}`);
-      if (eventName === 'fpchat:boot-ready' && bootReadyAt == null) bootReadyAt = performance.now();
+      if (eventName === 'fpchat:boot-ready' && bootReadyAt == null) {
+        bootReadyAt = performance.now();
+        bootReadySource = 'event';
+      }
       pushRecent(eventName);
     }, { passive: true });
   }
+
+  setTimeout(() => {
+    if (bootReadyAt != null) return;
+    const root = document.getElementById('appRoot');
+    const gate = document.getElementById('bootHold152');
+    if (root && !root.classList.contains('hidden-boot') && !gate && !document.documentElement.hasAttribute('data-fp-boot152')) {
+      bootReadyAt = performance.now();
+      bootReadySource = 'detected-after-install';
+    }
+  }, 0);
 
   window.addEventListener('error', (event) => {
     inc('error');
@@ -201,6 +227,50 @@
     return trackedResources.delete(Number(id));
   }
 
+  function startMeasure(name, metadata = {}) {
+    const token = {
+      id: nextMeasurementId++,
+      name: String(name || 'unnamed').slice(0, 80),
+      startedAt: performance.now(),
+      metadata: metadata && typeof metadata === 'object' ? { ...metadata } : {}
+    };
+    inc(`measure:${token.name}:started`);
+    return token;
+  }
+
+  function endMeasure(token, status = 'ok') {
+    if (!token || !Number.isFinite(Number(token.startedAt))) return null;
+    const durationMs = Math.max(0, performance.now() - Number(token.startedAt));
+    const item = {
+      id: Number(token.id || 0),
+      name: String(token.name || 'unnamed').slice(0, 80),
+      durationMs: Math.round(durationMs * 10) / 10,
+      status: String(status || 'ok').slice(0, 40),
+      at: Date.now()
+    };
+    measurements.push(item);
+    while (measurements.length > 200) measurements.shift();
+    inc(`measure:${item.name}:finished`);
+    return item;
+  }
+
+  function measurementSummary() {
+    const grouped = Object.create(null);
+    for (const item of measurements) {
+      const bucket = grouped[item.name] || (grouped[item.name] = { count: 0, totalMs: 0, maxMs: 0, lastMs: 0 });
+      bucket.count += 1;
+      bucket.totalMs += item.durationMs;
+      bucket.maxMs = Math.max(bucket.maxMs, item.durationMs);
+      bucket.lastMs = item.durationMs;
+    }
+    for (const bucket of Object.values(grouped)) {
+      bucket.avgMs = bucket.count ? Math.round((bucket.totalMs / bucket.count) * 10) / 10 : null;
+      bucket.totalMs = Math.round(bucket.totalMs * 10) / 10;
+      bucket.maxMs = Math.round(bucket.maxMs * 10) / 10;
+    }
+    return grouped;
+  }
+
   function navigationSnapshot() {
     try {
       const nav = performance.getEntriesByType('navigation')[0];
@@ -230,6 +300,19 @@
     } catch {
       return { supported: false };
     }
+  }
+
+  async function sampleMemory() {
+    try {
+      if (typeof performance.measureUserAgentSpecificMemory === 'function') {
+        const result = await performance.measureUserAgentSpecificMemory();
+        return { supported: true, source: 'measureUserAgentSpecificMemory', bytes: Number(result?.bytes || 0) || 0 };
+      }
+    } catch {}
+    const legacy = memorySnapshot();
+    return legacy.supported
+      ? { supported: true, source: 'performance.memory', bytes: legacy.usedJSHeapSize }
+      : { supported: false, source: 'unavailable', bytes: null };
   }
 
   function roomSnapshot() {
@@ -284,6 +367,7 @@
       mode: 'shadow',
       uptimeMs: Math.round(performance.now() - startedAt),
       bootReadyMs: bootReadyAt == null ? null : Math.round(bootReadyAt),
+      bootReadySource,
       visibility: document.visibilityState,
       online: navigator.onLine,
       navigation: navigationSnapshot(),
@@ -296,28 +380,48 @@
         longTaskCount: longTasks.length,
         longTaskDurationMs: Math.round(longTasks.reduce((sum, item) => sum + item.durationMs, 0) * 10) / 10
       },
+      knownLegacyCounts: KNOWN_LEGACY_COUNTS,
       coverage: COVERAGE,
       registeredOwners: [...owners.values()],
       registeredResources: [...trackedResources.values()],
+      measurementSummary: measurementSummary(),
       counters: { ...counters },
       errors: errors.slice(-20),
       recent: recent.slice(-30)
     };
   }
 
+  function capture(label = '') {
+    const item = { label: String(label || '').slice(0, 80), capturedAt: new Date().toISOString(), snapshot: snapshot() };
+    captures.push(item);
+    while (captures.length > 30) captures.shift();
+    return item;
+  }
+
   function inspect() {
-    return { ...snapshot(), legacyAudit: LEGACY_AUDIT };
+    return {
+      ...snapshot(),
+      legacyAudit: LEGACY_AUDIT,
+      recentMeasurements: measurements.slice(-30),
+      captures: captures.slice()
+    };
   }
 
   window.FPRuntime169 = Object.freeze({
     registerOwner,
     registerResource,
     releaseResource,
+    startMeasure,
+    endMeasure,
+    measurementSummary,
+    sampleMemory,
+    capture,
     snapshot,
     inspect,
     resourceSummary,
     coverage: COVERAGE,
-    legacyAudit: LEGACY_AUDIT
+    legacyAudit: LEGACY_AUDIT,
+    knownLegacyCounts: KNOWN_LEGACY_COUNTS
   });
   window.FPRuntime = window.FPRuntime169;
 
