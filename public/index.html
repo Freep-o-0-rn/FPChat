@@ -311,78 +311,93 @@
       voicePins127Css.href = `/voice-pins127.css${buildSuffix}`;
       document.head.appendChild(voicePins127Css);
 
-      const script = document.createElement('script');
-      script.src = `/app.js${buildSuffix}`;
-      script.defer = true;
-      script.onload = () => {
-        const typing = document.createElement('script');
-        typing.src = `/typing.js${buildSuffix}`;
-        typing.onload = () => {
-          const voice = document.createElement('script');
-          voice.src = `/voice.js${buildSuffix}`;
-          voice.onload = () => {
-            const voicePolish = document.createElement('script');
-            voicePolish.src = `/voice-polish123.js${buildSuffix}`;
-            voicePolish.onload = () => {
-              const voiceCancel125 = document.createElement('script');
-              voiceCancel125.src = `/voice-cancel125.js${buildSuffix}`;
-              document.body.appendChild(voiceCancel125);
+      const loadApp = () => {
+        const script = document.createElement('script');
+        script.src = `/app.js${buildSuffix}`;
+        script.defer = true;
+        script.onload = () => {
+          const typing = document.createElement('script');
+          typing.src = `/typing.js${buildSuffix}`;
+          typing.onload = () => {
+            const voice = document.createElement('script');
+            voice.src = `/voice.js${buildSuffix}`;
+            voice.onload = () => {
+              const voicePolish = document.createElement('script');
+              voicePolish.src = `/voice-polish123.js${buildSuffix}`;
+              voicePolish.onload = () => {
+                const voiceCancel125 = document.createElement('script');
+                voiceCancel125.src = `/voice-cancel125.js${buildSuffix}`;
+                document.body.appendChild(voiceCancel125);
 
-              const voicePins127 = document.createElement('script');
-              voicePins127.src = `/voice-pins127.js${buildSuffix}`;
-              document.body.appendChild(voicePins127);
-            };
-            document.body.appendChild(voicePolish);
-          };
-          document.body.appendChild(voice);
-        };
-        document.body.appendChild(typing);
-
-        const settingsFix = document.createElement('script');
-        settingsFix.src = `/settings-fix.js${buildSuffix}`;
-        document.body.appendChild(settingsFix);
-
-        const chatFix = document.createElement('script');
-        chatFix.src = `/chat-fix.js${buildSuffix}`;
-        document.body.appendChild(chatFix);
-
-        const loadContextStack = () => {
-          const messageContext = document.createElement('script');
-          messageContext.src = `/message-context.js${buildSuffix}`;
-          messageContext.onload = () => {
-            const messageContextFix = document.createElement('script');
-            messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
-            messageContextFix.onload = () => {
-              const messageActions = document.createElement('script');
-              messageActions.src = `/message-actions.js${buildSuffix}`;
-              messageActions.onload = () => {
-                const messagePins = document.createElement('script');
-                messagePins.src = `/message-pins.js${buildSuffix}`;
-                messagePins.onload = () => {
-                  const messagePins114 = document.createElement('script');
-                  messagePins114.src = `/message-pins-screen114.js${buildSuffix}`;
-                  document.body.appendChild(messagePins114);
-                };
-                document.body.appendChild(messagePins);
+                const voicePins127 = document.createElement('script');
+                voicePins127.src = `/voice-pins127.js${buildSuffix}`;
+                document.body.appendChild(voicePins127);
               };
-              document.body.appendChild(messageActions);
+              document.body.appendChild(voicePolish);
             };
-            document.body.appendChild(messageContextFix);
+            document.body.appendChild(voice);
           };
-          document.body.appendChild(messageContext);
+          document.body.appendChild(typing);
 
-          const swipeFix = document.createElement('script');
-          swipeFix.src = `/swipe-fix.js${buildSuffix}`;
-          document.body.appendChild(swipeFix);
+          const settingsFix = document.createElement('script');
+          settingsFix.src = `/settings-fix.js${buildSuffix}`;
+          document.body.appendChild(settingsFix);
+
+          const chatFix = document.createElement('script');
+          chatFix.src = `/chat-fix.js${buildSuffix}`;
+          document.body.appendChild(chatFix);
+
+          const loadContextStack = () => {
+            const messageContext = document.createElement('script');
+            messageContext.src = `/message-context.js${buildSuffix}`;
+            messageContext.onload = () => {
+              const messageContextFix = document.createElement('script');
+              messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
+              messageContextFix.onload = () => {
+                const messageActions = document.createElement('script');
+                messageActions.src = `/message-actions.js${buildSuffix}`;
+                messageActions.onload = () => {
+                  const messagePins = document.createElement('script');
+                  messagePins.src = `/message-pins.js${buildSuffix}`;
+                  messagePins.onload = () => {
+                    const messagePins114 = document.createElement('script');
+                    messagePins114.src = `/message-pins-screen114.js${buildSuffix}`;
+                    document.body.appendChild(messagePins114);
+                  };
+                  document.body.appendChild(messagePins);
+                };
+                document.body.appendChild(messageActions);
+              };
+              document.body.appendChild(messageContextFix);
+            };
+            document.body.appendChild(messageContext);
+
+            const swipeFix = document.createElement('script');
+            swipeFix.src = `/swipe-fix.js${buildSuffix}`;
+            document.body.appendChild(swipeFix);
+          };
+
+          const messageSelection = document.createElement('script');
+          messageSelection.src = `/message-selection.js${buildSuffix}`;
+          messageSelection.onload = loadContextStack;
+          messageSelection.onerror = loadContextStack;
+          document.body.appendChild(messageSelection);
         };
-
-        const messageSelection = document.createElement('script');
-        messageSelection.src = `/message-selection.js${buildSuffix}`;
-        messageSelection.onload = loadContextStack;
-        messageSelection.onerror = loadContextStack;
-        document.body.appendChild(messageSelection);
+        document.body.appendChild(script);
       };
-      document.body.appendChild(script);
+
+      // Build 171: install the single fetch owner before app.js and before any
+      // legacy feature layer can capture/replace window.fetch. If the asset is
+      // unavailable, fall back to the previous boot path rather than bricking UI.
+      const network = document.createElement('script');
+      network.src = `/network171.js${buildSuffix}`;
+      network.dataset.fpNetwork171 = '1';
+      network.onload = loadApp;
+      network.onerror = () => {
+        console.error('[FPChat] Build 171 network coordinator failed to load; using legacy fetch chain.');
+        loadApp();
+      };
+      document.body.appendChild(network);
     })();
   </script>
 </body>
