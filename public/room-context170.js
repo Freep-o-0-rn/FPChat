@@ -1,11 +1,13 @@
-/* Build 170: room/operation context owner foundation.
-   First stage only defines ownership and cancellation semantics; legacy chat logic
-   keeps running until each path is migrated and regression-tested. */
+/* Build 170: room/operation context owner.
+   Visible-room transitions are separated from long-running send/upload operations.
+   A pending room transition does not cancel the currently displayed room until
+   the new room is ready to commit. */
 (() => {
   if (window.FPRoomContext170) return;
 
   let generation = 0;
-  let currentRoomContext = null;
+  let activeRoomContext = null;
+  let pendingTransition = null;
   let nextOperationId = 1;
   const operations = new Map();
 
@@ -18,8 +20,10 @@
     return {
       roomId: context.roomId,
       generation: context.generation,
+      phase: context.phase,
       aborted: context.signal.aborted,
-      startedAt: context.startedAt
+      startedAt: context.startedAt,
+      committedAt: context.committedAt || null
     };
   }
 
@@ -31,40 +35,96 @@
     } catch {}
   }
 
-  function beginRoom(roomId, key = null) {
+  function abortContext(context, reason) {
+    if (!context || context.signal.aborted) return;
+    try { context.controller.abort(String(reason || 'cancelled')); }
+    catch { context.controller.abort(); }
+  }
+
+  function createContext(roomId, phase, key = null) {
     const id = normalizeRoomId(roomId);
     if (!id) throw new Error('roomId required');
-
-    const previous = currentRoomContext;
-    if (previous && !previous.signal.aborted) {
-      try { previous.controller.abort('room-context-replaced'); } catch { previous.controller.abort(); }
-      dispatch('fpchat:room-context-ended', previous, { reason: 'replaced' });
-    }
-
     const controller = new AbortController();
-    const context = Object.freeze({
+    return {
       roomId: id,
       generation: ++generation,
+      phase,
       key,
       controller,
       signal: controller.signal,
-      startedAt: performance.now()
-    });
-    currentRoomContext = context;
-    dispatch('fpchat:room-context-changed', context);
+      startedAt: performance.now(),
+      committedAt: null
+    };
+  }
+
+  // Starts an attempt to open a room. The currently visible room remains valid
+  // until commitTransition() succeeds. A newer attempt invalidates only the
+  // previous pending attempt.
+  function beginTransition(roomId) {
+    if (pendingTransition) {
+      abortContext(pendingTransition, 'superseded');
+      dispatch('fpchat:room-transition-ended', pendingTransition, { reason: 'superseded' });
+    }
+    const context = createContext(roomId, 'pending');
+    pendingTransition = context;
+    dispatch('fpchat:room-transition-started', context);
     return context;
   }
 
+  function isLatestTransition(context) {
+    return Boolean(
+      context
+      && pendingTransition === context
+      && context.phase === 'pending'
+      && !context.signal.aborted
+    );
+  }
+
+  function cancelTransition(context = pendingTransition, reason = 'cancelled') {
+    if (!context || pendingTransition !== context) return false;
+    abortContext(context, reason);
+    pendingTransition = null;
+    dispatch('fpchat:room-transition-ended', context, { reason: String(reason || 'cancelled') });
+    return true;
+  }
+
+  function commitTransition(context, key = null) {
+    if (!isLatestTransition(context)) return null;
+
+    if (activeRoomContext && activeRoomContext !== context) {
+      abortContext(activeRoomContext, 'room-replaced');
+      dispatch('fpchat:room-context-ended', activeRoomContext, { reason: 'room-replaced' });
+    }
+
+    context.phase = 'active';
+    context.key = key;
+    context.committedAt = performance.now();
+    activeRoomContext = context;
+    pendingTransition = null;
+    dispatch('fpchat:room-context-changed', context);
+    dispatch('fpchat:room-transition-ended', context, { reason: 'committed' });
+    return context;
+  }
+
+  // Compatibility helper for code that already has a fully validated room.
+  function beginRoom(roomId, key = null) {
+    const transition = beginTransition(roomId);
+    return commitTransition(transition, key);
+  }
+
   function current() {
-    return currentRoomContext;
+    return activeRoomContext;
+  }
+
+  function pending() {
+    return pendingTransition;
   }
 
   function isCurrent(context) {
     return Boolean(
       context
-      && currentRoomContext === context
-      && context.generation === currentRoomContext.generation
-      && context.roomId === currentRoomContext.roomId
+      && activeRoomContext === context
+      && context.phase === 'active'
       && !context.signal.aborted
     );
   }
@@ -78,12 +138,10 @@
     return context;
   }
 
-  function endRoom(context = currentRoomContext, reason = 'ended') {
-    if (!context) return false;
-    if (!context.signal.aborted) {
-      try { context.controller.abort(String(reason || 'ended')); } catch { context.controller.abort(); }
-    }
-    if (currentRoomContext === context) currentRoomContext = null;
+  function endRoom(context = activeRoomContext, reason = 'ended') {
+    if (!context || activeRoomContext !== context) return false;
+    abortContext(context, reason);
+    activeRoomContext = null;
     dispatch('fpchat:room-context-ended', context, { reason: String(reason || 'ended') });
     return true;
   }
@@ -110,22 +168,32 @@
   function finishOperation(operation, status = 'complete') {
     if (!operation || !operations.has(operation.id)) return false;
     operations.delete(operation.id);
-    dispatch('fpchat:operation-ended', null, { operationId: operation.id, kind: operation.kind, status: String(status || 'complete') });
+    dispatch('fpchat:operation-ended', null, {
+      operationId: operation.id,
+      kind: operation.kind,
+      status: String(status || 'complete')
+    });
     return true;
   }
 
   function cancelOperation(operation, reason = 'cancelled') {
     if (!operation || !operations.has(operation.id)) return false;
-    try { operation.controller.abort(String(reason || 'cancelled')); } catch { operation.controller.abort(); }
+    try { operation.controller.abort(String(reason || 'cancelled')); }
+    catch { operation.controller.abort(); }
     operations.delete(operation.id);
-    dispatch('fpchat:operation-ended', null, { operationId: operation.id, kind: operation.kind, status: 'cancelled' });
+    dispatch('fpchat:operation-ended', null, {
+      operationId: operation.id,
+      kind: operation.kind,
+      status: 'cancelled'
+    });
     return true;
   }
 
   function snapshot() {
     return {
       generation,
-      current: publicContext(currentRoomContext),
+      active: publicContext(activeRoomContext),
+      pending: publicContext(pendingTransition),
       operations: [...operations.values()].map((operation) => ({
         id: operation.id,
         kind: operation.kind,
@@ -136,8 +204,13 @@
   }
 
   window.FPRoomContext170 = Object.freeze({
+    beginTransition,
+    isLatestTransition,
+    cancelTransition,
+    commitTransition,
     beginRoom,
     current,
+    pending,
     isCurrent,
     guard,
     endRoom,
@@ -147,5 +220,10 @@
     snapshot
   });
 
-  try { window.FPRuntime?.registerOwner?.('room-context170', { role: 'room-context', mode: 'migration' }); } catch {}
+  try {
+    window.FPRuntime?.registerOwner?.('room-context170', {
+      role: 'room-context',
+      mode: 'active-transition-owner'
+    });
+  } catch {}
 })();
