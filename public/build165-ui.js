@@ -1,25 +1,34 @@
-/* Build 169: safe presentation bridge, blocked-voice feedback, diagnostics and storage layers. */
+/* Build 170: safe presentation bridge, blocked-voice feedback, diagnostics, room context and storage layers. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 169';
+  const BUILD_LABEL = 'Build 170';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=169'; }
-    catch { return '?v=169'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=170'; }
+    catch { return '?v=170'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
-  // Build 169 diagnostics are intentionally passive. Loading this module must not
-  // delay or replace any existing owner; failure to load it must not block FPChat.
+  // Build 169 diagnostics remain passive in Build 170.
   if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
     const runtime = document.createElement('script');
     runtime.src = `/runtime169.js${storageSuffix}`;
     runtime.dataset.fpRuntime169 = '1';
     runtime.async = true;
     document.body.appendChild(runtime);
+  }
+
+  // Build 170 starts with ownership primitives only. Legacy room logic keeps
+  // running until each path is migrated and regression-tested.
+  if (!window.FPRoomContext170 && !document.querySelector('script[data-fp-room-context170]')) {
+    const roomContext = document.createElement('script');
+    roomContext.src = `/room-context170.js${storageSuffix}`;
+    roomContext.dataset.fpRoomContext170 = '1';
+    roomContext.async = true;
+    document.body.appendChild(roomContext);
   }
 
   function patchBuildLabels() {
