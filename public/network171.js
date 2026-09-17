@@ -77,7 +77,7 @@
     }
   }
 
-  function continuationFor(spec) {
+  function continuationForSpec(spec) {
     if (continuationCache.has(spec.id)) return continuationCache.get(spec.id);
     const continuation = function fpNetwork171Continuation(input, init) {
       return dispatchAfter(spec.priority, input, init);
@@ -105,21 +105,62 @@
     __fpNetworkOwner: { value: 'FPNetwork171' }
   });
 
-  function registerLegacyAssignment(spec, wrapper, source) {
-    const current = layers.get(spec.id);
-    layers.set(spec.id, {
-      id: spec.id,
-      priority: spec.priority,
-      source,
+  function installLayer({ id, priority, wrapper, source = 'runtime', mode = 'native' }) {
+    const safeId = String(id || '').trim();
+    const safePriority = Number(priority);
+    if (!safeId) throw new TypeError('FPNetwork171 layer id is required');
+    if (!Number.isFinite(safePriority)) throw new TypeError(`FPNetwork171 layer ${safeId} requires numeric priority`);
+    if (typeof wrapper !== 'function') throw new TypeError(`FPNetwork171 layer ${safeId} requires a function`);
+
+    const current = layers.get(safeId);
+    layers.set(safeId, {
+      id: safeId,
+      priority: safePriority,
+      source: String(source || mode || 'runtime'),
+      mode: String(mode || 'native'),
       wrapper
     });
-    if (!current || current.wrapper !== wrapper) stats.registrations += 1;
+    continuationCache.delete(safeId);
+    if (!current || current.wrapper !== wrapper || current.priority !== safePriority) stats.registrations += 1;
 
     try {
       window.dispatchEvent(new CustomEvent('fpchat:network171-layer', {
-        detail: { id: spec.id, priority: spec.priority, source }
+        detail: { id: safeId, priority: safePriority, source: String(source || 'runtime'), mode: String(mode || 'native') }
       }));
     } catch {}
+
+    return () => {
+      const installed = layers.get(safeId);
+      if (!installed || installed.wrapper !== wrapper) return false;
+      layers.delete(safeId);
+      continuationCache.delete(safeId);
+      return true;
+    };
+  }
+
+  // First-class API for Build 171+ code. Handler receives a stable next()
+  // continuation, so new modules never assign window.fetch themselves.
+  function use({ id, priority, handler, source = 'module' } = {}) {
+    if (typeof handler !== 'function') throw new TypeError('FPNetwork171.use requires handler');
+    const safeId = String(id || '').trim();
+    const safePriority = Number(priority);
+    const next = function fpNetwork171Next(input, init) {
+      return dispatchAfter(safePriority, input, init);
+    };
+    const wrapper = function fpNetwork171Middleware(input, init) {
+      return handler({ input, init, next, nativeFetch, fetch: coordinatorFetch });
+    };
+    return installLayer({ id: safeId, priority: safePriority, wrapper, source, mode: 'middleware' });
+  }
+
+  function registerLegacyAssignment(spec, wrapper, source) {
+    return installLayer({
+      id: spec.id,
+      priority: spec.priority,
+      wrapper,
+      source,
+      mode: 'legacy-adapter'
+    });
   }
 
   function noteRejectedAssignment(value) {
@@ -144,7 +185,7 @@
     enumerable: true,
     get() {
       const spec = specForCurrentScript();
-      return spec ? continuationFor(spec) : coordinatorFetch;
+      return spec ? continuationForSpec(spec) : coordinatorFetch;
     },
     set(value) {
       if (value === coordinatorFetch) return;
@@ -172,6 +213,7 @@
           id: layer.id,
           priority: layer.priority,
           source: layer.source,
+          mode: layer.mode,
           calls: layerStats(layer.id).calls,
           failures: layerStats(layer.id).failures
         })),
@@ -183,21 +225,27 @@
     return layers.has(String(id || ''));
   }
 
+  function registerRuntimeOwner() {
+    try {
+      window.FPRuntime?.registerOwner?.('network171', {
+        role: 'fetch-owner',
+        mode: 'active-owner',
+        publicOwner: 'window.fetch'
+      });
+    } catch {}
+  }
+
   window.FPNetwork171 = Object.freeze({
     fetch: coordinatorFetch,
     nativeFetch,
+    use,
     snapshot,
     hasLayer,
     expectedLayers: Object.freeze(Object.values(LEGACY_SPECS).map((item) => ({ ...item })))
   });
 
-  try {
-    window.FPRuntime?.registerOwner?.('network171', {
-      role: 'fetch-owner',
-      mode: 'active-owner',
-      publicOwner: 'window.fetch'
-    });
-  } catch {}
+  registerRuntimeOwner();
+  window.addEventListener('fpchat:boot-ready', registerRuntimeOwner, { once: true, passive: true });
 
   try {
     window.dispatchEvent(new CustomEvent('fpchat:network171-ready', { detail: snapshot() }));
