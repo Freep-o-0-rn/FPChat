@@ -1,4 +1,4 @@
-/* Build 121: transient Telegram-like typing, media and voice activity indicator. */
+/* Build 170: transient Telegram-like typing/media activity using connection and room events. */
 (() => {
   const STOP_DELAY_MS = 3000;
   const START_HEARTBEAT_MS = 1500;
@@ -206,9 +206,6 @@
     window.fetch = wrappedFetch;
   }
 
-  // FPChat's current media pipeline uses XMLHttpRequest in
-  // uploadEncryptedMediaXhr(), not fetch(). Keep the existing upload function
-  // untouched and observe only the exact /media/upload request here.
   if (xhrProto && baseXhrOpen && baseXhrSend && !xhrProto.__fpActivityWrapped) {
     const wrappedOpen = function fpActivityXhrOpen(method, url, ...rest) {
       this.__fpActivityRequestUrl = url;
@@ -325,17 +322,26 @@
 
   function attachCurrentWs() {
     const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    if (ws === attachedWs) return;
     if (attachedWs) {
       try { attachedWs.removeEventListener('message', handleWsMessage); } catch {}
     }
-    attachedWs = ws;
+    attachedWs = ws || null;
+    if (!ws) return;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => {
       for (const [roomId, entry] of localMediaUploads) sendMediaPulse(roomId, entry);
       const input = document.getElementById('msgInput');
       if (!hasLocalMediaUpload() && document.activeElement === input && String(input?.value || '').length > 0) pulseLocalTyping(input);
     }, { once: true });
+  }
+
+  function syncRoomTransition() {
+    const roomId = currentRoomId();
+    if (activeTypingRoomId && activeTypingRoomId !== roomId) stopLocalTyping(activeTypingRoomId);
+    if (!renderRemoteActivity() && !isRoomClosed() && baseRenderPresenceStatus) {
+      try { baseRenderPresenceStatus(); } catch {}
+    }
   }
 
   if (baseRenderPresenceStatus && !baseRenderPresenceStatus.__fpTypingWrapped) {
@@ -395,18 +401,12 @@
     }
   });
 
-  let lastRoomId = currentRoomId();
-  setInterval(() => {
-    attachCurrentWs();
-    const roomId = currentRoomId();
-    if (lastRoomId !== roomId) {
-      if (activeTypingRoomId && activeTypingRoomId !== roomId) stopLocalTyping(activeTypingRoomId);
-      lastRoomId = roomId;
-      if (!renderRemoteActivity() && !isRoomClosed() && baseRenderPresenceStatus) {
-        try { baseRenderPresenceStatus(); } catch {}
-      }
-    }
-  }, 500);
+  window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
+  window.addEventListener('fpchat:room-context-changed', syncRoomTransition, { passive: true });
+  window.addEventListener('fpchat:room-context-ended', syncRoomTransition, { passive: true });
+  window.addEventListener('fpchat:room-open170', (event) => {
+    if (event?.detail?.stage === 'ready' || event?.detail?.stage === 'left') syncRoomTransition();
+  }, { passive: true });
 
   attachCurrentWs();
 })();
