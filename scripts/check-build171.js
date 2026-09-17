@@ -6,6 +6,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const failures = [];
+let finished = false;
 
 function read(relative) {
   return fs.readFileSync(path.join(root, relative), 'utf8');
@@ -22,6 +23,20 @@ function parseJs(relative) {
   return source;
 }
 
+function finish() {
+  if (finished) return;
+  finished = true;
+  if (failures.length) {
+    console.error('[Build171 check] FAILED');
+    for (const failure of failures) console.error(` - ${failure}`);
+    process.exitCode = 1;
+  } else {
+    console.log('[Build171 check] OK');
+    console.log('Network owner, deterministic adapter order and cache-format invariants are present.');
+    console.log('This does not replace the manual multi-device regression suite.');
+  }
+}
+
 const networkSource = parseJs('public/network171.js');
 const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
@@ -29,7 +44,8 @@ const packageJson = JSON.parse(read('package.json'));
 
 assert(Number(version.build) === 171, 'public/version.json must report build 171');
 assert(indexSource.includes('/network171.js'), 'index.html must load network171.js');
-assert(indexSource.indexOf('/network171.js') < indexSource.indexOf('/app.js'), 'network171.js must be loaded before app.js');
+assert(indexSource.includes('network.onload = loadApp'), 'app.js must be gated by successful network171 load');
+assert(indexSource.includes('network.onerror = () =>'), 'index.html must retain a safe legacy boot fallback');
 assert(networkSource.includes("Object.defineProperty(window, 'fetch'"), 'network171 must own window.fetch through a stable property');
 assert(networkSource.includes('configurable: false'), 'network171 fetch ownership must not be replaceable after install');
 assert(networkSource.includes('nativeFetch'), 'network171 must keep the browser native fetch terminal');
@@ -67,6 +83,7 @@ try {
   const calls = [];
   const context = {
     console,
+    URL,
     location: { href: 'https://fpchat.test/' },
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     document: {},
@@ -115,19 +132,4 @@ try {
 } catch (error) {
   failures.push(`network171 setup simulation failed: ${error.message}`);
   finish();
-}
-
-let finished = false;
-function finish() {
-  if (finished) return;
-  finished = true;
-  if (failures.length) {
-    console.error('[Build171 check] FAILED');
-    for (const failure of failures) console.error(` - ${failure}`);
-    process.exitCode = 1;
-  } else {
-    console.log('[Build171 check] OK');
-    console.log('Network owner, deterministic adapter order and cache-format invariants are present.');
-    console.log('This does not replace the manual multi-device regression suite.');
-  }
 }
