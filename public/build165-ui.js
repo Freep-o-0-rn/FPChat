@@ -1,18 +1,18 @@
-/* Build 170: safe presentation bridge, blocked-voice feedback, diagnostics, room context and storage layers. */
+/* Build 171: safe presentation bridge, blocked-voice feedback, diagnostics, room context and storage layers. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 170';
+  const BUILD_LABEL = 'Build 171';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=170'; }
-    catch { return '?v=170'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=171'; }
+    catch { return '?v=171'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
-  // Build 169 diagnostics remain passive in Build 170.
+  // Build 169 diagnostics remain passive in Build 171.
   if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
     const runtime = document.createElement('script');
     runtime.src = `/runtime169.js${storageSuffix}`;
@@ -21,8 +21,7 @@
     document.body.appendChild(runtime);
   }
 
-  // Build 170 starts with ownership primitives only. Legacy room logic keeps
-  // running until each path is migrated and regression-tested.
+  // Build 170 ownership primitives remain active under the Build 171 network owner.
   if (!window.FPRoomContext170 && !document.querySelector('script[data-fp-room-context170]')) {
     const roomContext = document.createElement('script');
     roomContext.src = `/room-context170.js${storageSuffix}`;
@@ -105,6 +104,9 @@
   document.addEventListener('pointerdown', blockVoiceUiEvent, true);
   document.addEventListener('click', blockVoiceUiEvent, true);
 
+  // Build 171 captures this assignment into FPNetwork171 as a named transport
+  // layer. In fallback mode (network171.js failed to load), this remains the
+  // exact legacy wrapper used by Build 166-170.
   if (!window.__fpVoiceBlockFetch166Wrapped) {
     window.__fpVoiceBlockFetch166Wrapped = true;
     const baseFetch = window.fetch.bind(window);
