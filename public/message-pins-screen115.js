@@ -1,4 +1,4 @@
-/* Build 115: pinned-messages screen with stable thumbnails and iOS-safe long press. */
+/* Build 170: pinned-messages screen with event-driven WebSocket tracking. */
 (() => {
   const LONG_PRESS_MS = 450;
   const MOVE_CANCEL_PX = 12;
@@ -380,11 +380,18 @@
   }
 
   function attachWs() {
-    const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    const ws = state?.ws || null;
+    if (ws === attachedWs) return;
     if (attachedWs) try { attachedWs.removeEventListener('message', handleWs); } catch {}
     attachedWs = ws;
+    if (!ws) return;
     ws.addEventListener('message', handleWs);
+  }
+
+  function handleLifecycle170(event) {
+    if (!view) return;
+    const type = String(event?.detail?.lastType || '');
+    if (type === 'foreground' || type === 'online' || type === 'pageshow') void refresh();
   }
 
   document.addEventListener('click', (event) => {
@@ -420,6 +427,14 @@
     if (view) { event.preventDefault(); closeScreen(); }
   }, true);
 
-  setInterval(attachWs, 500);
+  window.addEventListener('fpchat:connection170', attachWs, { passive: true });
+  window.addEventListener('fpchat:lifecycle170', handleLifecycle170, { passive: true });
+  window.addEventListener('fpchat:room-open170', (event) => {
+    const stage = event?.detail?.stage;
+    const roomId = String(event?.detail?.roomId || '');
+    if (stage === 'left') closeScreen();
+    if (stage === 'ready' && view && view.roomId === roomId) void refresh();
+  }, { passive: true });
+
   attachWs();
 })();
