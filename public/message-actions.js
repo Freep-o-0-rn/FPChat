@@ -1,4 +1,4 @@
-/* Build 108: isolated edit/delete actions for message context menu.
+/* Build 170: isolated edit/delete actions with event-driven connection attachment.
    Does not replace FPChat send/read/unread/scroll logic. */
 (() => {
   const ROOT = '.message-context-root';
@@ -14,6 +14,7 @@
   let attachedWs = null;
   let syncTimer = null;
   let syncAllInFlight = null;
+  let lastSyncStartedAt = 0;
 
   function numericId(value) {
     const id = Number(value);
@@ -569,14 +570,20 @@
     } catch {}
   }
 
-  async function syncAllRooms() {
+  async function syncAllRooms({ force = false } = {}) {
     if (syncAllInFlight) return syncAllInFlight;
+    const now = Date.now();
+    if (!force && now - lastSyncStartedAt < 1500) return false;
+    lastSyncStartedAt = now;
     syncAllInFlight = (async () => {
+      const activeRoomId = String(state?.roomId || '');
       const rooms = [...new Set((state?.chats || []).map((chat) => String(chat?.roomId || '')).filter(Boolean))];
+      rooms.sort((a, b) => (a === activeRoomId ? -1 : b === activeRoomId ? 1 : 0));
       for (const roomId of rooms) {
         const deviceId = roomDevice(roomId);
         if (deviceId) await syncRoom(roomId, deviceId);
       }
+      return true;
     })().finally(() => { syncAllInFlight = null; });
     return syncAllInFlight;
   }
@@ -595,15 +602,28 @@
   }
 
   function attachCurrentWs() {
-    const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    const ws = state?.ws || null;
+    if (ws === attachedWs) return;
     if (attachedWs) {
       try { attachedWs.removeEventListener('message', handleWsMessage); } catch {}
     }
     attachedWs = ws;
+    if (!ws) return;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => { void syncAllRooms(); }, { once: true });
     if (ws.readyState === WebSocket.OPEN) void syncAllRooms();
+  }
+
+  function handleLifecycle170(event) {
+    const type = String(event?.detail?.lastType || '');
+    if (type === 'foreground' || type === 'pageshow' || type === 'online') void syncAllRooms();
+  }
+
+  function handleRoomReady170(event) {
+    if (event?.detail?.stage !== 'ready') return;
+    const roomId = String(event.detail.roomId || state?.roomId || '');
+    const deviceId = roomDevice(roomId);
+    if (roomId && deviceId) void syncRoom(roomId, deviceId);
   }
 
   document.addEventListener('input', (event) => {
@@ -651,15 +671,13 @@
   observer.observe(document.body, { childList: true, subtree: true });
   document.querySelectorAll(ROOT).forEach(decorateContext);
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void syncAllRooms();
-  });
-  window.addEventListener('online', () => { void syncAllRooms(); });
+  window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
+  window.addEventListener('fpchat:lifecycle170', handleLifecycle170, { passive: true });
+  window.addEventListener('fpchat:room-open170', handleRoomReady170, { passive: true });
 
   attachCurrentWs();
-  setInterval(attachCurrentWs, 500);
   syncTimer = setInterval(() => {
     if (document.visibilityState === 'visible') void syncAllRooms();
   }, 30000);
-  void syncAllRooms();
+  void syncAllRooms({ force: true });
 })();
