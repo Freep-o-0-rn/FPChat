@@ -82,7 +82,9 @@
     bootTracker?.stop?.();
     gate?.remove();
     document.documentElement.removeAttribute('data-fp-boot152');
-    window.dispatchEvent(new CustomEvent('fpchat:boot-ready', { detail: { build: 152 } }));
+    const readyAt = performance.now();
+    window.__fpBootReady169At = readyAt;
+    window.dispatchEvent(new CustomEvent('fpchat:boot-ready', { detail: { build: 152, readyAtMs: readyAt } }));
   }
 
   async function prepare() {
