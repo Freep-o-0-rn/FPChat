@@ -1,6 +1,6 @@
 /* Build 170: guarded room-open owner.
-   Replaces only the public openChat path. Existing openChatWithJoinData/rendering,
-   scroll, presence, unread and WebSocket behavior stay unchanged. */
+   Owns room entry generations while preserving the existing render/scroll/message
+   implementation. Direct invite joins are brought into the same room context. */
 (() => {
   if (window.__fpRoomOpen170Installed) return;
 
@@ -13,6 +13,9 @@
   }
 
   window.__fpRoomOpen170Installed = true;
+
+  const legacyOpenChatWithJoinData = openChatWithJoinData;
+  const legacyLeaveActiveChat = typeof leaveActiveChat === 'function' ? leaveActiveChat : null;
 
   function normalizeRoomId(value) {
     return String(value || '').trim();
@@ -37,6 +40,57 @@
 
   function cancelIfLatest(context, reason) {
     if (isLatest(context)) contexts.cancelTransition(context, reason);
+  }
+
+  // All validated room data, including invite/join flows that bypass openChat(),
+  // now has a current room context. The existing renderer is still the worker.
+  openChatWithJoinData = async function openChatWithJoinData170(roomId, secret, deviceId, data, key = null) {
+    const normalizedRoomId = normalizeRoomId(roomId);
+    let activeContext = contexts.current();
+    let ownsContext = false;
+
+    if (!activeContext || activeContext.roomId !== normalizedRoomId || activeContext.signal?.aborted) {
+      const pending = contexts.pending();
+      if (pending && pending.roomId === normalizedRoomId && contexts.isLatestTransition(pending)) {
+        activeContext = contexts.commitTransition(pending, key);
+      } else {
+        activeContext = contexts.beginRoom(normalizedRoomId, key);
+      }
+      ownsContext = Boolean(activeContext);
+      if (activeContext) dispatch('committed-direct', activeContext);
+    }
+
+    if (!activeContext) return;
+
+    try {
+      const result = await legacyOpenChatWithJoinData(roomId, secret, deviceId, data, key);
+      if (!contexts.isCurrent(activeContext)) {
+        dispatch('stale-after-render', activeContext);
+        return result;
+      }
+      if (ownsContext) dispatch('ready', activeContext, { source: 'direct' });
+      return result;
+    } catch (error) {
+      if (ownsContext && contexts.isCurrent(activeContext)) {
+        contexts.endRoom(activeContext, 'open-failed');
+        dispatch('failed', activeContext, { source: 'direct' });
+      }
+      throw error;
+    }
+  };
+
+  if (legacyLeaveActiveChat && !legacyLeaveActiveChat.__fp170) {
+    const wrappedLeaveActiveChat = function leaveActiveChat170() {
+      const context = contexts.current();
+      const result = legacyLeaveActiveChat.apply(this, arguments);
+      if (context && contexts.isCurrent(context)) {
+        contexts.endRoom(context, 'left-room-view');
+        dispatch('left', context);
+      }
+      return result;
+    };
+    wrappedLeaveActiveChat.__fp170 = true;
+    leaveActiveChat = wrappedLeaveActiveChat;
   }
 
   openChat = async function openChat170(roomId) {
@@ -155,7 +209,7 @@
     window.FPRuntime?.registerOwner?.('room-open170', {
       role: 'open-chat',
       mode: 'active-owner',
-      replaces: 'legacy openChat'
+      replaces: 'legacy openChat entry'
     });
   } catch {}
 })();
