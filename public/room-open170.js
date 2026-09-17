@@ -226,6 +226,21 @@
     dispatch('ready', activeContext);
   };
 
+  // Build 170 can be loaded after the initial app boot. Adopt an already
+  // rendered room so operation guards do not wait for the next navigation.
+  try {
+    const existingRoomId = normalizeRoomId(state?.roomId);
+    if (existingRoomId && !contexts.current()) {
+      const adopted = contexts.beginRoom(existingRoomId, state?.key || null);
+      if (adopted) {
+        dispatch('adopted', adopted);
+        queueMicrotask(() => {
+          if (contexts.isCurrent(adopted)) dispatch('ready', adopted, { source: 'adopted' });
+        });
+      }
+    }
+  } catch {}
+
   try {
     window.FPRuntime?.registerOwner?.('room-open170', {
       role: 'open-chat',
