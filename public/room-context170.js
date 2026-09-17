@@ -57,9 +57,6 @@
     };
   }
 
-  // Starts an attempt to open a room. The currently visible room remains valid
-  // until commitTransition() succeeds. A newer attempt invalidates only the
-  // previous pending attempt.
   function beginTransition(roomId) {
     if (pendingTransition) {
       abortContext(pendingTransition, 'superseded');
@@ -106,7 +103,6 @@
     return context;
   }
 
-  // Compatibility helper for code that already has a fully validated room.
   function beginRoom(roomId, key = null) {
     const transition = beginTransition(roomId);
     return commitTransition(transition, key);
@@ -146,8 +142,6 @@
     return true;
   }
 
-  // Long-running sends/uploads are not children of the visible room context.
-  // They survive navigation until explicitly completed/cancelled by their owner.
   function beginOperation(roomId, kind = 'operation') {
     const id = normalizeRoomId(roomId);
     if (!id) throw new Error('roomId required');
@@ -227,8 +221,6 @@
     });
   } catch {}
 
-  // Temporary Build 170 migration chain. It is intentionally explicit and
-  // finite: no background polling is introduced to install these owners.
   const currentScript = document.currentScript;
   const suffix = (() => {
     try { return new URL(currentScript?.src || '', location.href).search || '?v=170'; }
@@ -243,20 +235,37 @@
     document.body.appendChild(script);
   }
 
-  function loadLifecycleOwner() {
-    if (window.FPLifecycle170) {
+  function loadConnectionOwner() {
+    if (window.FPConnection170) {
       loadRoomOpenOwner();
       return;
     }
-    const existing = document.querySelector('script[data-fp-lifecycle170]');
+    const existing = document.querySelector('script[data-fp-connection170]');
     if (existing) {
       existing.addEventListener('load', loadRoomOpenOwner, { once: true });
       return;
     }
     const script = document.createElement('script');
+    script.src = `/connection170.js${suffix}`;
+    script.dataset.fpConnection170 = '1';
+    script.onload = loadRoomOpenOwner;
+    document.body.appendChild(script);
+  }
+
+  function loadLifecycleOwner() {
+    if (window.FPLifecycle170) {
+      loadConnectionOwner();
+      return;
+    }
+    const existing = document.querySelector('script[data-fp-lifecycle170]');
+    if (existing) {
+      existing.addEventListener('load', loadConnectionOwner, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
     script.src = `/lifecycle170.js${suffix}`;
     script.dataset.fpLifecycle170 = '1';
-    script.onload = loadRoomOpenOwner;
+    script.onload = loadConnectionOwner;
     document.body.appendChild(script);
   }
 
