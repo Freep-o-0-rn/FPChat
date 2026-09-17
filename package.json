@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node -r ./src/message-actions-bootstrap.js server.js",
     "start:diag169": "node ./scripts/start-diagnostics169.js",
-    "db:diag169": "node ./scripts/db-baseline169.js"
+    "db:diag169": "node ./scripts/db-baseline169.js",
+    "check:170": "node ./scripts/check-build170.js"
   },
   "license": "MIT",
   "dependencies": {
