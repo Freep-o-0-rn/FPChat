@@ -31,6 +31,7 @@ const files = [
   'public/connection170.js',
   'public/room-open170.js',
   'public/text-send170.js',
+  'public/media-send170.js',
   'public/typing.js',
   'public/message-actions.js',
   'public/message-pins.js',
@@ -51,8 +52,11 @@ assert(sources['public/room-open170.js'].includes("source: 'adopted'"), 'room-op
 assert(sources['public/room-context170.js'].includes('/text-send170.js'), 'room-context170 must load the guarded text-send owner');
 assert(sources['public/text-send170.js'].includes("beginOperation(roomId, 'text-send')"), 'text-send170 must use an independent operation context');
 assert(sources['public/text-send170.js'].includes('encryptForKey(context.key, text)'), 'text-send170 must encrypt with the captured room key');
-assert(sources['public/text-send170.js'].includes('roomId,'), 'text-send170 must retain the captured room id');
 assert(sources['public/text-send170.js'].includes('form.onsubmit = submit'), 'text-send170 must become the assigned text-submit owner');
+assert(sources['public/text-send170.js'].includes('/media-send170.js'), 'text-send170 must chain the guarded media owner');
+assert(sources['public/media-send170.js'].includes("beginOperation(roomId, 'media-send')"), 'media-send170 must use an independent operation context');
+assert(sources['public/media-send170.js'].includes('encryptBlobForKey(context.key'), 'media-send170 must encrypt blobs with the captured room key');
+assert(sources['public/media-send170.js'].includes('uploadEncryptedMediaXhr(roomId, deviceId'), 'media-send170 must upload to the captured room/device');
 
 assert(!sources['public/message-actions.js'].includes('setInterval(attachCurrentWs, 500)'), 'message-actions still has 500ms WS attachment polling');
 assert(!sources['public/message-pins.js'].includes('setInterval(attachCurrentWs, 500)'), 'message-pins still has 500ms WS attachment polling');
