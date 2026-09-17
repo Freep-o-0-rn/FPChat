@@ -176,4 +176,16 @@
       retryOwner: 'pendingTextSends/app.js'
     });
   } catch {}
+
+  const currentScript = document.currentScript;
+  const suffix = (() => {
+    try { return new URL(currentScript?.src || '', location.href).search || '?v=170'; }
+    catch { return '?v=170'; }
+  })();
+  if (!window.__fpMediaSend170Installed && !document.querySelector('script[data-fp-media-send170]')) {
+    const script = document.createElement('script');
+    script.src = `/media-send170.js${suffix}`;
+    script.dataset.fpMediaSend170 = '1';
+    document.body.appendChild(script);
+  }
 })();
