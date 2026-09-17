@@ -4,7 +4,9 @@
   "description": "Private invite-based chat MVP with client-side encryption",
   "main": "server.js",
   "scripts": {
-    "start": "node -r ./src/message-actions-bootstrap.js server.js"
+    "start": "node -r ./src/message-actions-bootstrap.js server.js",
+    "start:diag169": "node ./scripts/start-diagnostics169.js",
+    "db:diag169": "node ./scripts/db-baseline169.js"
   },
   "license": "MIT",
   "dependencies": {
