@@ -10,6 +10,17 @@ Build 169 — диагностическая сборка. Она не долж�
 FPRuntime.snapshot()
 FPRuntime.inspect()
 FPRuntime.resourceSummary(60000)
+FPRuntime.capture('idle-list')
+await FPRuntime.sampleMemory()
+```
+
+Для ручного замера операции, которая ещё не имеет собственного владельца:
+
+```js
+const t = FPRuntime.startMeasure('manual-room-open');
+// выполнить действие
+FPRuntime.endMeasure(t);
+FPRuntime.measurementSummary();
 ```
 
 `inspect()` дополнительно показывает статически подтверждённые legacy-владельцы/polling из аудита. Это карта технического долга, а не утверждение, что каждый ресурс активен в конкретную секунду.
@@ -18,24 +29,26 @@ FPRuntime.resourceSummary(60000)
 
 FPRuntime обязан честно показывать поле `coverage`.
 
-- `timers` и `observers` — только зарегистрированные/известные; отсутствие записи не означает отсутствие ресурса.
+- `timers` и `observers` — статически известные и явно зарегистрированные; отсутствие записи не означает отсутствие ресурса.
+- `knownLegacyCounts` показывает только подтверждённые аудитом механизмы, а не полный runtime count.
 - `memory` зависит от браузера; WebKit может не предоставлять JS heap metrics.
 - `resourcesLastMinute` основан на Resource Timing и отражает завершённые сетевые ресурсы, которые браузер сохранил в performance buffer.
 - `websocket` в 169 — snapshot текущего состояния, не новый владелец соединения.
+- точное время открытия комнаты/reconnect до Build 170 не объявляется автоматически полным измерением; для этого есть ручной measurement API.
 
 FPRuntime не сохраняет текст сообщений, room secret, recovery code или deviceId.
 
 ## Сервер
 
-Сэмплер по умолчанию выключен и не меняет production startup.
+Production-команда `npm start` не изменена.
 
 Для диагностического запуска:
 
 ```bat
-set FPCHAT_DIAGNOSTICS=1
-set FPCHAT_DIAGNOSTICS_INTERVAL_MS=10000
-node -r ./scripts/server-runtime169.js -r ./src/message-actions-bootstrap.js server.js
+npm run start:diag169
 ```
+
+По умолчанию sampler пишет строку каждые 10 секунд. Интервал можно изменить переменной `FPCHAT_DIAGNOSTICS_INTERVAL_MS`.
 
 В консоль выводятся строки `[FPDiag169]` с:
 
@@ -45,7 +58,24 @@ node -r ./scripts/server-runtime169.js -r ./src/message-actions-bootstrap.js ser
 - event-loop utilization;
 - mean/p95/p99/max event-loop delay.
 
-Сэмплер не перехватывает HTTP/WS/SQLite и активируется только через `FPCHAT_DIAGNOSTICS=1`.
+Сэмплер не перехватывает HTTP/WS/SQLite и запускается только через отдельную диагностическую команду.
+
+### Read-only DB baseline
+
+Для агрегированной проверки текущей SQLite базы:
+
+```bat
+npm run db:diag169
+```
+
+Команда открывает БД read-only и выводит только:
+
+- количество строк по основным таблицам;
+- время выполнения агрегированных `COUNT(*)`;
+- список явных индексов;
+- `EXPLAIN QUERY PLAN` для history latest/before/after и media-by-message.
+
+Текст сообщений, nick, username, deviceId, ключи и содержимое media не выводятся.
 
 ## Сценарии baseline
 
@@ -69,22 +99,30 @@ node -r ./scripts/server-runtime169.js -r ./src/message-actions-bootstrap.js ser
 Клиент:
 
 - navigation timings;
-- `bootReadyMs`, если событие поймано;
+- точный `bootReadyMs`, когда marker Build 169 доступен;
 - completed resources/min по категориям;
 - long task count/duration;
 - DOM node count и число message bubbles;
 - JS heap, если поддерживается;
 - errors/unhandled rejections;
-- websocket readyState.
+- websocket readyState;
+- статически известные legacy polling/observer/owner counts;
+- повторные `capture()` в одинаковых контрольных точках.
 
-Сервер при включённом sampler:
+Сервер при диагностическом запуске:
 
 - RSS/external/arrayBuffers;
 - event-loop delay;
 - event-loop utilization;
 - поведение памяти до/после media upload.
 
-DB query count/timing в первом диагностическом этапе не выдаётся как «0»: полноценная DB instrumentation должна быть добавлена отдельно и не должна monkey-patch'ить рабочую БД без необходимости.
+SQLite read-only baseline:
+
+- row counts;
+- explicit indexes;
+- query plans для основных history/media запросов.
+
+Полноценный runtime DB query count/timing в Build 169 не выдаётся как `0`: его нет без отдельной инструментализации рабочих statements.
 
 ## Обязательная регрессия Build 168
 
@@ -108,6 +146,7 @@ DB query count/timing в первом диагностическом этапе 
 
 - UX и логика соответствуют Build 168.
 - FPRuntime работает в shadow mode и не становится владельцем существующих механизмов.
+- Production `npm start` остаётся прежним.
 - Диагностика не публикует приватные данные.
 - В baseline нет новых стабильных JS errors/rejections.
 - Измерения имеют указанное покрытие; неизвестное не показывается как ноль.
