@@ -226,4 +226,39 @@
       mode: 'active-transition-owner'
     });
   } catch {}
+
+  // Temporary Build 170 migration chain. It is intentionally explicit and
+  // finite: no background polling is introduced to install these owners.
+  const currentScript = document.currentScript;
+  const suffix = (() => {
+    try { return new URL(currentScript?.src || '', location.href).search || '?v=170'; }
+    catch { return '?v=170'; }
+  })();
+
+  function loadRoomOpenOwner() {
+    if (window.__fpRoomOpen170Installed || document.querySelector('script[data-fp-room-open170]')) return;
+    const script = document.createElement('script');
+    script.src = `/room-open170.js${suffix}`;
+    script.dataset.fpRoomOpen170 = '1';
+    document.body.appendChild(script);
+  }
+
+  function loadLifecycleOwner() {
+    if (window.FPLifecycle170) {
+      loadRoomOpenOwner();
+      return;
+    }
+    const existing = document.querySelector('script[data-fp-lifecycle170]');
+    if (existing) {
+      existing.addEventListener('load', loadRoomOpenOwner, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = `/lifecycle170.js${suffix}`;
+    script.dataset.fpLifecycle170 = '1';
+    script.onload = loadRoomOpenOwner;
+    document.body.appendChild(script);
+  }
+
+  loadLifecycleOwner();
 })();
