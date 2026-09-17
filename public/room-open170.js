@@ -16,6 +16,7 @@
 
   const legacyOpenChatWithJoinData = openChatWithJoinData;
   const legacyLeaveActiveChat = typeof leaveActiveChat === 'function' ? leaveActiveChat : null;
+  const legacySetView = typeof setView === 'function' ? setView : null;
 
   function normalizeRoomId(value) {
     return String(value || '').trim();
@@ -40,6 +41,14 @@
 
   function cancelIfLatest(context, reason) {
     if (isLatest(context)) contexts.cancelTransition(context, reason);
+  }
+
+  function cancelPendingNavigation(reason = 'navigation') {
+    const pending = contexts.pending();
+    if (!pending) return false;
+    const cancelled = contexts.cancelTransition(pending, reason);
+    if (cancelled) dispatch('cancelled', pending, { reason });
+    return cancelled;
   }
 
   // All validated room data, including invite/join flows that bypass openChat(),
@@ -81,6 +90,7 @@
 
   if (legacyLeaveActiveChat && !legacyLeaveActiveChat.__fp170) {
     const wrappedLeaveActiveChat = function leaveActiveChat170() {
+      cancelPendingNavigation('leave-active-chat');
       const context = contexts.current();
       const result = legacyLeaveActiveChat.apply(this, arguments);
       if (context && contexts.isCurrent(context)) {
@@ -91,6 +101,17 @@
     };
     wrappedLeaveActiveChat.__fp170 = true;
     leaveActiveChat = wrappedLeaveActiveChat;
+  }
+
+  // A pending join can exist while state.roomId is still empty (opening from the
+  // chat list). Any explicit navigation must invalidate that pending result.
+  if (legacySetView && !legacySetView.__fp170) {
+    const wrappedSetView = function setView170(view) {
+      cancelPendingNavigation(`set-view:${String(view || '')}`);
+      return legacySetView.apply(this, arguments);
+    };
+    wrappedSetView.__fp170 = true;
+    setView = wrappedSetView;
   }
 
   openChat = async function openChat170(roomId) {
