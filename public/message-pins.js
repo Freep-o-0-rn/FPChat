@@ -1,4 +1,4 @@
-/* Build 113: isolated hybrid shared/personal message pins layer. */
+/* Build 170: isolated hybrid shared/personal message pins layer with event-driven connection attachment. */
 (() => {
   const ROOT = '.message-context-root';
   const MENU = '.message-context-menu';
@@ -422,12 +422,13 @@
   }
 
   function attachCurrentWs() {
-    const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    const ws = state?.ws || null;
+    if (ws === attachedWs) return;
     if (attachedWs) {
       try { attachedWs.removeEventListener('message', handleWsMessage); } catch {}
     }
     attachedWs = ws;
+    if (!ws) return;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => { const id = roomId(); if (id) void fetchPins(id); }, { once: true });
     if (ws.readyState === WebSocket.OPEN) { const id = roomId(); if (id) void fetchPins(id); }
@@ -438,6 +439,11 @@
     if (!id || !document.querySelector('.chat-view')) return;
     bindPinScroll();
     void fetchPins(id);
+  }
+
+  function handleLifecycle170(event) {
+    const type = String(event?.detail?.lastType || '');
+    if (type === 'foreground' || type === 'online' || type === 'pageshow') syncCurrentChat();
   }
 
   const observer = new MutationObserver((records) => {
@@ -456,10 +462,16 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') syncCurrentChat();
-  });
-  window.addEventListener('online', syncCurrentChat);
+  window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
+  window.addEventListener('fpchat:lifecycle170', handleLifecycle170, { passive: true });
+  window.addEventListener('fpchat:room-open170', (event) => {
+    if (event?.detail?.stage === 'ready') syncCurrentChat();
+    if (event?.detail?.stage === 'left') {
+      document.querySelector('.chat-pin-bar')?.remove();
+      closePinsScreen();
+    }
+  }, { passive: true });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && screenState) {
       event.preventDefault();
@@ -468,7 +480,6 @@
   }, true);
 
   attachCurrentWs();
-  setInterval(attachCurrentWs, 500);
   document.querySelectorAll(ROOT).forEach(decorateContext);
   syncCurrentChat();
 })();
