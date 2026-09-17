@@ -11,7 +11,16 @@ Build 170 выполняется только в `build/170-development`. `main`
 - Новый переход отменяет предыдущий pending transition, но не закрывает текущую отображаемую комнату до commit новой.
 - Явная навигация из чата/списка отменяет незавершённое открытие, поэтому поздний `/join` не может самопроизвольно открыть экран после ухода пользователя.
 - Direct invite/join через `openChatWithJoinData` использует тот же RoomContext.
-- Send/upload operation context отделён от видимого room context и не отменяется автоматически только из-за навигации.
+- Если Build 170 загружается после уже открытого чата, существующая комната принимается как active context без повторного открытия.
+
+### Операции отправки
+
+- Text send передан `text-send170`: в начале операции фиксируются `roomId`, room key, `deviceId`, reply и `clientMessageId`-совместимая текущая retry-механика.
+- После `await` текст не использует новый `state.roomId/state.key`; шифрование выполняется ключом исходной комнаты, payload содержит исходный `roomId`.
+- Media send передан `media-send170`: фото/video продолжают использовать существующий XHR progress/retry и тот же server API, но encryption/upload/message payload привязаны к исходным room/key/device.
+- Text/media operations живут отдельно от видимого room context и не перенаправляются в другую комнату при навигации.
+- `pendingTextSends` остаётся существующей оперативной retry-очередью; persistent queue в Build 170 не добавляется.
+- Voice уже до Build 170 хранит `roomId/deviceId` внутри recording data и использует `getRoomKey(roomId)` при upload/send; формат и voice flow не переписываются.
 
 ### Lifecycle
 
@@ -20,7 +29,7 @@ Build 170 выполняется только в `build/170-development`. `main`
   - online/offline;
   - focus/blur;
   - pageshow/pagehide.
-- Новые/перенесённые слои используют этот поток вместо собственного периодического определения состояния.
+- Новые/перенесённые слои используют этот поток вместо собственного периодического определения состояния там, где ownership уже передан.
 
 ### WebSocket lifecycle
 
@@ -53,8 +62,8 @@ Build 170 выполняется только в `build/170-development`. `main`
 ## Что Build 170 намеренно не меняет
 
 - формат сообщений и API;
-- E2EE/ключи/формат media;
-- `pendingTextSends` и retry semantics;
+- E2EE-формат ciphertext/media;
+- `pendingTextSends` retry semantics;
 - read/received/unread/checkmarks;
 - presence и block privacy;
 - Storage 167/168 и `fpchat-media-v167`;
@@ -85,7 +94,8 @@ npm run check:170
 - парсит изменённые JS-файлы без исполнения browser-кода;
 - подтверждает Build 170;
 - подтверждает, что `connection170` не создаёт второй `WebSocket`;
-- проверяет наличие room-generation guard;
+- проверяет наличие room-generation guard и late-boot adoption;
+- проверяет, что text/media отправка использует operation context и захваченные room/key/device;
 - проверяет отсутствие старых 500 мс WS attach loops в мигрированных модулях;
 - проверяет сохранение cache-format `fpchat-media-v167`.
 
@@ -100,14 +110,16 @@ npm run check:170
 5. Background → foreground 10–30 секунд.
 6. Offline → online и повторное подключение WS.
 7. Text send + retry/reconnect + `clientMessageId` dedupe.
-8. Reply/edit/delete/reactions/pins.
-9. Unread, first unread, lazy history, scroll restore, ✓/✓✓/синие ✓✓.
-10. Typing/presence с обычными пользователями и с блокировкой.
-11. Фото/video/file/voice, включая voice preview и повторную отправку.
-12. Media cache/autoload/clear во время загрузки.
-13. Long-press/context menu/selection/swipe navigation.
-14. Клавиатура/viewport на iPhone PWA и слабом Android.
-15. Проверить, что после многократного A → B → A количество подписок/обработчиков не проявляется дублированными событиями (двойные edit/pin/typing updates).
+8. Начать text send и сразу перейти A → B: сообщение должно остаться привязано к A и не появиться как отправка в B.
+9. Начать загрузку фото/video и перейти A → B: media upload/message должны сохранить исходную комнату A; прогресс/ошибка не должны ломать B.
+10. Reply/edit/delete/reactions/pins.
+11. Unread, first unread, lazy history, scroll restore, ✓/✓✓/синие ✓✓.
+12. Typing/presence с обычными пользователями и с блокировкой.
+13. Фото/video/file/voice, включая voice preview и повторную отправку.
+14. Media cache/autoload/clear во время загрузки.
+15. Long-press/context menu/selection/swipe navigation.
+16. Клавиатура/viewport на iPhone PWA и слабом Android.
+17. После многократного A → B → A не должно быть двойных edit/pin/typing updates или других признаков накопившихся обработчиков.
 
 ## Статус приёмки
 
