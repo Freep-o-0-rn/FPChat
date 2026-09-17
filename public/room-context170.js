@@ -227,11 +227,28 @@
     catch { return '?v=170'; }
   })();
 
+  function loadTextSendOwner() {
+    if (window.__fpTextSend170Installed || document.querySelector('script[data-fp-text-send170]')) return;
+    const script = document.createElement('script');
+    script.src = `/text-send170.js${suffix}`;
+    script.dataset.fpTextSend170 = '1';
+    document.body.appendChild(script);
+  }
+
   function loadRoomOpenOwner() {
-    if (window.__fpRoomOpen170Installed || document.querySelector('script[data-fp-room-open170]')) return;
+    if (window.__fpRoomOpen170Installed) {
+      loadTextSendOwner();
+      return;
+    }
+    const existing = document.querySelector('script[data-fp-room-open170]');
+    if (existing) {
+      existing.addEventListener('load', loadTextSendOwner, { once: true });
+      return;
+    }
     const script = document.createElement('script');
     script.src = `/room-open170.js${suffix}`;
     script.dataset.fpRoomOpen170 = '1';
+    script.onload = loadTextSendOwner;
     document.body.appendChild(script);
   }
 
