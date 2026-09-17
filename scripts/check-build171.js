@@ -49,6 +49,7 @@ assert(indexSource.includes('network.onerror = () =>'), 'index.html must retain 
 assert(networkSource.includes("Object.defineProperty(window, 'fetch'"), 'network171 must own window.fetch through a stable property');
 assert(networkSource.includes('configurable: false'), 'network171 fetch ownership must not be replaceable after install');
 assert(networkSource.includes('nativeFetch'), 'network171 must keep the browser native fetch terminal');
+assert(networkSource.includes('function use('), 'network171 must expose the first-class middleware API');
 assert(packageJson.scripts?.['check:171'] === 'node ./scripts/check-build171.js', 'package.json must expose npm run check:171');
 
 const allowedLegacyFiles = new Set([
@@ -89,6 +90,7 @@ try {
     document: {},
     window: {
       dispatchEvent() {},
+      addEventListener() {},
       fetch: async () => { calls.push('native'); return { ok: true }; }
     }
   };
