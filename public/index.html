@@ -386,16 +386,34 @@
         document.body.appendChild(script);
       };
 
-      // Build 171: install the single fetch owner before app.js and before any
-      // legacy feature layer can capture/replace window.fetch. If the asset is
-      // unavailable, fall back to the previous boot path rather than bricking UI.
+      // Build 172: MessageStore must exist before app.js so the legacy
+      // messageCache surface becomes an adapter instead of a second state owner.
+      // A load failure still falls back to the previous app path rather than
+      // leaving the user on the boot screen.
+      let storeLoadStarted = false;
+      const loadMessageStoreThenApp = () => {
+        if (storeLoadStarted) return;
+        storeLoadStarted = true;
+        const store = document.createElement('script');
+        store.src = `/message-store172.js${buildSuffix}`;
+        store.dataset.fpMessageStore172 = '1';
+        store.onload = loadApp;
+        store.onerror = () => {
+          console.error('[FPChat] Build 172 MessageStore failed to load; using legacy messageCache.');
+          loadApp();
+        };
+        document.body.appendChild(store);
+      };
+
+      // Build 171 remains the single fetch/XHR owner and still loads before
+      // app.js and before legacy feature modules.
       const network = document.createElement('script');
       network.src = `/network171.js${buildSuffix}`;
       network.dataset.fpNetwork171 = '1';
-      network.onload = loadApp;
+      network.onload = loadMessageStoreThenApp;
       network.onerror = () => {
         console.error('[FPChat] Build 171 network coordinator failed to load; using legacy fetch chain.');
-        loadApp();
+        loadMessageStoreThenApp();
       };
       document.body.appendChild(network);
     })();
