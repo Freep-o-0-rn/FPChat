@@ -633,13 +633,18 @@
     legacyCacheAdapter
   });
 
-  try {
-    window.FPRuntime?.registerOwner?.('message-store172', {
-      role: 'canonical-message-state',
-      mode: 'active-owner',
-      publicOwner: 'FPMessageStore172'
-    });
-  } catch {}
+  function registerRuntimeOwner() {
+    try {
+      window.FPRuntime?.registerOwner?.('message-store172', {
+        role: 'canonical-message-state',
+        mode: 'active-owner',
+        publicOwner: 'FPMessageStore172'
+      });
+    } catch {}
+  }
+
+  registerRuntimeOwner();
+  window.addEventListener?.('fpchat:boot-ready', registerRuntimeOwner, { once: true, passive: true });
 
   try {
     window.dispatchEvent(new CustomEvent('fpchat:message-store172-ready', { detail: snapshot() }));
