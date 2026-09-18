@@ -124,8 +124,11 @@
     }
   }
 
-  function tombstoneCache(messageId, author = '') {
-    if (typeof messageCache === 'undefined') return;
+  function tombstoneCache(roomId, messageId, author = '', scope = 'all') {
+    try {
+      window.FPMessageStore172?.markDeleted?.(roomId, messageId, { scope, author, source: 'message-actions' });
+    } catch {}
+    if (typeof messageCache === 'undefined' || String(state?.roomId || '') !== String(roomId || '')) return;
     const previous = messageCache.get(Number(messageId));
     messageCache.set(Number(messageId), {
       id: Number(messageId),
@@ -201,7 +204,7 @@
     }
 
     if (editState?.roomId === roomId && editState.messageId === id) cancelEdit(true);
-    tombstoneCache(id, author);
+    tombstoneCache(roomId, id, author, scope);
     markReplyBlocksDeleted(id);
     clearReplyDraftIfNeeded(roomId, id);
 
@@ -236,13 +239,18 @@
       return;
     }
     const preview = typeof makeReplyPreview === 'function' ? makeReplyPreview(text) : text.slice(0, 120);
-    if (typeof messageCache !== 'undefined') {
+    try {
+      const merged = window.FPMessageStore172?.applyEdit?.(roomId, message, text, { preview, kind: 'text' });
+      if (merged?.record?.deleted) return;
+      if (merged && merged.contentApplied === false && typeof merged.record?.text === 'string') text = merged.record.text;
+    } catch {}
+    if (typeof messageCache !== 'undefined' && String(state?.roomId || '') === String(roomId)) {
       const previous = messageCache.get(id);
       messageCache.set(id, {
         id,
         author: message.sender_name || previous?.author || 'Неизвестно',
         text,
-        preview,
+        preview: typeof makeReplyPreview === 'function' ? makeReplyPreview(text) : text.slice(0, 120),
         kind: 'text'
       });
     }
@@ -301,7 +309,7 @@
       const id = numericId(message?.id);
       const deviceId = roomDevice(roomId);
       if (id && roomId && ((deviceId && hiddenSet(roomId, deviceId).has(id)) || deletedSet(roomId).has(id) || message?.deleted_for_all)) {
-        tombstoneCache(id, message?.sender_name || '');
+        tombstoneCache(roomId, id, message?.sender_name || '', message?.deleted_for_all ? 'all' : 'self');
         return;
       }
       const result = base.apply(this, arguments);
@@ -506,6 +514,10 @@
     deletedByRoom.set(roomId, deleted);
     saveIdSet(HIDDEN_KEY(roomId, deviceId), hidden);
     saveIdSet(DELETED_KEY(roomId), deleted);
+    try {
+      for (const id of hidden) window.FPMessageStore172?.markDeleted?.(roomId, id, { scope: 'self', source: 'message-actions-state' });
+      for (const id of deleted) window.FPMessageStore172?.markDeleted?.(roomId, id, { scope: 'all', source: 'message-actions-state' });
+    } catch {}
 
     if (String(state?.roomId || '') === String(roomId)) {
       const box = document.getElementById('messages');
@@ -513,7 +525,7 @@
         [...box.querySelectorAll('.bubble-wrap.msg')].forEach((el) => {
           const id = numericId(el.dataset.messageId || el.dataset.id);
           if (id && (hidden.has(id) || deleted.has(id))) {
-            tombstoneCache(id, el.querySelector('b')?.textContent || '');
+            tombstoneCache(roomId, id, el.querySelector('b')?.textContent || '', deleted.has(id) ? 'all' : 'self');
             keepViewportWhileRemoving(box, el);
           }
         });
