@@ -1,18 +1,18 @@
-/* Build 171: safe presentation bridge, blocked-voice feedback, diagnostics, room context and storage layers. */
+/* Build 172: presentation bridge with Build 169-171 owners and MessageStore compatibility. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 171';
+  const BUILD_LABEL = 'Build 172';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=171'; }
-    catch { return '?v=171'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=172'; }
+    catch { return '?v=172'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
-  // Build 169 diagnostics remain passive in Build 171.
+  // Build 169 diagnostics remain passive in Build 172.
   if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
     const runtime = document.createElement('script');
     runtime.src = `/runtime169.js${storageSuffix}`;
@@ -21,7 +21,7 @@
     document.body.appendChild(runtime);
   }
 
-  // Build 170 ownership primitives remain active under the Build 171 network owner.
+  // Build 170 ownership primitives remain active under the Build 171 network owner in Build 172.
   if (!window.FPRoomContext170 && !document.querySelector('script[data-fp-room-context170]')) {
     const roomContext = document.createElement('script');
     roomContext.src = `/room-context170.js${storageSuffix}`;
