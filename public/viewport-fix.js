@@ -302,10 +302,49 @@
     settleViewport();
   }, { passive: true });
 
-  // Chat DOM is rebuilt when a room is opened/closed/restored. Re-evaluate the
-  // managed viewport without coupling this fix to the chat rendering code.
-  const observer = new MutationObserver(requestViewportSync);
-  observer.observe(document.getElementById('contentPane') || app, { childList: true, subtree: true });
+  // Build 173: chat/composer mount state now comes from the centralized DOM
+  // lifecycle owner. The broad subtree observer is retained only as a fallback.
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('chat', 'mounted', settleViewport);
+    window.FPDOM173.on('chat', 'unmounted', settleViewport);
+    window.FPDOM173.on('composer', 'mounted', settleViewport);
+    window.FPDOM173.on('composer', 'unmounted', settleViewport);
+  } else {
+    const observer = new MutationObserver(requestViewportSync);
+    observer.observe(document.getElementById('contentPane') || app, { childList: true, subtree: true });
+  }
+
+  window.FPViewport173 = Object.freeze({
+    owners: Object.freeze({
+      geometry: 'viewport-fix158',
+      keyboardState: 'FPViewport136',
+      messageScroll: 'FPScroll173'
+    }),
+    sync: requestViewportSync,
+    settle: settleViewport,
+    stopBottomPin,
+    snapshot: () => ({
+      owner: 'FPViewport173',
+      chatOpen: chatIsOpen(),
+      composerFocused: composerIsFocused(),
+      correctionY: Math.round(correctionY || 0),
+      closedViewportHeight: Math.round(closedViewportHeight || 0),
+      visibleHeight: Math.round(currentVisibleHeight() || 0),
+      bottomPin: Boolean(pinBottom)
+    })
+  });
+
+  const registerRuntime = () => {
+    try {
+      window.FPRuntime?.registerOwner?.('viewport-geometry173', {
+        role: 'mobile-viewport-geometry-owner',
+        mode: 'active-owner',
+        publicOwner: 'FPViewport173'
+      });
+    } catch {}
+  };
+  registerRuntime();
+  window.addEventListener?.('fpchat:boot-ready', registerRuntime, { once: true, passive: true });
 
   settleViewport();
 })();
