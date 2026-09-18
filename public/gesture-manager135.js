@@ -67,8 +67,13 @@
   }
 
   function detectLayer(target = null) {
-    // Highest layer wins globally. This is intentional: an overlay owns the
-    // whole interaction surface even if an old element remains underneath it.
+    // Build 173: use explicit layer state when available. This removes repeated
+    // document-wide selector/layout scans from touchmove/pointermove hot paths.
+    try {
+      if (window.FPLayer173?.currentLayer) return window.FPLayer173.currentLayer(target);
+    } catch {}
+
+    // Compatibility fallback for a failed Build 173 owner asset.
     if (firstVisible('.media-viewer-overlay')) return 'viewer';
 
     if (firstVisible(MODAL_SELECTORS)) return 'modal';
@@ -241,12 +246,26 @@
     shouldBlockUnderlyingNavigation,
     resetLegacyDrawerSwipe,
     snapshot: () => ({
+      owner: 'FPGesture135',
+      layerSource: window.FPLayer173 ? 'FPLayer173' : 'legacy-dom-fallback',
       touch: touchSession ? { id: touchSession.id, layer: touchSession.layer } : null,
       pointer: pointerSession ? { id: pointerSession.id, layer: pointerSession.layer } : null,
       topLayer: detectLayer(),
       recent: recent.slice()
     })
   });
+
+  const registerRuntime = () => {
+    try {
+      window.FPRuntime?.registerOwner?.('gesture-manager173', {
+        role: 'gesture-arbiter',
+        mode: 'active-owner',
+        publicOwner: 'FPGesture135 + FPLayer173'
+      });
+    } catch {}
+  };
+  registerRuntime();
+  window.addEventListener?.('fpchat:boot-ready', registerRuntime, { once: true, passive: true });
 
   syncBodyLayer();
 })();
