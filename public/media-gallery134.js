@@ -386,6 +386,10 @@
     window.addEventListener('pointerdown', (event) => {
       const overlay = event.target?.closest?.('.media-viewer-overlay.fp-gallery134');
       if (!overlay || event.pointerType === 'mouse' || event.button !== 0) return;
+      try {
+        const manager = window.FPGesture135;
+        if (manager && manager.currentLayer(event, event.target) !== 'viewer') return;
+      } catch { return; }
       if (event.target?.closest?.('.media-viewer-close,.media-viewer-nav,.media-error-box button')) return;
       const stage = overlay.querySelector('.fp-gallery134-stage');
       const track = overlay.querySelector('.fp-gallery134-track');
