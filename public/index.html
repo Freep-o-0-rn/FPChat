@@ -386,6 +386,37 @@
         document.body.appendChild(script);
       };
 
+      // Build 173 owners load before app.js. This is dependency wiring, not
+      // startup optimization: DOM lifecycle and layer ownership must exist before
+      // feature modules begin mounting UI and gestures.
+      let owners173Started = false;
+      const load173OwnersThenApp = () => {
+        if (owners173Started) return;
+        owners173Started = true;
+
+        const loadLayer = () => {
+          const layer = document.createElement('script');
+          layer.src = `/layer-manager173.js${buildSuffix}`;
+          layer.dataset.fpLayerManager173 = '1';
+          layer.onload = loadApp;
+          layer.onerror = () => {
+            console.error('[FPChat] Build 173 LayerManager failed to load; using legacy gesture layer detection.');
+            loadApp();
+          };
+          document.body.appendChild(layer);
+        };
+
+        const domLifecycle = document.createElement('script');
+        domLifecycle.src = `/dom-lifecycle173.js${buildSuffix}`;
+        domLifecycle.dataset.fpDomLifecycle173 = '1';
+        domLifecycle.onload = loadLayer;
+        domLifecycle.onerror = () => {
+          console.error('[FPChat] Build 173 DOM lifecycle failed to load; LayerManager will use compatibility state.');
+          loadLayer();
+        };
+        document.body.appendChild(domLifecycle);
+      };
+
       // Build 172: MessageStore must exist before app.js so the legacy
       // messageCache surface becomes an adapter instead of a second state owner.
       // A load failure still falls back to the previous app path rather than
@@ -397,10 +428,10 @@
         const store = document.createElement('script');
         store.src = `/message-store172.js${buildSuffix}`;
         store.dataset.fpMessageStore172 = '1';
-        store.onload = loadApp;
+        store.onload = load173OwnersThenApp;
         store.onerror = () => {
           console.error('[FPChat] Build 172 MessageStore failed to load; using legacy messageCache.');
-          loadApp();
+          load173OwnersThenApp();
         };
         document.body.appendChild(store);
       };
