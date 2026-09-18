@@ -667,23 +667,33 @@
   installAppendWrapper();
   installStatusWrapper();
 
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches(ROOT)) decorateContext(node);
-        node.querySelectorAll?.(ROOT).forEach(decorateContext);
-        const root = node.closest?.(ROOT);
-        if (root) decorateContext(root);
-        if (node.id === 'messages' || node.querySelector?.('#messages')) {
-          const roomId = String(state?.roomId || '');
-          const deviceId = roomDevice(roomId);
-          if (roomId && deviceId) void syncRoom(roomId, deviceId);
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('context', 'mounted', ({ node }) => decorateContext(node));
+    window.FPDOM173.on('chat', 'mounted', () => {
+      const roomId = String(state?.roomId || '');
+      const deviceId = roomDevice(roomId);
+      if (roomId && deviceId) void syncRoom(roomId, deviceId);
+    });
+  } else {
+    // Compatibility fallback only if Build 173 DOM lifecycle is unavailable.
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(ROOT)) decorateContext(node);
+          node.querySelectorAll?.(ROOT).forEach(decorateContext);
+          const root = node.closest?.(ROOT);
+          if (root) decorateContext(root);
+          if (node.id === 'messages' || node.querySelector?.('#messages')) {
+            const roomId = String(state?.roomId || '');
+            const deviceId = roomDevice(roomId);
+            if (roomId && deviceId) void syncRoom(roomId, deviceId);
+          }
         }
       }
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
   document.querySelectorAll(ROOT).forEach(decorateContext);
 
   window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
