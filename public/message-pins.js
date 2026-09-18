@@ -446,21 +446,26 @@
     if (type === 'foreground' || type === 'online' || type === 'pageshow') syncCurrentChat();
   }
 
-  const observer = new MutationObserver((records) => {
-    let chatAdded = false;
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches(ROOT)) decorateContext(node);
-        node.querySelectorAll?.(ROOT).forEach(decorateContext);
-        const root = node.closest?.(ROOT);
-        if (root) decorateContext(root);
-        if (node.matches('.chat-view,#messages') || node.querySelector?.('.chat-view,#messages')) chatAdded = true;
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('context', 'mounted', ({ node }) => decorateContext(node));
+    window.FPDOM173.on('chat', 'mounted', syncCurrentChat);
+  } else {
+    const observer = new MutationObserver((records) => {
+      let chatAdded = false;
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(ROOT)) decorateContext(node);
+          node.querySelectorAll?.(ROOT).forEach(decorateContext);
+          const root = node.closest?.(ROOT);
+          if (root) decorateContext(root);
+          if (node.matches('.chat-view,#messages') || node.querySelector?.('.chat-view,#messages')) chatAdded = true;
+        }
       }
-    }
-    if (chatAdded) syncCurrentChat();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
+      if (chatAdded) syncCurrentChat();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
 
   window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
   window.addEventListener('fpchat:lifecycle170', handleLifecycle170, { passive: true });
