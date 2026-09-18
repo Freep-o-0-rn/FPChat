@@ -17,7 +17,12 @@
   const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
   const chatIsOpen = () => Boolean(document.querySelector(".chat-view") && document.getElementById("messages"));
   const modernSettingsRoot = () => document.querySelector('.fp-settings131');
-  const mediaViewerIsOpen = () => Boolean(document.querySelector('#mediaViewerRoot .media-viewer-overlay'));
+  const mediaViewerIsOpen = () => {
+    try {
+      if (window.FPLayer173?.topLayer) return window.FPLayer173.topLayer() === 'viewer';
+    } catch {}
+    return Boolean(document.querySelector('#mediaViewerRoot .media-viewer-overlay'));
+  };
   const gestureManager = () => window.FPGesture135 || null;
   const settingsIsOpen = () => {
     if (modernSettingsRoot()) return true;
