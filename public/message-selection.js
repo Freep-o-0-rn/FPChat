@@ -405,47 +405,71 @@
     exitSelection();
   }, true);
 
-  const observer = new MutationObserver((records) => {
-    let selectionChanged = false;
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('context', 'mounted', ({ node }) => decorateContext(node));
+    window.FPDOM173.on('message', 'mounted', ({ node }) => {
+      if (selection && isSelectableMessage(node)) ensureCheck(node);
+    });
+    window.FPDOM173.on('message', 'unmounted', ({ node }) => {
+      if (!selection || !isSelectableMessage(node)) return;
+      const id = messageId(node);
+      if (!id || !selection.ids.has(id)) return;
+      queueMicrotask(() => {
+        if (!selection || messageElement(id)) return;
+        selection.ids.delete(id);
+        selection.mineById.delete(id);
+        updateBars();
+      });
+    });
+    window.FPDOM173.on('chat', 'unmounted', () => {
+      if (!selection) return;
+      queueMicrotask(() => {
+        if (selection && (currentRoomId() !== selection.roomId || !document.querySelector('.chat-view'))) exitSelection();
+      });
+    });
+  } else {
+    const observer = new MutationObserver((records) => {
+      let selectionChanged = false;
 
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches(ROOT)) decorateContext(node);
-        node.querySelectorAll?.(ROOT).forEach(decorateContext);
-        const root = node.closest?.(ROOT);
-        if (root) decorateContext(root);
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(ROOT)) decorateContext(node);
+          node.querySelectorAll?.(ROOT).forEach(decorateContext);
+          const root = node.closest?.(ROOT);
+          if (root) decorateContext(root);
 
-        if (selection) {
-          if (isSelectableMessage(node)) ensureCheck(node);
-          node.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => { if (isSelectableMessage(el)) ensureCheck(el); });
+          if (selection) {
+            if (isSelectableMessage(node)) ensureCheck(node);
+            node.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => { if (isSelectableMessage(el)) ensureCheck(el); });
+          }
+        }
+
+        if (!selection) continue;
+        for (const node of record.removedNodes) {
+          if (!(node instanceof Element)) continue;
+          const candidates = [];
+          if (node.matches?.(MESSAGE_LOCAL)) candidates.push(node);
+          node.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => candidates.push(el));
+          for (const el of candidates) {
+            const id = messageId(el);
+            if (!id || !selection.ids.has(id) || messageElement(id)) continue;
+            selection.ids.delete(id);
+            selection.mineById.delete(id);
+            selectionChanged = true;
+          }
         }
       }
 
-      if (!selection) continue;
-      for (const node of record.removedNodes) {
-        if (!(node instanceof Element)) continue;
-        const candidates = [];
-        if (node.matches?.(MESSAGE_LOCAL)) candidates.push(node);
-        node.querySelectorAll?.(MESSAGE_LOCAL).forEach((el) => candidates.push(el));
-        for (const el of candidates) {
-          const id = messageId(el);
-          if (!id || !selection.ids.has(id) || messageElement(id)) continue;
-          selection.ids.delete(id);
-          selection.mineById.delete(id);
-          selectionChanged = true;
-        }
+      if (!selection) return;
+      if (currentRoomId() !== selection.roomId || !document.querySelector('.chat-view')) {
+        exitSelection();
+        return;
       }
-    }
-
-    if (!selection) return;
-    if (currentRoomId() !== selection.roomId || !document.querySelector('.chat-view')) {
-      exitSelection();
-      return;
-    }
-    if (selectionChanged) updateBars();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
+      if (selectionChanged) updateBars();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
 
   document.querySelectorAll(ROOT).forEach(decorateContext);
 })();
