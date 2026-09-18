@@ -7,7 +7,7 @@ const initialNotificationSettings=normalizeNotificationSettings(storedNotificati
 function getOrCreateDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(current))return current;const deviceId=crypto.randomUUID();localStorage.setItem(STORAGE.deviceId,deviceId);return deviceId;}
 const state={view:'chats',roomId:null,secret:null,key:null,ws:null,me:null,chats:STORAGE.get(STORAGE.activeChatsKey)||[],roomNames:STORAGE.get(STORAGE.roomNames)||{},nick:localStorage.getItem(STORAGE.nick)||`Гость-${String(Math.floor(Math.random()*100000)).padStart(5,'0')}`,notif:initialNotificationSettings,roomMute:STORAGE.get(STORAGE.roomMute)||{},presence:{},localConnectionState:'disconnected',drafts:{}};localStorage.setItem(STORAGE.nick,state.nick);if(!storedNotificationSettings)STORAGE.set(STORAGE.notif,state.notif);
 let savedActiveRoomIds=new Set(state.chats.map((chat)=>String(chat?.roomId||'')).filter(Boolean));
-const messageCache=new Map();
+const messageCache=window.FPMessageStore172?.legacyCacheAdapter?.(()=>String(state?.roomId||''))||new Map();
 const SWIPE_REPLY_THRESHOLD=52;
 const SWIPE_CANCEL_VERTICAL=28;
 const CHAT_BACK_SWIPE_THRESHOLD=80;
