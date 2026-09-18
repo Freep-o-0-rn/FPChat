@@ -253,6 +253,20 @@
     cleanupViewerReturn();
     const viewerRoot = document.getElementById('mediaViewerRoot');
     if (!viewerRoot) return;
+
+    // Build 173: media-gallery134 is the single viewer gesture owner. Context
+    // only waits for the viewer to really close, then restores its hidden layer.
+    if (window.FPLayer173 && window.FPDOM173?.on) {
+      const off = window.FPDOM173.on('viewer', 'unmounted', () => {
+        queueMicrotask(() => {
+          if (!contextState) return;
+          if (!viewerRoot.querySelector('.media-viewer-overlay')) restoreContextAfterViewer();
+        });
+      });
+      viewerGestureCleanup = off;
+      return;
+    }
+
     let gesture = null;
 
     const onStart = (event) => {
