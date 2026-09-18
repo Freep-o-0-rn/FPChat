@@ -574,6 +574,12 @@ const scrollCoordinator={phase:'idle',roomId:null,box:null,generation:0,pendingB
   focus(target,behavior='smooth',topGap=8){const box=this.box||target?.closest?.('#messages');if(!target||!box||this.isOpening())return false;const boxRect=box.getBoundingClientRect();const rect=target.getBoundingClientRect();return this.write(box,box.scrollTop+rect.top-boxRect.top-topGap,behavior);},
   preservePrepend(box,beforeTop,beforeHeight,loaderHeight=0){if(!isCurrentMessagesBox(box)||this.phase==='opening')return;this.write(box,beforeTop+box.scrollHeight-beforeHeight+loaderHeight,'auto');}
 };
+window.FPScroll173=scrollCoordinator;
+const registerScrollOwner173=()=>{
+  try{window.FPRuntime?.registerOwner?.('scroll173',{role:'message-scroll-owner',mode:'active-owner',publicOwner:'FPScroll173'});}catch{}
+};
+registerScrollOwner173();
+window.addEventListener?.('fpchat:boot-ready',registerScrollOwner173,{once:true,passive:true});
 function scrollMessagesToBottom(box){scrollCoordinator.requestBottom(box);}
 function scrollToFirstUnread(box=document.getElementById('messages')){const firstUnread=getFirstUnreadMessageElement(box);return Boolean(firstUnread&&scrollCoordinator.focus(firstUnread,'auto',8));}
 
