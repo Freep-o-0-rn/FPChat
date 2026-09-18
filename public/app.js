@@ -145,6 +145,9 @@ function setupChatBackSwipe(chatView){
   if(!chatView)return;
   let swipe=null;
   chatView.addEventListener('touchstart',(e)=>{
+    // Build 173: swipe-fix + FPGesture135 is the active navigation gesture owner.
+    // Keep this legacy handler only as a fallback if that owner failed to load.
+    if(window.FPGesture135)return;
     if(!isMobileViewport()||state.view!=='chats'||!state.roomId)return;
     if(els.sidebar?.classList.contains('open'))return;
     if(!els.context?.classList.contains('hidden'))return;
@@ -1208,6 +1211,8 @@ els.sidebarOverlay?.addEventListener('click',closeMobileMenu);
 document.addEventListener('keydown',(e)=>{if(e.key==='Escape')closeMobileMenu();});
 window.addEventListener('resize',()=>{if(!isMobileViewport())closeMobileMenu();});
 document.addEventListener('touchstart',(e)=>{
+  // Build 173: the legacy drawer swipe is fallback-only once the gesture owner is active.
+  if(window.FPGesture135)return;
   if(!isMobileViewport())return;
   if(els.sidebar?.classList.contains('open'))return;
   if(!els.context?.classList.contains('hidden'))return;
@@ -1217,6 +1222,7 @@ document.addEventListener('touchstart',(e)=>{
   edgeSwipe={active:true,startX:touch.clientX,startY:touch.clientY,tracking:true};
 },{passive:true});
 document.addEventListener('touchmove',(e)=>{
+  if(window.FPGesture135){edgeSwipe.tracking=false;return;}
   if(!edgeSwipe.tracking)return;
   const touch=e.touches?.[0];
   if(!touch)return;
