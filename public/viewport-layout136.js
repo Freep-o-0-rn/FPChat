@@ -211,11 +211,19 @@
     settle();
   });
 
-  const observer = new MutationObserver(requestSync);
-  observer.observe(document.getElementById('contentPane') || document.body, {
-    childList: true,
-    subtree: true,
-  });
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('chat', 'mounted', settle);
+    window.FPDOM173.on('chat', 'unmounted', settle);
+    window.FPDOM173.on('composer', 'mounted', settle);
+    window.FPDOM173.on('composer', 'unmounted', settle);
+  } else {
+    // Compatibility fallback only if Build 173 DOM lifecycle failed to load.
+    const observer = new MutationObserver(requestSync);
+    observer.observe(document.getElementById('contentPane') || document.body, {
+      childList: true,
+      subtree: true,
+    });
+  }
 
   window.FPViewport136 = Object.freeze({
     snapshot() {
@@ -230,6 +238,18 @@
     },
     sync: settle,
   });
+
+  const registerRuntime = () => {
+    try {
+      window.FPRuntime?.registerOwner?.('viewport-keyboard173', {
+        role: 'keyboard-state-owner',
+        mode: 'active-owner',
+        publicOwner: 'FPViewport136'
+      });
+    } catch {}
+  };
+  registerRuntime();
+  window.addEventListener?.('fpchat:boot-ready', registerRuntime, { once: true, passive: true });
 
   settle();
 })();
