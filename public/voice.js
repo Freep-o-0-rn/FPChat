@@ -1336,36 +1336,52 @@
     } catch {}
   }
 
-  const observer = new MutationObserver((records) => {
-    let composerChanged = false;
-    let messagesChanged = false;
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        if (node.id === 'sendForm' || node.querySelector?.('#sendForm')) composerChanged = true;
-        if (node.matches?.('.bubble-wrap.msg') || node.querySelector?.('.bubble-wrap.msg')) messagesChanged = true;
-      }
-    }
-    if (composerChanged) ensureComposer();
-    if (messagesChanged) {
-      for (const messageId of voiceMessages.keys()) decorateVoiceMessage(messageId);
-    }
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  setInterval(() => {
+  function handleRoomChange173(roomId = currentRoomId()) {
+    const nextRoomId = String(roomId || '');
     ensureComposer();
-    const roomId = currentRoomId();
-    if (roomId !== lastRoomId) {
-      stopActivePlayback(false);
-      clearVoiceBlobCache();
-      voiceMessages.clear();
-      if (recordingState && recordingState.roomId !== roomId) stopRecording('cancel');
-      if (previewState && previewState.roomId !== roomId) clearPreview(false);
-      lastRoomId = roomId;
-      if (roomId) void refreshVoiceSnapshot(roomId);
-    }
-  }, 500);
+    if (nextRoomId === lastRoomId) return;
+    stopActivePlayback(false);
+    clearVoiceBlobCache();
+    voiceMessages.clear();
+    if (recordingState && recordingState.roomId !== nextRoomId) stopRecording('cancel');
+    if (previewState && previewState.roomId !== nextRoomId) clearPreview(false);
+    lastRoomId = nextRoomId;
+    if (nextRoomId) void refreshVoiceSnapshot(nextRoomId);
+  }
+
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('composer', 'mounted', () => ensureComposer());
+    window.FPDOM173.on('message', 'mounted', ({ node }) => {
+      const messageId = String(node?.dataset?.messageId || node?.dataset?.id || '');
+      if (messageId) decorateVoiceMessage(messageId);
+    });
+    window.FPDOM173.on('chat', 'mounted', () => handleRoomChange173());
+    window.FPDOM173.on('chat', 'unmounted', () => queueMicrotask(() => handleRoomChange173()));
+    window.addEventListener('fpchat:room-open170', (event) => {
+      const stage = String(event?.detail?.stage || '');
+      if (stage === 'ready' || stage === 'committed-direct') handleRoomChange173(event.detail.roomId || currentRoomId());
+      if (stage === 'left') handleRoomChange173('');
+    }, { passive: true });
+  } else {
+    // Compatibility fallback only if the Build 173 DOM lifecycle owner failed.
+    const observer = new MutationObserver((records) => {
+      let composerChanged = false;
+      let messagesChanged = false;
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.id === 'sendForm' || node.querySelector?.('#sendForm')) composerChanged = true;
+          if (node.matches?.('.bubble-wrap.msg') || node.querySelector?.('.bubble-wrap.msg')) messagesChanged = true;
+        }
+      }
+      if (composerChanged) ensureComposer();
+      if (messagesChanged) {
+        for (const messageId of voiceMessages.keys()) decorateVoiceMessage(messageId);
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    setInterval(() => handleRoomChange173(), 500);
+  }
 
   window.addEventListener('resize', () => {
     for (const [messageId] of voiceMessages) {
