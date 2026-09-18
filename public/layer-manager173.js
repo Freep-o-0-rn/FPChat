@@ -49,6 +49,7 @@
   let composerNode = null;
   let bodyObserver = null;
   let sidebarObserver = null;
+  let legacyContextObserver = null;
 
   function priority(layer) {
     return PRIORITY[layer] ?? PRIORITY.base;
@@ -166,6 +167,12 @@
     setClaim('drawer', 'sidebar:open', Boolean(sidebar?.classList.contains('open')));
   }
 
+  function syncLegacyContextClaim() {
+    const menu = document.getElementById('contextMenu');
+    const active = Boolean(menu && !menu.classList.contains('hidden') && !menu.hidden);
+    setClaim('context', 'legacy-context-menu', active);
+  }
+
   function syncVoiceClaim() {
     const form = composerNode;
     const active = Boolean(
@@ -205,6 +212,7 @@
     bindComposer(document.getElementById('sendForm'));
     syncBodyClaims();
     syncSidebarClaim();
+    syncLegacyContextClaim();
   }
 
   function installTargetedObservers() {
@@ -217,6 +225,11 @@
     if (sidebar) {
       sidebarObserver = new MutationObserver(syncSidebarClaim);
       sidebarObserver.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    }
+    const legacyContext = document.getElementById('contextMenu');
+    if (legacyContext) {
+      legacyContextObserver = new MutationObserver(syncLegacyContextClaim);
+      legacyContextObserver.observe(legacyContext, { attributes: true, attributeFilter: ['class', 'hidden'] });
     }
   }
 
