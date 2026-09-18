@@ -126,7 +126,10 @@
 
   function tombstoneCache(roomId, messageId, author = '', scope = 'all') {
     try {
-      window.FPMessageStore172?.markDeleted?.(roomId, messageId, { scope, author, source: 'message-actions' });
+      if (window.FPMessageStore172) {
+        window.FPMessageStore172.markDeleted(roomId, messageId, { scope, author, source: 'message-actions' });
+        return;
+      }
     } catch {}
     if (typeof messageCache === 'undefined' || String(state?.roomId || '') !== String(roomId || '')) return;
     const previous = messageCache.get(Number(messageId));
