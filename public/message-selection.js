@@ -317,6 +317,10 @@
 
   function handleSelectionTouchStart(event) {
     if (!selection || event.touches?.length !== 1) return;
+    try {
+      const manager = window.FPGesture135;
+      if (manager && manager.currentLayer(event, event.target) !== 'selection') return;
+    } catch { return; }
     const messages = document.getElementById('messages');
     if (!messages?.contains(event.target)) return;
     const touch = event.touches[0];
