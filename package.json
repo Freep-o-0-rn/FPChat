@@ -9,7 +9,8 @@
     "db:diag169": "node ./scripts/db-baseline169.js",
     "check:170": "node ./scripts/check-build170.js",
     "check:171": "node ./scripts/check-build171.js",
-    "check:172": "node ./scripts/check-build172.js"
+    "check:172": "node ./scripts/check-build172.js",
+    "check:173": "node ./scripts/check-build173.js"
   },
   "license": "MIT",
   "dependencies": {
