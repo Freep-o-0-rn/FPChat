@@ -529,7 +529,7 @@
 
   function roomSnapshot(roomId) {
     const room = roomFor(roomId, false);
-    if (!room) return { roomId: normalizeRoomId(roomId), messages: 0, deleted: 0, replySources: 0, version: 0 };
+    if (!room) return { messages: 0, deleted: 0, optimistic: 0, replySources: 0, version: 0 };
     let deleted = 0;
     let optimistic = 0;
     for (const record of room.messages.values()) {
@@ -537,7 +537,6 @@
       if (!record.id && record.clientMessageId) optimistic += 1;
     }
     return {
-      roomId: room.roomId,
       messages: room.messages.size,
       deleted,
       optimistic,
