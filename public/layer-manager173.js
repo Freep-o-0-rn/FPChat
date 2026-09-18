@@ -50,6 +50,7 @@
   let bodyObserver = null;
   let sidebarObserver = null;
   let legacyContextObserver = null;
+  let compatibilityObserver = null;
 
   function priority(layer) {
     return PRIORITY[layer] ?? PRIORITY.base;
@@ -215,6 +216,39 @@
     syncLegacyContextClaim();
   }
 
+  function installCompatibilityDomObserver() {
+    if (typeof MutationObserver !== 'function' || compatibilityObserver) return;
+    const selectors = {
+      chat: '.chat-view',
+      settings: '.fp-settings131',
+      context: '.message-context-root',
+      modal: MODAL_TARGETS,
+      viewer: '.media-viewer-overlay'
+    };
+    const process = (root, phase) => {
+      if (!(root instanceof Element)) return;
+      for (const [kind, selector] of Object.entries(selectors)) {
+        const nodes = [];
+        if (root.matches?.(selector)) nodes.push(root);
+        root.querySelectorAll?.(selector).forEach((node) => nodes.push(node));
+        for (const node of nodes) {
+          if (phase === 'mounted') onMounted(kind, kind === 'chat' ? 'chat' : kind, { node });
+          else onUnmounted(kind, kind === 'chat' ? 'chat' : kind, { node });
+        }
+      }
+      const composer = root.matches?.('#sendForm') ? root : root.querySelector?.('#sendForm');
+      if (phase === 'mounted' && composer) bindComposer(composer);
+      if (phase === 'unmounted' && composer === composerNode) bindComposer(null);
+    };
+    compatibilityObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.removedNodes || []) process(node, 'unmounted');
+        for (const node of record.addedNodes || []) process(node, 'mounted');
+      }
+    });
+    compatibilityObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  }
+
   function installTargetedObservers() {
     if (typeof MutationObserver !== 'function') return;
     if (document.body) {
@@ -257,9 +291,10 @@
     snapshot
   });
 
-  bindDomLifecycle();
+  const domLifecycleBound = bindDomLifecycle();
   bootstrapMounted();
   installTargetedObservers();
+  if (!domLifecycleBound) installCompatibilityDomObserver();
   computeTop();
 
   const registerRuntime = () => {
