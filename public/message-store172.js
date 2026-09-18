@@ -316,14 +316,14 @@
       const nextKind = String(options.kind || message.type || record.kind || 'text');
       const nextRaw = { ...(record.raw || {}), ...message };
 
-      if (record.text !== nextText || record.preview !== nextPreview || record.author !== nextAuthor || record.kind !== nextKind || record.raw !== nextRaw) {
+      if (record.text !== nextText || record.preview !== nextPreview || record.author !== nextAuthor || record.kind !== nextKind) {
         record.text = nextText;
         record.preview = nextPreview;
         record.author = nextAuthor;
         record.kind = nextKind;
-        record.raw = nextRaw;
         changed = true;
       }
+      record.raw = nextRaw;
       record.contentClock = incomingClock;
       record.contentPriority = priority;
       record.lastSource = source;
