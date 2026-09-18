@@ -38,6 +38,7 @@ function finish() {
 }
 
 const networkSource = parseJs('public/network171.js');
+const voiceSource = parseJs('public/voice.js');
 const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
 const packageJson = JSON.parse(read('package.json'));
@@ -84,6 +85,11 @@ for (const entry of fs.readdirSync(path.join(root, 'public'), { withFileTypes: t
 assert(read('public/storage167.js').includes("fpchat-media-v167"), 'managed media cache format must remain fpchat-media-v167');
 assert(read('public/storage167-cache-fix.js').includes("fpchat-media-v167"), 'cache-fix must remain on fpchat-media-v167');
 assert(!networkSource.includes('fpchat-media-v171'), 'Build 171 must not rename the managed cache merely because the app build changed');
+assert(voiceSource.includes('VOICE_BLOB_CACHE_LIMIT = 6'), 'voice playback blob cache must be bounded');
+assert(voiceSource.includes('function evictVoiceBlobCache'), 'voice cache must have explicit eviction');
+assert(voiceSource.includes('URL.revokeObjectURL'), 'voice cache eviction must revoke object URLs');
+assert(voiceSource.includes('clearVoiceBlobCache();\n      voiceMessages.clear();'), 'voice cache must be cleared on room transition');
+assert(voiceSource.includes('clearBlobCache: () => clearVoiceBlobCache()'), 'voice cache cleanup must be exposed for diagnostics/manual recovery');
 
 try {
   let currentScript = { src: 'https://fpchat.test/network171.js?v=171' };
