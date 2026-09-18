@@ -190,6 +190,10 @@
     requestAnimationFrame(() => {
       if (!pinBottom || performance.now() > pinBottomUntil || box !== document.getElementById('messages')) return;
       try {
+        if (window.FPScroll173?.requestBottom) {
+          window.FPScroll173.requestBottom(box);
+          return;
+        }
         if (typeof scrollCoordinator !== 'undefined' && scrollCoordinator?.requestBottom) {
           scrollCoordinator.requestBottom(box);
           return;
