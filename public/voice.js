@@ -8,6 +8,7 @@
   const WAVEFORM_POINTS = 64;
   const VOICE_SPEED_KEY = 'fpchat:voice-speed';
   const PLAYBACK_SPEEDS = [1, 1.5, 2];
+  const VOICE_BLOB_CACHE_LIMIT = 6;
 
   const voiceMessages = new Map();
   const voiceBlobCache = new Map();
@@ -484,9 +485,47 @@
     activePlayback = null;
   }
 
+  function revokeVoiceBlobAsset(asset) {
+    const url = String(asset?.url || '');
+    if (!url) return;
+    try { URL.revokeObjectURL(url); } catch {}
+  }
+
+  function evictVoiceBlobCache(key) {
+    const safeKey = String(key || '');
+    if (!safeKey || !voiceBlobCache.has(safeKey)) return false;
+    const pending = voiceBlobCache.get(safeKey);
+    voiceBlobCache.delete(safeKey);
+    Promise.resolve(pending).then(revokeVoiceBlobAsset).catch(() => {});
+    return true;
+  }
+
+  function pruneVoiceBlobCache(limit = VOICE_BLOB_CACHE_LIMIT) {
+    const safeLimit = Math.max(1, Number(limit) || VOICE_BLOB_CACHE_LIMIT);
+    const activeKey = String(activePlayback?.messageId || '');
+    for (const key of [...voiceBlobCache.keys()]) {
+      if (voiceBlobCache.size <= safeLimit) break;
+      if (key === activeKey) continue;
+      evictVoiceBlobCache(key);
+    }
+  }
+
+  function clearVoiceBlobCache() {
+    const activeKey = String(activePlayback?.messageId || '');
+    for (const key of [...voiceBlobCache.keys()]) {
+      if (key === activeKey) continue;
+      evictVoiceBlobCache(key);
+    }
+  }
+
   async function loadVoiceUrl(messageId) {
     const key = String(messageId);
-    if (voiceBlobCache.has(key)) return voiceBlobCache.get(key);
+    if (voiceBlobCache.has(key)) {
+      const cached = voiceBlobCache.get(key);
+      voiceBlobCache.delete(key);
+      voiceBlobCache.set(key, cached);
+      return cached;
+    }
     const entry = voiceMessages.get(key);
     if (!entry?.media?.public_id) throw new Error('voice media unavailable');
     const roomId = currentRoomId();
@@ -513,10 +552,17 @@
     })();
 
     voiceBlobCache.set(key, promise);
+    pruneVoiceBlobCache();
     try {
-      return await promise;
+      const loaded = await promise;
+      if (voiceBlobCache.get(key) === promise) {
+        voiceBlobCache.delete(key);
+        voiceBlobCache.set(key, promise);
+        pruneVoiceBlobCache();
+      }
+      return loaded;
     } catch (error) {
-      voiceBlobCache.delete(key);
+      if (voiceBlobCache.get(key) === promise) voiceBlobCache.delete(key);
       throw error;
     }
   }
@@ -1268,7 +1314,11 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') handleVisibilityLoss();
   });
-  window.addEventListener('pagehide', handleVisibilityLoss);
+  window.addEventListener('pagehide', () => {
+    handleVisibilityLoss();
+    stopActivePlayback(false);
+    clearVoiceBlobCache();
+  });
 
   async function refreshVoiceSnapshot(roomId) {
     const deviceId = roomDeviceId(roomId);
@@ -1308,6 +1358,8 @@
     const roomId = currentRoomId();
     if (roomId !== lastRoomId) {
       stopActivePlayback(false);
+      clearVoiceBlobCache();
+      voiceMessages.clear();
       if (recordingState && recordingState.roomId !== roomId) stopRecording('cancel');
       if (previewState && previewState.roomId !== roomId) clearPreview(false);
       lastRoomId = roomId;
@@ -1331,6 +1383,13 @@
   window.FPVoice = {
     cancelRecording: () => stopRecording('cancel'),
     stopPlayback: () => stopActivePlayback(false),
-    clearPreview: () => clearPreview(true)
+    clearPreview: () => clearPreview(true),
+    clearBlobCache: () => clearVoiceBlobCache(),
+    memorySnapshot: () => ({
+      blobCacheEntries: voiceBlobCache.size,
+      messageEntries: voiceMessages.size,
+      metaEntries: voiceMetaCache.size,
+      blobCacheLimit: VOICE_BLOB_CACHE_LIMIT
+    })
   };
 })();
