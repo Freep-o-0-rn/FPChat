@@ -1,154 +1,185 @@
-# FPChat Build 171 — Network Coordinator
+# FPChat Build 171 — Network, media cache and memory ownership
 
-Build 171 создаётся в `build/171-development` поверх `build/170-development`. Ветка Build 170 уже является прямым продолжением Build 169, поэтому Build 171 содержит изменения 169 + 170 без переноса в `main`.
-
-`main` по-прежнему остаётся на стабильной Build 168 до ручной регрессии.
+Build 171 разрабатывается только в `build/171-development` поверх Build 170. Ветка содержит всю цепочку Build 169 → 170 → 171. `main` остаётся на стабильной Build 168 до ручной регрессии.
 
 ## Цель
 
-Убрать зависимость сетевого поведения клиента от случайного порядка вложенных `window.fetch`-обёрток и передать глобальный `fetch` одному владельцу, не меняя пользовательскую механику FPChat.
+Передать клиентскую сеть, XHR upload, физические изменения managed media cache и ограничение ресурсоёмких media-download одному согласованному владельцу, не меняя пользовательскую механику FPChat.
+
+Главное правило приёмки Build 171:
+
+> Старая функция может временно остаться compatibility adapter, но она больше не должна независимо владеть глобальным transport/cache ресурсом.
 
 ## Реализовано
 
-### Один владелец `window.fetch`
+### 1. Один владелец `window.fetch`
 
 Добавлен `public/network171.js` — `FPNetwork171`.
 
-Он устанавливается до `app.js` и становится единственным публичным владельцем `window.fetch`.
+Он загружается до `app.js` и становится публичным владельцем `window.fetch`.
 
-Новые запросы FPChat идут через:
+Существующие legacy-обёртки не удалены одним рискованным коммитом. Во время их загрузки Build 171 регистрирует их как именованные стадии фиксированного pipeline. Порядок больше не зависит от скорости загрузки скриптов.
 
-```text
-window.fetch
-    ↓
-FPNetwork171
-    ↓
-ordered transport pipeline
-    ↓
-native browser fetch
+Сохраняются compatibility stages для:
+
+- Storage 167 cache-copy;
+- clear-cache guard;
+- managed media cache;
+- voice-block feedback;
+- chat-request cooldown;
+- chat-request owner;
+- room lifecycle;
+- typing/activity transport.
+
+Новый код может использовать `FPNetwork171.use(...)` без создания очередного `window.fetch = ...`.
+
+### 2. Один владелец XMLHttpRequest transport
+
+Build 171 также владеет `XMLHttpRequest.prototype.open/send`.
+
+Это важно, потому что media upload в FPChat использует XHR ради progress events.
+
+Существующий XHR typing/activity слой подключается как compatibility adapter, а новый код получает:
+
+```js
+FPNetwork171.upload(...)
 ```
 
-Сам `FPNetwork171` не создаёт новые HTTP-запросы и не меняет API. Он только определяет порядок существующих сетевых слоёв.
+Поддерживаются:
 
-### Детерминированный pipeline
+- upload progress;
+- AbortSignal;
+- timeout;
+- responseType;
+- headers;
+- существующая семантика ошибок XHR.
 
-Старые транспортные слои больше не могут случайно становиться внешней `fetch`-обёрткой в зависимости от скорости загрузки скриптов.
+Прямые существующие XHR upload-вызовы продолжают работать через тот же владелец.
 
-Build 171 закрепляет порядок:
+### 3. Ограничение параллельных media-download
 
-1. cache response copy (`storage167-cache-fix`);
-2. media cleanup guard;
-3. managed media cache;
-4. voice block response feedback;
-5. chat-request cooldown observer;
-6. chat-request room owner;
-7. room lifecycle push-settings extension;
-8. typing/media activity transport observer;
-9. native browser `fetch`.
+GET-запросы:
 
-Legacy-модули пока физически содержат старые присваивания `window.fetch = ...`, но в Build 171 они не заменяют глобальную функцию. `FPNetwork171` перехватывает их во время загрузки и регистрирует как именованные стадии pipeline с фиксированным приоритетом.
+```text
+/api/media/<id>/blob
+/api/media/<id>/thumb
+```
 
-Это переходный слой: поведение старых модулей сохраняется, но глобальный ресурс уже имеет одного владельца.
+проходят через общий media budget.
 
-### Почему сделано через adapter, а не массовую перепись восьми модулей
+Текущий предел — 4 одновременно активных media-download. Остальные ожидают свободный слот. AbortSignal отменяет ожидание до запуска запроса.
 
-Одновременное переписывание `storage167`, cleanup guard, cache-fix, cooldown, request owner, room lifecycle, typing и voice feedback создало бы слишком большой регрессионный риск.
+Это ограничивает всплески одновременной загрузки фото, видео, голосовых и превью, не меняя серверные API и формат данных.
 
-Build 171 сначала меняет владение ресурсом, сохраняя исполняемую логику этих модулей. После подтверждения регрессии отдельные legacy adapters можно по одному переводить на нативный API `FPNetwork171`, не меняя внешний контракт.
+### 4. Один physical owner managed media cache
 
-### Storage 167/168
-
-Формат локального media cache не меняется:
+Формат кэша не изменён:
 
 ```text
 fpchat-media-v167
 ```
 
-Build 171 не создаёт новый cache name и не удаляет старый кэш.
+Build 171 не создаёт `fpchat-media-v171`.
 
-Сохраняются:
+Для этого cache name установлен единый mutation gate на `Cache.put/delete`:
 
-- cache hit;
-- cache-fix с синхронным `Response.clone()` до передачи ответа caller;
-- clear-cache guard;
-- отмена media downloads при очистке;
-- metadata cache;
-- autoload;
-- retention;
-- Build 168 old-media accounting.
+- одинаковые одновременные записи одного URL объединяются;
+- уже существующая запись не записывается повторно;
+- во время clear-cache новые физические записи не выполняются;
+- delete ждёт уже начатую запись того же ключа;
+- ошибки и количество операций попадают только в техническую диагностику.
 
-### Build 169/170 остаются активны
+Legacy Storage 167/cache-fix временно остаются адаптерами, но физическое изменение managed cache проходит через одного владельца.
 
-Build 171 не заменяет предыдущие оптимизационные слои:
+### 5. Очистка памяти media viewer
 
-- `FPRuntime169` остаётся диагностическим runtime;
-- `FPRoomContext170` сохраняет generation/AbortSignal для комнат;
-- `FPLifecycle170` остаётся lifecycle owner;
-- `FPConnection170` остаётся владельцем наблюдения за единственным `state.ws`;
-- guarded text/media send Build 170 сохраняются.
+Галерея Build 134 уже использует bounded asset window и отзывает старые ObjectURL через `URL.revokeObjectURL()`.
 
-## Безопасность загрузки
+В Build 171 дополнительно исправлен voice playback cache:
 
-`network171.js` загружается до `app.js`.
+- `voiceBlobCache` ограничен 6 записями;
+- используется LRU-подобное обновление порядка;
+- при вытеснении ObjectURL отзывается;
+- при смене комнаты blob cache очищается;
+- `voiceMessages` очищается при смене комнаты;
+- при `pagehide` playback останавливается и blob URLs освобождаются;
+- активный playback не удаляется из-под проигрывания.
 
-Если сам файл Network Coordinator по какой-либо причине не загрузился, bootstrap не блокирует FPChat навсегда: приложение запускается по прежней legacy-схеме. Ошибка при этом попадает в boot diagnostics.
+Для диагностики доступны:
 
-## Диагностика
+```js
+FPVoice.memorySnapshot()
+FPVoice.clearBlobCache()
+```
 
-В консоли доступно:
+### 6. Диагностика
 
 ```js
 FPNetwork171.snapshot()
 ```
 
-Snapshot показывает только технические данные:
+показывает:
 
-- число запросов;
-- число native fetch вызовов;
-- ошибки;
-- зарегистрированные transport layers;
-- количество вызовов каждого слоя;
-- попытки неизвестного кода заменить `window.fetch`.
+- fetch requests/native calls/errors;
+- зарегистрированные fetch layers;
+- XHR ownership и legacy XHR layers;
+- uploads/errors;
+- media concurrency: active/queued/peak/completed/cancelled;
+- media cache writes/joined/skipped/deletes/failures;
+- попытки неизвестного кода заменить transport owner.
 
-Содержимое сообщений, ключи комнат, recovery-коды и media bytes не логируются.
+Содержимое сообщений, room keys, recovery-коды, deviceId и media bytes не логируются.
 
-## Статическая проверка
+Build 169 FPRuntime и Build 170 RoomContext/Lifecycle/Connection остаются активны.
+
+## Автоматическая статическая проверка
 
 ```bat
 npm run check:171
 ```
 
-Проверка подтверждает:
+Проверяет:
 
 - `version.json = 171`;
-- загрузку Network Coordinator перед app layers;
-- стабильное владение `window.fetch`;
-- отсутствие неизвестных fetch-replacement файлов;
-- наличие восьми ожидаемых legacy adapters;
-- детерминированный порядок pipeline независимо от порядка регистрации;
-- сохранение `fpchat-media-v167`.
+- загрузку `network171.js` перед app;
+- ownership `window.fetch`;
+- ownership XHR open/send;
+- наличие общего XHR upload API;
+- фиксированный legacy fetch pipeline;
+- отсутствие неизвестных fetch/XHR replacement;
+- сохранение `fpchat-media-v167`;
+- наличие единого media cache mutation gate;
+- bounded voice blob cache;
+- обязательный `URL.revokeObjectURL` при eviction;
+- очистку voice cache при смене комнаты.
 
-Проверка не заменяет ручную multi-device регрессию.
+Эта проверка не заменяет тестирование в браузерах.
 
-## Обязательная ручная регрессия
+## Обязательная ручная регрессия перед merge в main
 
-Перед переносом в `main` проверить минимум:
+Проверить минимум:
 
-1. холодный запуск, reload и PWA reopen;
-2. создание комнаты, invite, recovery;
-3. text send/reply/edit/delete/reactions;
-4. unread, read receipts и checkmarks;
-5. typing/presence;
-6. block/unblock и voice block feedback;
-7. username chat request, cooldown и accept/reject/block;
-8. photo/video/file/voice upload;
-9. media autoload/cache hit;
-10. очистку cache во время активной загрузки;
-11. background → foreground;
-12. offline → online;
-13. A → B → A из Build 170;
-14. iPhone PWA и Android.
+1. холодный запуск, reload, PWA reopen;
+2. создание комнаты, invite и recovery;
+3. A → B → A с задержанными запросами;
+4. text send/reply/edit/delete/reactions;
+5. unread/read/checkmarks;
+6. typing/presence;
+7. block/unblock и voice-block feedback;
+8. username requests/cooldown/accept/reject/block;
+9. photo/video/file upload с progress;
+10. отмену media upload;
+11. voice record/preview/send/playback/seek;
+12. последовательное воспроизведение большого числа голосовых;
+13. photo/video gallery и многократное открытие media;
+14. media autoload/cache hit;
+15. clear cache во время активной media загрузки;
+16. background → foreground;
+17. offline → online;
+18. ПК, слабый Android и iPhone PWA.
 
 ## Статус
 
-Build 171 находится только в `build/171-development` и готова к регрессионному тестированию. `main` не изменён.
+Кодовая часть Build 171 завершена в `build/171-development`.
+
+До переноса в `main` остаётся только ручная multi-device регрессия. CI в репозитории не настроен, поэтому отсутствие CI-проверки не считается подтверждением работоспособности на реальных устройствах.
