@@ -122,11 +122,17 @@
 
   function promote(session, target = null) {
     if (!session) return null;
+    const manager = window.FPLayer173;
+    const managerVersion = manager?.version?.();
+    // Build 173 freezes gesture ownership for the session unless the explicit
+    // layer stack itself changes (for example a modal/viewer opens mid-gesture).
+    if (Number.isFinite(managerVersion) && session.layerVersion === managerVersion) return session;
     const next = detectLayer(target);
     if ((PRIORITY[next] ?? 0) > (PRIORITY[session.layer] ?? 0)) {
       session.layer = next;
       pushRecent('promote', session, next);
     }
+    if (Number.isFinite(managerVersion)) session.layerVersion = managerVersion;
     syncBodyLayer(session.layer);
     return session;
   }
@@ -138,6 +144,7 @@
       id: ++sequence,
       kind,
       layer,
+      layerVersion: window.FPLayer173?.version?.() ?? -1,
       startedAt: performance.now(),
       target
     };
