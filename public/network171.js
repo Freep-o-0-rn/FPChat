@@ -358,6 +358,7 @@
     if (typeof XMLHttpRequest === 'undefined') return Promise.reject(new Error('XMLHttpRequest unavailable'));
     const safeUrl = String(url || '');
     if (!safeUrl) return Promise.reject(new TypeError('FPNetwork171.upload requires url'));
+    if (signal?.aborted) return Promise.reject(new DOMException('Upload aborted', 'AbortError'));
     stats.xhr.uploads += 1;
 
     return new Promise((resolve, reject) => {
@@ -398,14 +399,17 @@
           finish(reject, error);
         }, { once: true });
         if (signal) {
-          const abort = () => { try { xhr.abort(); } catch {} };
-          if (signal.aborted) abort();
+          const abort = () => {
+            finish(reject, new DOMException('Upload aborted', 'AbortError'));
+            try { xhr.abort(); } catch {}
+          };
+          if (signal.aborted) { abort(); return; }
           else {
             signal.addEventListener('abort', abort, { once: true });
             detachAbort = () => signal.removeEventListener('abort', abort);
           }
         }
-        xhr.send(body);
+        if (!settled) xhr.send(body);
       } catch (error) {
         stats.xhr.failures += 1;
         finish(reject, error);
@@ -433,6 +437,7 @@
   }
 
   function acquireMediaSlot(signal) {
+    if (signal?.aborted) return Promise.reject(new DOMException('Media request aborted', 'AbortError'));
     if (stats.mediaBudget.active < stats.mediaBudget.limit) {
       stats.mediaBudget.active += 1;
       stats.mediaBudget.peakActive = Math.max(stats.mediaBudget.peakActive, stats.mediaBudget.active);
@@ -479,6 +484,15 @@
       await acquireMediaSlot(signal);
       try {
         const response = await next(input, init);
+        // fetch resolves at response headers. Keep the slot until the encrypted
+        // body is consumed; otherwise slow downloads escape the concurrency cap.
+        if (response?.body && typeof response.arrayBuffer === 'function') {
+          const body = await response.arrayBuffer();
+          const buffered = new Response(body, {status:response.status,statusText:response.statusText,headers:response.headers});
+          Object.defineProperty(buffered, 'url', {value:response.url});
+          stats.mediaBudget.completed += 1;
+          return buffered;
+        }
         stats.mediaBudget.completed += 1;
         return response;
       } finally {

@@ -23,6 +23,7 @@
   let localActivityTimer = null;
   let activePlayback = null;
   let lastRoomId = '';
+  let playbackGeneration = 0;
 
   const baseAppendMessage = typeof appendMessage === 'function' ? appendMessage : null;
   const baseBuildMediaFallbackText = typeof buildMediaFallbackText === 'function' ? buildMediaFallbackText : null;
@@ -472,6 +473,7 @@
   }
 
   function stopActivePlayback(reset = false) {
+    playbackGeneration += 1;
     const current = activePlayback;
     if (!current) return;
     try { current.audio.pause(); } catch {}
@@ -531,12 +533,15 @@
     const roomId = currentRoomId();
     const deviceId = roomDeviceId(roomId);
     if (!roomId || !deviceId) throw new Error('voice room unavailable');
+    const context = window.FPRoomContext170?.current?.();
+    const roomKey = await getRoomKey(roomId);
+    if (currentRoomId() !== roomId || (context && !window.FPRoomContext170.isCurrent(context))) throw new DOMException('Stale voice room', 'AbortError');
 
     const promise = (async () => {
       const response = await fetch(`/api/media/${encodeURIComponent(entry.media.public_id)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
       if (!response.ok) throw new Error('voice load failed');
       const encrypted = await response.blob();
-      const plain = await decryptBlobWithIvPrefix(encrypted, entry.media.mime_type || 'audio/webm');
+      const plain = await decryptBlobWithIvPrefix(encrypted, entry.media.mime_type || 'audio/webm', roomKey);
       if (!entry.waveform?.length) {
         const extracted = await extractWaveformFromBlob(plain);
         if (extracted?.length) {
@@ -584,10 +589,12 @@
 
     stopActivePlayback(false);
     const button = root.querySelector('.fp-voice-play');
+    const generation = playbackGeneration;
     setPlayIcon(button, 'loading');
 
     try {
       const loaded = await loadVoiceUrl(messageId);
+      if (generation !== playbackGeneration || !root.isConnected) return;
       const audio = new Audio(loaded.url);
       audio.preload = 'metadata';
       audio.playbackRate = playbackSpeed();
@@ -1323,12 +1330,14 @@
   async function refreshVoiceSnapshot(roomId) {
     const deviceId = roomDeviceId(roomId);
     if (!roomId || !deviceId) return;
+    const context = window.FPRoomContext170?.current?.();
     try {
       const query = new URLSearchParams({ deviceId, limit: '100' });
       const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${query.toString()}`, { cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json().catch(() => null);
       for (const message of data?.messages || []) {
+        if (currentRoomId() !== roomId || lastRoomId !== roomId || (context && !window.FPRoomContext170.isCurrent(context))) return;
         if (!isVoiceMessage(message)) continue;
         registerVoiceMessage(message);
         decorateVoiceMessage(message.id);
@@ -1343,6 +1352,7 @@
     stopActivePlayback(false);
     clearVoiceBlobCache();
     voiceMessages.clear();
+    voiceMetaCache.clear();
     if (recordingState && recordingState.roomId !== nextRoomId) stopRecording('cancel');
     if (previewState && previewState.roomId !== nextRoomId) clearPreview(false);
     lastRoomId = nextRoomId;

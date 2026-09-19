@@ -381,6 +381,8 @@
         longTaskDurationMs: Math.round(longTasks.reduce((sum, item) => sum + item.durationMs, 0) * 10) / 10
       },
       knownLegacyCounts: KNOWN_LEGACY_COUNTS,
+      legacyAuditBuild: 168,
+      legacyAuditScope: 'historical-static-baseline-not-current-runtime-counts',
       coverage: COVERAGE,
       registeredOwners: [...owners.values()],
       registeredResources: [...trackedResources.values()],

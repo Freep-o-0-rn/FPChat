@@ -7,10 +7,13 @@
     "start": "node -r ./src/message-actions-bootstrap.js server.js",
     "start:diag169": "node ./scripts/start-diagnostics169.js",
     "db:diag169": "node ./scripts/db-baseline169.js",
+    "check:169": "node ./scripts/check-build169.js",
     "check:170": "node ./scripts/check-build170.js",
     "check:171": "node ./scripts/check-build171.js",
     "check:172": "node ./scripts/check-build172.js",
-    "check:173": "node ./scripts/check-build173.js"
+    "check:173": "node ./scripts/check-build173.js",
+    "check:169-173": "node ./scripts/check-build169-173.js",
+    "test:173:browser": "node ./scripts/regression173-browser.cjs"
   },
   "license": "MIT",
   "dependencies": {

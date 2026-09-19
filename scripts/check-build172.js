@@ -29,9 +29,9 @@ const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
 const packageJson = JSON.parse(read('package.json'));
 
-assert(Number(version.build) === 172, 'public/version.json must report build 172');
+assert(Number.isInteger(Number(version.build)) && Number(version.build) >= 172, 'public/version.json must report build 172 or a later integrating build');
 assert(indexSource.includes('/message-store172.js'), 'index.html must load message-store172.js');
-assert(indexSource.includes('store.onload = loadApp'), 'app.js must wait for MessageStore when it loads successfully');
+assert(indexSource.includes('store.onload = load173OwnersThenApp') && indexSource.includes('layer.onload = loadApp'), 'app.js must wait for MessageStore when it loads successfully');
 assert(appSource.includes("FPMessageStore172?.legacyCacheAdapter"), 'legacy messageCache must be an adapter to MessageStore');
 assert(appSource.includes("FPMessageStore172?.resolveReply"), 'reply resolution must use MessageStore');
 assert(appSource.includes("if(window.FPMessageStore172){const record=window.FPMessageStore172.updateStatus"), 'MessageStore must be authoritative for message status when available');
@@ -152,6 +152,19 @@ try {
   assert(store.get(room, 30)?.clientMessageId === 'client-1', 'clientMessageId promotion lost identity');
   assert(store.get(room, 'client-1')?.id === 30, 'clientMessageId lookup did not follow promoted server id');
   assert(store.get(room, 30)?.status === 'delivered', 'promoted status was not preserved');
+
+  // A server snapshot can precede the ACK that connects it to an optimistic id.
+  // The collision must remove both the duplicate record and its reply identity.
+  const collisionRoom = 'room-collision';
+  store.upsert(collisionRoom, {id:'client-2',client_message_id:'client-2',status:'sending',reply_to_message_id:10}, {text:'optimistic'});
+  store.upsert(collisionRoom, {id:40,status:'read',reply_to_message_id:10}, {text:'server'});
+  store.markDeleted(collisionRoom, 40, {scope:'all'});
+  store.upsert(collisionRoom, {id:40,client_message_id:'client-2',status:'sent',reply_to_message_id:10}, {text:'late echo'});
+  store.promote(collisionRoom, 'client-2', 40, {status:'sent'});
+  assert(store.roomSnapshot(collisionRoom).messages === 1, 'echo before ACK left duplicate canonical records');
+  assert(JSON.stringify(store.dependents(collisionRoom, 10)) === '["40"]', 'promotion left an optimistic reply dependency');
+  assert(store.get(collisionRoom, 40)?.status === 'read', 'collision regressed read status');
+  assert(store.get(collisionRoom, 40)?.deleted && !store.get(collisionRoom, 40)?.text && !store.get(collisionRoom, 40)?.raw, 'collision resurrected deleted content');
 
   const snap = store.snapshot();
   assert(snap.owner === 'FPMessageStore172', 'snapshot owner is incorrect');

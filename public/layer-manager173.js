@@ -27,6 +27,7 @@
   ].join(',');
 
   const MODAL_TARGETS = [
+    '.media-preview-overlay,.fp-pins114-screen,.fp-pins114-action-overlay,.fp-pins114-delete-overlay',
     '.message-delete-overlay',
     '.message-selection-delete-overlay',
     '.destructive-modal-overlay',

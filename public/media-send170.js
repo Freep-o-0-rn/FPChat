@@ -47,6 +47,7 @@
     if (!mediaPreviewState || mediaPreviewState.sending) return;
     const context = currentContext();
     if (!context) return legacySendMediaFromPreview.apply(this, arguments);
+    if (mediaPreviewState.roomId && mediaPreviewState.roomId !== context.roomId) return;
 
     const roomId = context.roomId;
     const persisted = STORAGE.get(STORAGE.roomState(roomId));
@@ -142,7 +143,12 @@
 
       draft.replyTo = null;
       try { await clearDraftOnServer(roomId); } catch {}
-      closeMediaPreviewModal();
+      // A different room may already have its own preview open.
+      if (mediaPreviewState === preview) closeMediaPreviewModal();
+      else for (const item of items) {
+        try { URL.revokeObjectURL(item.objectUrl); } catch {}
+        try { URL.revokeObjectURL(item.thumbnailObjectUrl); } catch {}
+      }
       contexts.finishOperation(operation, 'sent');
     } catch (error) {
       preview.sending = false;

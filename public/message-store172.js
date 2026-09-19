@@ -147,22 +147,29 @@
 
   function moveRecord(room, fromKey, toKey, record) {
     if (!fromKey || !toKey || fromKey === toKey) return record;
+    const previousIdentity = fromKey.replace(/^(?:id|client):/, '');
+    removeDependency(room, record.replyToMessageId, previousIdentity);
     const collision = room.messages.get(toKey);
     if (collision && collision !== record) {
       // The numeric server identity wins. Merge the useful transient fields from
       // the optimistic record without weakening canonical state.
       if (!collision.clientMessageId && record.clientMessageId) collision.clientMessageId = record.clientMessageId;
       collision.status = strongerStatus(collision.status, record.status);
-      if (!collision.text && record.text) collision.text = record.text;
-      if (!collision.preview && record.preview) collision.preview = record.preview;
+      if (!collision.deleted && !collision.contentClock) {
+        if (!collision.text && record.text) collision.text = record.text;
+        if (!collision.preview && record.preview) collision.preview = record.preview;
+        if (!collision.raw && record.raw) collision.raw = record.raw;
+      }
       if (!collision.author && record.author) collision.author = record.author;
       room.messages.delete(fromKey);
       if (record.clientMessageId) room.clientToKey.set(record.clientMessageId, toKey);
+      addDependency(room, collision.replyToMessageId, identity(collision));
       return collision;
     }
     room.messages.delete(fromKey);
     room.messages.set(toKey, record);
     if (record.clientMessageId) room.clientToKey.set(record.clientMessageId, toKey);
+    addDependency(room, record.replyToMessageId, toKey.replace(/^(?:id|client):/, ''));
     return record;
   }
 
@@ -173,6 +180,10 @@
     const clientKey = clientMessageId ? (room.clientToKey.get(clientMessageId) || keyForClient(clientMessageId)) : '';
 
     let record = serverKey ? room.messages.get(serverKey) : null;
+    if (record && clientKey && clientKey !== serverKey) {
+      const optimistic = room.messages.get(clientKey);
+      if (optimistic && optimistic !== record) record = moveRecord(room, clientKey, serverKey, optimistic);
+    }
     if (!record && clientKey) record = room.messages.get(clientKey) || null;
 
     if (!record) {
@@ -415,6 +426,7 @@
     record.hiddenSelf = record.hiddenSelf || scope === 'self';
     record.kind = 'deleted';
     record.text = '';
+    record.raw = null;
     record.preview = 'Сообщение удалено';
     if (author && !record.author) record.author = String(author);
     record.contentPriority = SOURCE_PRIORITY.delete;

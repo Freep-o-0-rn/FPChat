@@ -42,7 +42,7 @@ const files = [
 const sources = Object.fromEntries(files.map((file) => [file, parseJs(file)]));
 const version = JSON.parse(read('public/version.json'));
 
-assert(Number(version.build) === 170, 'public/version.json must report build 170');
+assert(Number.isInteger(Number(version.build)) && Number(version.build) >= 170, 'public/version.json must report build 170 or a later integrating build');
 assert(!sources['public/connection170.js'].includes('new WebSocket('), 'connection170 must never create a second WebSocket');
 assert(sources['public/connection170.js'].includes("Object.defineProperty(state, 'ws'"), 'connection170 must observe the canonical state.ws slot');
 assert(sources['public/room-open170.js'].includes('beginTransition'), 'room-open170 must use room transition generations');

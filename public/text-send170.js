@@ -10,6 +10,7 @@
   if (!contexts) return;
 
   const boundForms = new WeakMap();
+  const sendingForms = new WeakSet();
 
   function roomStoredDevice(roomId) {
     try { return String(STORAGE.get(STORAGE.roomState(roomId))?.deviceId || '').trim(); }
@@ -41,6 +42,7 @@
   async function submit(event) {
     event.preventDefault();
     const form = event.currentTarget || this;
+    if (sendingForms.has(form)) return;
     const context = currentFormContext(form);
     if (!context) return;
 
@@ -61,6 +63,7 @@
     }
 
     const operation = contexts.beginOperation(roomId, 'text-send');
+    sendingForms.add(form);
     const senderName = String(state?.nick || '');
 
     try {
@@ -117,21 +120,24 @@
 
       // The send now belongs to roomId even if navigation happens while the
       // server-side draft clear is in flight.
-      draft.text = '';
-      draft.replyTo = null;
-      try { await clearDraftOnServer(roomId); } catch {}
-
-      if (contexts.isCurrent(context) && form.isConnected) {
-        if (input) input.value = '';
+      const unchanged = String(draft.text || '').trim() === text && draft.replyTo?.messageId == replyToMessageId;
+      if (contexts.isCurrent(context) && form.isConnected && String(input?.value || '').trim() === text) {
+        input.value = '';
+        if (unchanged) { draft.text = ''; draft.replyTo = null; }
         try { updateReplyComposerBar(); } catch {}
         if (sendBtn) sendBtn.disabled = !String(input?.value || '').trim();
         try { autoResizeMessageInput(input); } catch {}
       }
 
+      if (unchanged) {
+        try { await clearDraftOnServer(roomId); } catch {}
+      }
       finish(operation, 'queued');
     } catch (error) {
       finish(operation, error?.name === 'AbortError' ? 'cancelled' : 'failed');
       if (contexts.isCurrent(context)) alert('Не удалось отправить сообщение. Проверьте соединение.');
+    } finally {
+      sendingForms.delete(form);
     }
   }
 

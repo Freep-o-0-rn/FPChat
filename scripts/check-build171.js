@@ -43,9 +43,9 @@ const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
 const packageJson = JSON.parse(read('package.json'));
 
-assert(Number(version.build) === 171, 'public/version.json must report build 171');
+assert(Number.isInteger(Number(version.build)) && Number(version.build) >= 171, 'public/version.json must report build 171 or a later integrating build');
 assert(indexSource.includes('/network171.js'), 'index.html must load network171.js');
-assert(indexSource.includes('network.onload = loadApp'), 'app.js must be gated by successful network171 load');
+assert(indexSource.includes('network.onload = loadMessageStoreThenApp') && indexSource.includes('store.onload = load173OwnersThenApp') && indexSource.includes('layer.onload = loadApp'), 'app.js must be gated by successful network171 load');
 assert(indexSource.includes('network.onerror = () =>'), 'index.html must retain a safe legacy boot fallback');
 assert(networkSource.includes("Object.defineProperty(window, 'fetch'"), 'network171 must own window.fetch through a stable property');
 assert(networkSource.includes("Object.defineProperty(xhrProto, 'open'"), 'network171 must own XMLHttpRequest.prototype.open');
@@ -88,7 +88,7 @@ assert(!networkSource.includes('fpchat-media-v171'), 'Build 171 must not rename 
 assert(voiceSource.includes('VOICE_BLOB_CACHE_LIMIT = 6'), 'voice playback blob cache must be bounded');
 assert(voiceSource.includes('function evictVoiceBlobCache'), 'voice cache must have explicit eviction');
 assert(voiceSource.includes('URL.revokeObjectURL'), 'voice cache eviction must revoke object URLs');
-assert(voiceSource.includes('clearVoiceBlobCache();\n      voiceMessages.clear();'), 'voice cache must be cleared on room transition');
+assert(voiceSource.includes('clearVoiceBlobCache();\n    voiceMessages.clear();'), 'voice cache must be cleared on room transition');
 assert(voiceSource.includes('clearBlobCache: () => clearVoiceBlobCache()'), 'voice cache cleanup must be exposed for diagnostics/manual recovery');
 
 try {

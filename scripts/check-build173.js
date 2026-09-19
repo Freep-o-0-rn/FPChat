@@ -40,7 +40,7 @@ const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
 const packageJson = JSON.parse(read('package.json'));
 
-assert(Number(version.build) === 173, 'public/version.json must report build 173');
+assert(Number.isInteger(Number(version.build)) && Number(version.build) >= 173, 'public/version.json must report build 173 or a later integrating build');
 assert(packageJson.scripts?.['check:173'] === 'node ./scripts/check-build173.js', 'package.json must expose npm run check:173');
 
 assert(indexSource.includes('/dom-lifecycle173.js'), 'index.html must load dom-lifecycle173.js');

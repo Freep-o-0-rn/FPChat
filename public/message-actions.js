@@ -15,6 +15,7 @@
   let syncTimer = null;
   let syncAllInFlight = null;
   let lastSyncStartedAt = 0;
+  const roomSyncs = new Map();
 
   function numericId(value) {
     const id = Number(value);
@@ -565,7 +566,18 @@
     }
   }
 
-  async function syncRoom(roomId, deviceId = roomDevice(roomId)) {
+  function syncRoom(roomId, deviceId = roomDevice(roomId)) {
+    if (!roomId || !deviceId) return Promise.resolve();
+    const key = `${roomId}:${deviceId}`;
+    if (roomSyncs.has(key)) return roomSyncs.get(key);
+    const task = runRoomSync(roomId, deviceId).finally(() => {
+      if (roomSyncs.get(key) === task) roomSyncs.delete(key);
+    });
+    roomSyncs.set(key, task);
+    return task;
+  }
+
+  async function runRoomSync(roomId, deviceId) {
     if (!roomId || !deviceId) return;
     try {
       const snapshot = await fetchActionState(roomId, deviceId);

@@ -10,7 +10,7 @@
     context: '.message-context-root',
     settings: '.fp-settings131',
     viewer: '.media-viewer-overlay',
-    modal: '.message-delete-overlay,.message-selection-delete-overlay,.destructive-modal-overlay,.message-pin-overlay,[aria-modal="true"]',
+    modal: '.media-preview-overlay,.fp-pins114-screen,.fp-pins114-action-overlay,.fp-pins114-delete-overlay,.message-delete-overlay,.message-selection-delete-overlay,.destructive-modal-overlay,.message-pin-overlay,[aria-modal="true"]',
     progress: '.media-save-progress'
   });
 

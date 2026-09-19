@@ -41,9 +41,9 @@
     catch { context.controller.abort(); }
   }
 
-  function createContext(roomId, phase, key = null) {
+  function createContext(roomId, phase, key = null, unknownRoom = false) {
     const id = normalizeRoomId(roomId);
-    if (!id) throw new Error('roomId required');
+    if (!id && !unknownRoom) throw new Error('roomId required');
     const controller = new AbortController();
     return {
       roomId: id,
@@ -57,15 +57,21 @@
     };
   }
 
-  function beginTransition(roomId) {
+  function beginTransition(roomId, unknownRoom = false) {
     if (pendingTransition) {
       abortContext(pendingTransition, 'superseded');
       dispatch('fpchat:room-transition-ended', pendingTransition, { reason: 'superseded' });
     }
-    const context = createContext(roomId, 'pending');
+    const context = createContext(roomId, 'pending', null, unknownRoom);
     pendingTransition = context;
     dispatch('fpchat:room-transition-started', context);
     return context;
+  }
+
+  // Invite entry has no room id until the server accepts it. It still belongs
+  // to the same cancellable navigation generation as ordinary room entry.
+  function beginNavigation() {
+    return beginTransition('', true);
   }
 
   function isLatestTransition(context) {
@@ -85,8 +91,10 @@
     return true;
   }
 
-  function commitTransition(context, key = null) {
+  function commitTransition(context, key = null, roomId = context?.roomId) {
     if (!isLatestTransition(context)) return null;
+    const id = normalizeRoomId(roomId);
+    if (!id) return null;
 
     if (activeRoomContext && activeRoomContext !== context) {
       abortContext(activeRoomContext, 'room-replaced');
@@ -94,6 +102,7 @@
     }
 
     context.phase = 'active';
+    context.roomId = id;
     context.key = key;
     context.committedAt = performance.now();
     activeRoomContext = context;
@@ -199,6 +208,7 @@
 
   window.FPRoomContext170 = Object.freeze({
     beginTransition,
+    beginNavigation,
     isLatestTransition,
     cancelTransition,
     commitTransition,

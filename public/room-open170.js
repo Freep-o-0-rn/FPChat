@@ -53,19 +53,18 @@
 
   // All validated room data, including invite/join flows that bypass openChat(),
   // now has a current room context. The existing renderer is still the worker.
-  openChatWithJoinData = async function openChatWithJoinData170(roomId, secret, deviceId, data, key = null) {
+  openChatWithJoinData = async function openChatWithJoinData170(roomId, secret, deviceId, data, key = null, committedContext = null) {
     const normalizedRoomId = normalizeRoomId(roomId);
-    let activeContext = contexts.current();
-    let ownsContext = false;
+    let activeContext = committedContext;
 
-    if (!activeContext || activeContext.roomId !== normalizedRoomId || activeContext.signal?.aborted) {
+    if (committedContext && (!contexts.isCurrent(committedContext) || committedContext.roomId !== normalizedRoomId)) return;
+    if (!activeContext) {
       const pending = contexts.pending();
       if (pending && pending.roomId === normalizedRoomId && contexts.isLatestTransition(pending)) {
-        activeContext = contexts.commitTransition(pending, key);
+        activeContext = contexts.commitTransition(pending, key || state.key);
       } else {
-        activeContext = contexts.beginRoom(normalizedRoomId, key);
+        activeContext = contexts.beginRoom(normalizedRoomId, key || state.key);
       }
-      ownsContext = Boolean(activeContext);
       if (activeContext) dispatch('committed-direct', activeContext);
     }
 
@@ -77,10 +76,12 @@
         dispatch('stale-after-render', activeContext);
         return result;
       }
-      if (ownsContext) dispatch('ready', activeContext, { source: 'direct' });
+      // Every entry path (ordinary join and invite) completes here. Emit once,
+      // after the renderer, so event-driven pins/actions/voice also see invites.
+      dispatch('ready', activeContext, { source: committedContext ? 'transition' : 'direct' });
       return result;
     } catch (error) {
-      if (ownsContext && contexts.isCurrent(activeContext)) {
+      if (contexts.isCurrent(activeContext)) {
         contexts.endRoom(activeContext, 'open-failed');
         dispatch('failed', activeContext, { source: 'direct' });
       }
@@ -142,6 +143,7 @@
 
       response = await fetch(`/api/rooms/${roomId}/join`, {
         method: 'POST',
+        signal: context.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ displayName: state.nick, deviceId })
       });
@@ -209,7 +211,7 @@
     dispatch('committed', activeContext);
 
     try {
-      await openChatWithJoinData(roomId, secret, deviceId, data, key);
+      await openChatWithJoinData(roomId, secret, deviceId, data, key, activeContext);
     } catch (error) {
       if (contexts.isCurrent(activeContext)) {
         contexts.endRoom(activeContext, 'open-failed');
@@ -223,7 +225,6 @@
       return;
     }
 
-    dispatch('ready', activeContext);
   };
 
   // Build 170 can be loaded after the initial app boot. Adopt an already
