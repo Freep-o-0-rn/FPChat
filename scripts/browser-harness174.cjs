@@ -17,7 +17,7 @@ exports.run = async function run(task) {
   await new Promise(resolve => probe.close(resolve));
   const server = spawn(process.env.FPCHAT_TEST_NODE || process.execPath,
     ['-r', './src/message-actions-bootstrap.js', 'server.js'], {
-      cwd:root, env:{...process.env, APP_HOST:'127.0.0.1', APP_PORT:String(port), DATABASE_PATH:path.join(temp,'test.sqlite'), VAPID_PUBLIC_KEY:'', VAPID_PRIVATE_KEY:''},
+      cwd:root, env:{...process.env, APP_HOST:'127.0.0.1', APP_PORT:String(port), DATABASE_PATH:path.join(temp,'test.sqlite'), FPCHAT_UPLOAD_DIR:path.join(temp,'uploads'), VAPID_PUBLIC_KEY:'', VAPID_PRIVATE_KEY:''},
       stdio:['ignore','pipe','pipe']
     });
   let browser;

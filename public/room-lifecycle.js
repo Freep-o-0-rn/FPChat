@@ -329,20 +329,5 @@
   window.FPRoomLifecycle98Ready = true;
   window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
 
-  // Repair an already-open screen if app startup completed before this compatibility layer loaded.
-  setTimeout(async () => {
-    if (!state.roomId) return;
-    try {
-      const response = await nativeFetch(`/api/rooms/${encodeURIComponent(state.roomId)}`, { cache: 'no-store' });
-      if (response.ok) {
-        const data = await response.json();
-        noteRoomState(state.roomId, data.roomStatus, data.closedAt || null);
-      }
-    } catch {}
-    if ([...document.querySelectorAll('.message-text')].some((node) => node.textContent === '[cannot decrypt]')) {
-      void openChat(state.roomId);
-    } else {
-      applyClosedRoomUi(state.roomId);
-    }
-  }, 0);
+  // Startup now installs this wrapper before any navigation. No repair re-entry.
 })();

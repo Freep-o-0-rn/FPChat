@@ -369,35 +369,22 @@
     scheduleStop();
   }, true);
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') {
-      stopLocalTyping();
-      stopAllLocalMedia();
-    } else {
+  window.FPLifecycle170?.subscribe(event => {
+    if (['background','pagehide','beforeunload'].includes(event.lastType)) {
+      stopLocalTyping();stopAllLocalMedia();
+    } else if (event.lastType === 'foreground') {
       attachCurrentWs();
       const entry = remoteActivity.get(currentRoomId());
       if (entry?.expiresAt > Date.now()) renderRemoteActivity();
-    }
-  });
-
-  window.addEventListener('pagehide', () => {
-    stopLocalTyping();
-    stopAllLocalMedia();
-  });
-  window.addEventListener('offline', () => {
-    typingStarted = false;
-    lastStartSentAt = 0;
-    clearStopTimer();
-    for (const entry of localMediaUploads.values()) {
-      if (entry.heartbeatTimer) clearInterval(entry.heartbeatTimer);
-      entry.heartbeatTimer = null;
-    }
-  });
-  window.addEventListener('online', () => {
-    attachCurrentWs();
-    for (const [roomId, entry] of localMediaUploads) {
-      sendMediaPulse(roomId, entry);
-      ensureMediaHeartbeat(roomId, entry);
+    } else if (event.lastType === 'offline') {
+      typingStarted=false;lastStartSentAt=0;clearStopTimer();
+      for(const entry of localMediaUploads.values()){
+        if(entry.heartbeatTimer)clearInterval(entry.heartbeatTimer);
+        entry.heartbeatTimer=null;
+      }
+    } else if (event.lastType === 'online') {
+      attachCurrentWs();
+      for(const [roomId,entry]of localMediaUploads){sendMediaPulse(roomId,entry);ensureMediaHeartbeat(roomId,entry);}
     }
   });
 

@@ -18,7 +18,8 @@
     "check:169-174": "node ./scripts/check-build169-173.js --174",
     "test:174:browser": "node ./scripts/regression174-browser.cjs",
     "bench:174:list": "node ./scripts/benchmark174.cjs",
-    "bench:174:history": "node ./scripts/benchmark-history174.cjs"
+    "bench:174:history": "node ./scripts/benchmark-history174.cjs",
+    "test:174:audit": "node ./scripts/regression174-audit.cjs"
   },
   "license": "MIT",
   "dependencies": {

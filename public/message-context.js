@@ -7,6 +7,7 @@
   const MOBILE_QUERY = '(max-width: 900px)';
   const mediaByMessageId = new Map();
   const mediaBlobCache = new Map();
+  const MEDIA_BLOB_CACHE_BYTES = 8 * 1024 * 1024;
   const activeMediaSaves = new Set();
 
   let contextState = null;
@@ -130,7 +131,9 @@
   }
 
   async function fetchOriginalMediaBlob(messageId, mediaIndex, onProgress = null) {
-    const cacheKey = `${messageId}:${mediaIndex}`;
+    const roomId = typeof state !== 'undefined' ? state.roomId : null;
+    const persisted = roomId && typeof STORAGE !== 'undefined' ? STORAGE.get(STORAGE.roomState(roomId)) : null;
+    const cacheKey = `${roomId}:${messageId}:${mediaIndex}`;
 
     const consumeEntry = async (entry) => {
       if (typeof onProgress === 'function') {
@@ -160,14 +163,18 @@
       const media = await ensureMessageMedia(messageId);
       const item = media?.[mediaIndex];
       if (!item?.public_id) throw new Error('media unavailable');
-      const roomId = typeof state !== 'undefined' ? state.roomId : null;
-      const persisted = roomId && typeof STORAGE !== 'undefined' ? STORAGE.get(STORAGE.roomState(roomId)) : null;
       if (!persisted?.deviceId) throw new Error('device unavailable');
-      const response = await fetch(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`);
-      if (!response.ok) throw new Error('media load failed');
-      const encrypted = await readResponseBlobWithProgress(response, entry);
-      const blob = await decryptBlobWithIvPrefix(encrypted, item.mime_type || 'application/octet-stream');
+      const key=await getRoomKey(roomId);
+      const blob=await readEncryptedMedia174(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,item.mime_type || 'application/octet-stream',key,{},response=>readResponseBlobWithProgress(response,entry));
       entry.done = true;
+      entry.bytes = blob.size;
+      // Bound the existing plaintext memo, independently of the encrypted disk
+      // cache. Active save consumers retain their promise even after eviction.
+      let retained = [...mediaBlobCache.values()].reduce((sum,value)=>sum+(value.done?value.bytes||0:0),0);
+      for(const [key,value] of mediaBlobCache){
+        if(retained<=MEDIA_BLOB_CACHE_BYTES)break;
+        if(value.done){mediaBlobCache.delete(key);retained-=value.bytes||0;}
+      }
       emitMediaBlobProgress(entry);
       return { blob, item, media };
     })();
@@ -176,7 +183,7 @@
     try {
       return await consumeEntry(entry);
     } catch (error) {
-      mediaBlobCache.delete(cacheKey);
+      if(mediaBlobCache.get(cacheKey)===entry)mediaBlobCache.delete(cacheKey);
       throw error;
     }
   }
@@ -215,7 +222,9 @@
 
   function restoreBackgroundScroll(snapshot) {
     if (!snapshot?.box?.isConnected) return;
-    if (Math.abs(snapshot.box.scrollTop - snapshot.scrollTop) > 0.5) snapshot.box.scrollTop = snapshot.scrollTop;
+    // The overlay does not own message geometry. History/viewport/user scroll
+    // may have advanced while it was open; never restore an old absolute offset.
+    // If a future context layout needs preservation, it must ask FPScroll173.
   }
 
   function closeContext({ restoreScroll = true } = {}) {
@@ -589,7 +598,7 @@
     const mediaKind = getMediaKindFromDom(messageEl, mediaIndex);
     const text = getMessageText(messageEl, messageId);
     const messagesBox = document.getElementById('messages');
-    const background = messagesBox ? { box: messagesBox, scrollTop: messagesBox.scrollTop } : null;
+    const background = messagesBox ? { box: messagesBox } : null;
     const sourceRect = getOriginalMessageRect(messageEl);
     const boxRect = messagesBox?.getBoundingClientRect?.() || { left: 0, width: window.innerWidth };
 
@@ -682,6 +691,7 @@
 
   document.addEventListener('touchstart', (event) => {
     if (contextState || event.touches?.length !== 1) return;
+    if(window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat')return;
     const messageEl = getMessageElement(event.target);
     if (!messageEl) return;
     const touch = event.touches[0];
@@ -695,6 +705,7 @@
     };
     session.timer = setTimeout(() => {
       if (touchSession !== session || !messageEl.isConnected) return;
+      if(window.FPGesture135&&FPGesture135.currentLayer(null,session.target)!=='chat')return;
       session.triggered = true;
       suppressUnderlyingClickUntil = Date.now() + 700;
       openContext(messageEl, session.target, { x: session.startX, y: session.startY, source: 'touch' });
@@ -706,6 +717,7 @@
   document.addEventListener('touchmove', (event) => {
     const session = touchSession;
     if (!session || event.touches?.length !== 1) return;
+    if(!session.triggered&&window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat'){clearTimeout(session.timer);touchSession=null;return;}
     if (session.triggered && contextState && getMessageElement(event.target) === session.messageEl) {
       if (event.cancelable) event.preventDefault();
       event.stopPropagation();

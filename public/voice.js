@@ -538,10 +538,7 @@
     if (currentRoomId() !== roomId || (context && !window.FPRoomContext170.isCurrent(context))) throw new DOMException('Stale voice room', 'AbortError');
 
     const promise = (async () => {
-      const response = await fetch(`/api/media/${encodeURIComponent(entry.media.public_id)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
-      if (!response.ok) throw new Error('voice load failed');
-      const encrypted = await response.blob();
-      const plain = await decryptBlobWithIvPrefix(encrypted, entry.media.mime_type || 'audio/webm', roomKey);
+      const plain = await readEncryptedMedia174(`/api/media/${encodeURIComponent(entry.media.public_id)}/blob?deviceId=${encodeURIComponent(deviceId)}`,entry.media.mime_type || 'audio/webm',roomKey,{signal:context?.signal});
       if (!entry.waveform?.length) {
         const extracted = await extractWaveformFromBlob(plain);
         if (extracted?.length) {
@@ -1318,13 +1315,9 @@
     if (localActivity?.activity === 'recording_audio') stopLocalActivity('recording_audio');
   }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') handleVisibilityLoss();
-  });
-  window.addEventListener('pagehide', () => {
-    handleVisibilityLoss();
-    stopActivePlayback(false);
-    clearVoiceBlobCache();
+  window.FPLifecycle170?.subscribe(event => {
+    if (['background','pagehide','beforeunload'].includes(event.lastType)) handleVisibilityLoss();
+    if (event.lastType === 'pagehide') {stopActivePlayback(false);clearVoiceBlobCache();}
   });
 
   async function refreshVoiceSnapshot(roomId) {

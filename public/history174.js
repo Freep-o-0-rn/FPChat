@@ -9,6 +9,7 @@
   const id=node=>Number(node?.dataset.messageId||0);
   const unread=box=>nodes(box).filter(n=>n.dataset.incoming==='1'&&n.dataset.read==='0').length;
   const valid=view=>isRoomViewCurrent170(view);
+  const pending=roomId=>window.FPMessageStore172?.pending(roomId)||[];
 
   async function page(view,params={},signal=view.context?.signal){
     if(!valid(view))throw new DOMException('Stale room','AbortError');
@@ -61,6 +62,10 @@
     history.loadedMessageIds=new Set(numeric);
     history.oldestMessageId=numeric[0]||null;
     if(numeric.length){history.nextCursor=numeric[0];history.newerCursor=numeric.at(-1);}
+    const local=pending(history.roomId),index=new Map(local.map((r,i)=>[r.clientMessageId,i]));
+    const indices=mounted.map(n=>index.get(n.dataset.clientMessageId||n.dataset.messageId)).filter(i=>i!==undefined);
+    history.localOlder174=indices.length?Math.min(...indices)>0:false;
+    history.localNewer174=local.length>0&&(!indices.length||Math.max(...indices)<local.length-1);
   }
   function restoreAnchor(box,anchor){
     if(anchor)restoreMessagesViewState(box,anchor);
@@ -73,19 +78,24 @@
     const anchor=getFirstVisibleMessageAnchor(box);
     const total=unread(box)+history.unloadedUnreadCount;
     const rect=box.getBoundingClientRect();
-    // Pending sends remain mounted until ACK; their existing retry owner is unchanged.
+    let lastRemovedNumeric=0;
+    // Pending sends remain in the canonical store and existing retry owner.
+    // Their offscreen DOM is paged locally, just like server-backed history.
     while(mounted.length>LIMIT){
       const candidates=direction==='older'?[...mounted].reverse():mounted;
-      const candidate=candidates.find(n=>Number.isSafeInteger(id(n))&&id(n)>0);
+      let candidate=candidates[0];
       if(!candidate)break;
       const r=candidate.getBoundingClientRect();
-      if(r.bottom>=rect.top&&r.top<=rect.bottom)break;
+      let side=direction;
+      if(r.bottom>=rect.top&&r.top<=rect.bottom){candidate=candidates.at(-1);side=direction==='older'?'newer':'older';}
+      const numeric=Number.isSafeInteger(id(candidate))&&id(candidate)>0;
+      if(numeric)lastRemovedNumeric=Math.max(lastRemovedNumeric,id(candidate));
       dispose(candidate);
       mounted.splice(mounted.indexOf(candidate),1);
-      if(direction==='older')history.hasNewer=true;
-      else history.hasMore=true;
+      if(numeric){if(side==='older')history.hasNewer=true;else history.hasMore=true;}
     }
     syncRange(history,box);
+    if(!history.oldestMessageId&&lastRemovedNumeric)history.nextCursor=lastRemovedNumeric+1;
     history.unloadedUnreadCount=Math.max(0,total-unread(box));
     rebuildDateSeparators(box);syncUnreadDivider(box);restoreAnchor(box,anchor);
   }
@@ -97,11 +107,28 @@
         if(record?.deleted)return;
         const text=await decryptText(message.iv,message.ciphertext,view.key).catch(()=>'[cannot decrypt]');
         if(!current())return;
-        appendMessage(scratch,{...message,status:getEffectiveMessageStatus(view.roomId,message)},text,message.sender_device_id===deviceId,false);
+        if(window.FPMessageStore172?.get(view.roomId,message.id)?.deleted)return;
+        const node=appendMessage(scratch,{...message,status:getEffectiveMessageStatus(view.roomId,message)},text,message.sender_device_id===deviceId,false);
+        if(node)node.dataset.fpStoreVersion174=String(window.FPMessageStore172?.get(view.roomId,message.id)?.version||0);
       },{current});
       if(!current())throw new DOMException('Stale history window','AbortError');
       return scratch;
     }catch(error){nodes(scratch).forEach(dispose);throw error;}
+  }
+  function reconcileBeforeMount(view,scratch,deviceId){
+    // An earlier node can become stale while later nodes decrypt. Reconcile
+    // the entire prepared window synchronously at the actual mount boundary.
+    for(const node of nodes(scratch)){
+      const record=window.FPMessageStore172?.get(view.roomId,node.dataset.messageId);
+      if(!record)continue;
+      if(record.deleted){dispose(node);continue;}
+      if(String(record.version)===node.dataset.fpStoreVersion174)continue;
+      const holder=document.createElement('div');
+      const message={...record.raw,id:record.id||record.clientMessageId,status:record.status,edited_at:record.editedAt,reply_to_message_id:record.replyToMessageId};
+      const replacement=appendMessage(holder,message,record.text,message.sender_device_id===deviceId,false);
+      if(replacement)node.replaceWith(replacement);
+      dispose(node);
+    }
   }
   function transaction(history,view){
     history.request174?.abort();
@@ -128,6 +155,13 @@
   async function load(direction){
     const history=activeChatHistory,box=document.getElementById('messages');
     if(!history||!isCurrentMessagesBox(box)||history.loading||scrollCoordinator.isOpening())return false;
+    const local=pending(history.roomId);
+    const index=new Map(local.map((r,i)=>[r.clientMessageId,i]));
+    const mountedLocal=nodes(box).map(n=>index.get(n.dataset.clientMessageId||n.dataset.messageId)).filter(i=>i!==undefined);
+    const first=mountedLocal.length?Math.min(...mountedLocal):local.length;
+    const last=mountedLocal.length?Math.max(...mountedLocal):-1;
+    if(direction==='older'&&mountedLocal.length&&first>0)return loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction);
+    if(direction==='newer'&&!history.hasNewer&&last<local.length-1)return loadPending(history,box,local.slice(last+1,last+1+PAGE),direction);
     if(direction==='older'?!history.hasMore:!history.hasNewer)return false;
     const cursor=direction==='older'?history.nextCursor:history.newerCursor;
     if(!Number.isSafeInteger(cursor)||cursor<=0)return false;
@@ -139,6 +173,7 @@
       const unique=data.messages.filter(m=>!existing.has(String(m.id)));
       const scratch=await render(view,unique,history.deviceId,task.current);
       if(!task.current()){nodes(scratch).forEach(dispose);return false;}
+      reconcileBeforeMount(view,scratch,history.deviceId);
       const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;
       const fragment=document.createDocumentFragment();while(scratch.firstChild)fragment.appendChild(scratch.firstChild);
       if(direction==='older')box.insertBefore(fragment,box.querySelector('.bubble-wrap.msg'));
@@ -154,6 +189,22 @@
       return unique.length>0;
     }catch(error){if(error.name!=='AbortError')console.warn('History window load failed',error);return false;}
     finally{task.finish();}
+  }
+  async function loadPending(history,box,records,direction){
+    const view=captureRoomView170(),task=transaction(history,view),scratch=document.createElement('div');
+    try{
+      await FPWork174.each(records,record=>{
+        if(findMessageElement(record.id,record.clientMessageId))return;
+        appendMessage(scratch,{...record.raw,id:record.id||record.clientMessageId,status:record.status},record.text,true,false);
+      },{current:task.current});
+      if(!task.current())return false;
+      reconcileBeforeMount(view,scratch,history.deviceId);
+      const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;
+      const fragment=document.createDocumentFragment();while(scratch.firstChild)fragment.appendChild(scratch.firstChild);
+      if(direction==='older')box.insertBefore(fragment,nodes(box).find(n=>!Number.isSafeInteger(id(n)))||null);
+      else box.appendChild(fragment);
+      finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);return true;
+    }finally{nodes(scratch).forEach(dispose);task.finish();}
   }
   function jump(anchor=0){
     const history=activeChatHistory;
@@ -175,9 +226,21 @@
       if(anchor&&!data.messages.some(m=>Number(m.id)===anchor))return null;
       const scratch=await render(view,data.messages,history.deviceId,task.current);
       if(!task.current()){nodes(scratch).forEach(dispose);return null;}
+      reconcileBeforeMount(view,scratch,history.deviceId);
       const total=unread(box)+history.unloadedUnreadCount;
       const latest=Number(data.messages.at(-1)?.id)||0;
-      const carry=nodes(box).filter(n=>!Number.isSafeInteger(id(n))||id(n)<=0||(!anchor&&id(n)>latest));
+      const carry=nodes(box).filter(n=>!anchor&&Number.isSafeInteger(id(n))&&id(n)>latest);
+      if(!anchor){
+        for(const record of pending(history.roomId).slice(-LIMIT)){
+          const existing=findMessageElement(record.id,record.clientMessageId);
+          if(existing)carry.push(existing);
+          else{
+            const holder=document.createElement('div');
+            const node=appendMessage(holder,{...record.raw,id:record.clientMessageId,status:record.status},record.text,true,false);
+            if(node)carry.push(node);
+          }
+        }
+      }
       // Moving a pending node is not deletion: preserve its retry/client id and listeners.
       carry.forEach(n=>n.remove());
       nodes(box).forEach(dispose);
@@ -220,7 +283,7 @@
   }
   function shouldDefer(box){
     const h=activeChatHistory;
-    return Boolean(h&&(h.hasNewer||(nodes(box).length>=LIMIT&&!isMessagesAtBottom(box))));
+    return Boolean(h&&(h.hasNewer||h.localNewer174||(nodes(box).length>=LIMIT&&!isMessagesAtBottom(box))));
   }
   function defer(message,text,mine){
     const h=activeChatHistory;
@@ -239,7 +302,8 @@
       else if(box.scrollHeight-box.clientHeight-box.scrollTop<=CHAT_HISTORY_LOAD_THRESHOLD_PX)void load('newer');
     },{passive:true});
     trim();
+    if(pending(activeChatHistory?.roomId).length&&!activeChatHistory?.unreadCount&&!activeChatHistory?.viewState?.anchorMessageId)void jump();
   }
   window.FPHistory174=Object.freeze({hydrate,load,jump,goToUnread,trim,mounted,shouldDefer,defer,
-    snapshot:()=>({limit:LIMIT,mounted:nodes(document.getElementById('messages')).length,requests,evictions,jumps,hasOlder:Boolean(activeChatHistory?.hasMore),hasNewer:Boolean(activeChatHistory?.hasNewer)})});
+    snapshot:()=>({limit:LIMIT,mounted:nodes(document.getElementById('messages')).length,requests,evictions,jumps,hasOlder:Boolean(activeChatHistory?.hasMore||activeChatHistory?.localOlder174),hasNewer:Boolean(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)})});
 })();

@@ -319,8 +319,9 @@
       }
       const result = base.apply(this, arguments);
       if (id) {
-        const el = typeof findMessageElement === 'function' ? findMessageElement(id, message?.client_message_id) : null;
-        if (el && message?.edited_at) applyEditedLabel(el, message.edited_at);
+        const el = result || box?.querySelector(`[data-message-id="${id}"]`);
+        const editedAt=window.FPMessageStore172?.get(roomId,id)?.editedAt || message?.edited_at;
+        if (el && editedAt) applyEditedLabel(el, editedAt);
         const replyId = numericId(message?.reply_to_message_id);
         if (el && replyId && ((deviceId && hiddenSet(roomId, deviceId).has(replyId)) || deletedSet(roomId).has(replyId))) {
           const preview = el.querySelector('.reply-block-preview');

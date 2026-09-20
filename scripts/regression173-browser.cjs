@@ -188,7 +188,7 @@ async function main() {
         window.offBudgetTest=FPNetwork171.use({id:'audit-body',priority:900,handler:()=>{
           bodyStarted++;return new Response(new ReadableStream({start(controller){bodyControllers.push(controller);}}));
         }});
-        window.bodyTasks=Array.from({length:6},(_,i)=>FPNetwork171.fetch(`/api/media/budget-${i}/blob`).then(r=>r.arrayBuffer()));
+        window.bodyTasks=Array.from({length:6},(_,i)=>FPNetwork171.fetch(`/api/media/budget-${i}/thumb`).then(r=>r.arrayBuffer()));
       });
       await network.waitForFunction(()=>bodyStarted>=4);
       assert.deepEqual(await network.evaluate(()=>({started:bodyStarted,active:FPNetwork171.snapshot().mediaBudget.active,queued:FPNetwork171.snapshot().mediaBudget.queued})),{started:4,active:4,queued:2});

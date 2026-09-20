@@ -254,7 +254,7 @@
       // Preload fetches early, but never executes scripts out of dependency order.
       // Edges below document the existing execution chains and the room-entry gate.
       const startupDependencies174 = {
-        'app.js':['network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js'],
+        'app.js':['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js'],
         'voice.js':['app.js','typing.js'],
         'voice-polish123.js':['voice.js'],
         'message-context.js':['app.js','message-selection.js'],
@@ -267,8 +267,11 @@
         'text-send170.js':['room-open170.js'],
         'media-send170.js':['text-send170.js']
       };
-      const preload174 = ['network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js','app.js','settings-fix.js','room-lifecycle.js'];
-      window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,execution:'existing ordered chains with room-lifecycle gate'});
+      const preload174 = ['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js','app.js','settings-fix.js','room-lifecycle.js'];
+      let resolveOwners174;
+      const ownersReady174=new Promise(resolve=>{resolveOwners174=resolve;});
+      window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
+      window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});
 
       const css = document.createElement('link');
       css.rel = 'stylesheet';
@@ -354,9 +357,22 @@
       const loadHistoryThenApp = () => {
         const history = document.createElement('script');
         history.src = `/history174.js${buildSuffix}`;
-        history.onload = loadAppAfterWork;
-        history.onerror = loadAppAfterWork;
+        history.onload = loadContextThenApp174;
+        history.onerror = loadContextThenApp174;
         document.body.appendChild(history);
+      };
+      const loadContextThenApp174 = () => {
+        const context=document.createElement('script');
+        context.src=`/room-context170.js${buildSuffix}`;context.dataset.fpRoomContext170='1';
+        context.onload=()=>{
+          const lifecycle=document.createElement('script');
+          lifecycle.src=`/lifecycle170.js${buildSuffix}`;lifecycle.dataset.fpLifecycle170='1';
+          lifecycle.onload=loadAppAfterWork;
+          lifecycle.onerror=()=>{FPStartup174.fail();loadAppAfterWork();};
+          document.body.appendChild(lifecycle);
+        };
+        context.onerror=()=>{FPStartup174.fail();loadAppAfterWork();};
+        document.body.appendChild(context);
       };
       const loadAppAfterWork = () => {
         const script = document.createElement('script');

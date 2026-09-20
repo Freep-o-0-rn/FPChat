@@ -94,7 +94,21 @@ async function encryptText(t,key=state.key){const iv=crypto.getRandomValues(new 
 async function decryptText(iv,c,key=state.key){const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(iv)},key,b64.decode(c)); return new TextDecoder().decode(p)}
 async function encryptBlobWithIvPrefix(blob){const iv=crypto.getRandomValues(new Uint8Array(12));const plain=await blob.arrayBuffer();const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},state.key,plain);const out=new Uint8Array(iv.byteLength+cipher.byteLength);out.set(iv,0);out.set(new Uint8Array(cipher),iv.byteLength);return new Blob([out],{type:'application/octet-stream'});}
 async function decryptBlobWithIvPrefix(encryptedBlob,mimeType,key=state.key){const buf=await encryptedBlob.arrayBuffer();const bytes=new Uint8Array(buf);const iv=bytes.slice(0,12);const cipher=bytes.slice(12);const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher);return new Blob([plain],{type:mimeType||'application/octet-stream'});}
-function uploadEncryptedMediaXhr(roomId,deviceId,formData,onProgress){return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST',`/api/rooms/${roomId}/media/upload`);xhr.upload.onprogress=(event)=>{if(event.lengthComputable&&typeof onProgress==='function')onProgress(event.loaded,event.total);};xhr.onload=()=>{let data=null;try{data=JSON.parse(xhr.responseText);}catch{}if(xhr.status>=200&&xhr.status<300&&data?.ok)resolve(data.media);else reject(new Error(data?.error||`upload failed ${xhr.status}`));};xhr.onerror=()=>reject(new Error('network error'));xhr.send(formData);});}
+async function readEncryptedMedia174(url,mimeType,key,options={},readBody=response=>response.blob()){
+  return FPNetwork171.consumeMedia(url,options,async response=>{
+    if(!response.ok)throw Error(`Media ${response.status}`);
+    const encrypted=await readBody(response);
+    if(options.signal?.aborted)throw new DOMException('Media cancelled','AbortError');
+    return decryptBlobWithIvPrefix(encrypted,mimeType,key);
+  });
+}
+async function uploadEncryptedMediaXhr(roomId,deviceId,formData,onProgress,{signal=null}={}){
+  if(!window.FPNetwork171?.upload)throw Error('Upload owner unavailable');
+  const xhr=await FPNetwork171.upload({url:`/api/rooms/${roomId}/media/upload`,body:formData,signal,onProgress});
+  let data;try{data=JSON.parse(xhr.responseText);}catch{}
+  if(xhr.status>=200&&xhr.status<300&&data?.ok)return data.media;
+  throw Error(data?.error||`upload failed ${xhr.status}`);
+}
 function makeReplyPreview(text){const safe=String(text||'').replace(/\s+/g,' ').trim();if(!safe)return'Сообщение недоступно';return safe.length>80?safe.slice(0,80).trimEnd()+'…':safe;}
 function ensureDraftState(roomId){if(!state.drafts[roomId])state.drafts[roomId]={text:'',replyTo:null,loaded:false,saveTimer:null};return state.drafts[roomId];}
 function setSelectedReply(roomId,replyTo){if(!roomId)return;const draft=ensureDraftState(roomId);draft.replyTo=replyTo;markReplyTargetRead(replyTo?.messageId);updateReplyComposerBar();void saveDraftNow(roomId);document.getElementById('msgInput')?.focus();}
@@ -147,7 +161,7 @@ function showContentPane(){els.content?.classList.remove('chat-content');els.app
 function leaveActiveChat(){++chatOpenToken;if(!state.roomId)return;const wasOpening=scrollCoordinator.isOpening();if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}if(!wasOpening)void saveViewStateNow({keepalive:true});scrollCoordinator.stop();resetUnreadDividerSession();state.roomId=null;activeChatDeviceId=null;activeChatHistory=null;chatViewReadyRoomId=null;sendClientState();}
 function getSessionDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(current)return current;return getLocalRoomDevicePairs()[0]?.deviceId||'';}
 function hasKnownSessionRooms(){return Boolean(state.roomId||getLocalRoomDevicePairs().length);}
-function startAppSessionSync(){if(document.visibilityState!=='visible'||!hasKnownSessionRooms())return;const deviceId=getSessionDeviceId();if(deviceId)void reconcileKnownChats(deviceId);}
+function startAppSessionSync(){if(document.visibilityState!=='visible'||!hasKnownSessionRooms())return;const deviceId=getSessionDeviceId();if(deviceId)return reconcileKnownChats(deviceId);}
 function setView(v){if(state.roomId)leaveActiveChat();state.view=v; setActiveNav(v); closeMobileMenu(); if(v==='chats'){showListPane(); renderMainChatsPlaceholder(); startAppSessionSync();return;} if(v==='create'){renderCreate(); showContentPane(); return;} if(v==='restore'){renderRestore(); showContentPane(); return;} if(v==='join'){renderJoin(); showContentPane(); return;} if(v==='settings'){renderSettings(); showContentPane();}}
 function isMobileViewport(){return window.matchMedia('(max-width: 900px)').matches;}
 function isBackGestureBlockedTarget(target){
@@ -547,7 +561,7 @@ async function openChat(roomId){
   await openChatWithJoinData(roomId,persisted.secret,deviceId,data);
 }
 function deliveryIcon(s){if(s==='read')return "<span style='color:#3390ec'>✓✓</span>"; if(s==='delivered')return "<span style='color:#9aa0a6'>✓✓</span>"; if(s==='sent')return '✓'; return '⏳';}
-function isMessagesAtBottom(box=document.getElementById('messages')){if(!box)return true;if(activeChatHistory?.hasNewer)return false;return box.scrollTop+box.clientHeight>=box.scrollHeight-40;}
+function isMessagesAtBottom(box=document.getElementById('messages')){if(!box)return true;if(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)return false;return box.scrollTop+box.clientHeight>=box.scrollHeight-40;}
 function queueReadIds(roomId,deviceId,messageIds){if(!roomId||!deviceId||!Array.isArray(messageIds)||!messageIds.length)return;const ids=messageIds.map(Number).filter((id)=>Number.isInteger(id)&&id>0);if(!ids.length)return;if(!pendingReadQueue.has(roomId)){pendingReadQueue.set(roomId,{deviceId,ids:new Set(),sentAt:0,retryTimer:null});}const entry=pendingReadQueue.get(roomId);entry.deviceId=deviceId;entry.sentAt=0;clearTimeout(entry.retryTimer);entry.retryTimer=null;ids.forEach((id)=>entry.ids.add(id));}
 function flushPendingReads(roomId=state.roomId,deviceId=activeChatDeviceId){if(!roomId||!deviceId)return false;const entry=pendingReadQueue.get(roomId);if(!entry||!entry.ids?.size)return true;const wsDeviceId=state.ws?.deviceId;if(!state.ws||state.ws.readyState!==WebSocket.OPEN||wsDeviceId!==deviceId){return false;}if(entry.sentAt&&Date.now()-entry.sentAt<1000)return true;const messageIds=[...entry.ids].map(Number).filter((id)=>Number.isInteger(id)&&id>0);if(!messageIds.length){clearTimeout(entry.retryTimer);pendingReadQueue.delete(roomId);return true;}try{state.ws.send(JSON.stringify({type:'message:read:bulk',roomId,messageIds}));entry.sentAt=Date.now();clearTimeout(entry.retryTimer);const sentAt=entry.sentAt;entry.retryTimer=setTimeout(()=>{const current=pendingReadQueue.get(roomId);if(current===entry&&entry.sentAt===sentAt){entry.sentAt=0;flushPendingReads(roomId,entry.deviceId);}},1500);return true;}catch{entry.sentAt=0;clearTimeout(entry.retryTimer);entry.retryTimer=null;return false;}}
 function queueReceivedMessageIds(roomId,deviceId,messageIds){if(!roomId||!deviceId||!Array.isArray(messageIds)||!messageIds.length)return;const ids=messageIds.map(Number).filter((id)=>Number.isSafeInteger(id)&&id>0);if(!ids.length)return;if(!pendingReceivedQueue.has(roomId))pendingReceivedQueue.set(roomId,{deviceId,ids:new Set()});const entry=pendingReceivedQueue.get(roomId);entry.deviceId=deviceId;ids.forEach((id)=>entry.ids.add(id));}
@@ -618,7 +632,7 @@ function syncUnreadDivider(box=document.getElementById('messages')){
   if(!divider.firstElementChild)divider.innerHTML='<span>Новые сообщения</span>';
   if(divider.nextElementSibling!==target)box.insertBefore(divider,target);
 }
-function getViewStateMessageElement(box,viewState){const anchorId=Number(viewState?.anchorMessageId);if(!box||!Number.isInteger(anchorId)||anchorId<=0)return null;return box.querySelector(`.msg[data-message-id="${anchorId}"], .msg[data-id="${anchorId}"]`);}
+function getViewStateMessageElement(box,viewState){const anchorId=viewState?.anchorMessageId;if(!box||anchorId==null)return null;return [...box.querySelectorAll('.msg[data-message-id]')].find(node=>node.dataset.messageId===String(anchorId))||null;}
 const scrollCoordinator={phase:'idle',roomId:null,box:null,generation:0,pendingBottom:false,
   isOpening(box=this.box){return this.phase==='opening'&&(!box||box===this.box);},
   write(box,top,behavior='auto'){if(!isCurrentMessagesBox(box))return false;const max=Math.max(0,box.scrollHeight-box.clientHeight);const next=Math.max(0,Math.min(Number(top)||0,max));if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;return true;},
@@ -666,7 +680,7 @@ const scrollCoordinator={phase:'idle',roomId:null,box:null,generation:0,pendingB
     return mode;
   },
   stop(){this.generation+=1;if(this.box)delete this.box.dataset.scrollPhase;this.phase='idle';this.roomId=null;this.box=null;this.pendingBottom=false;},
-  requestBottom(box=this.box){if(!isCurrentMessagesBox(box))return;if(activeChatHistory?.hasNewer&&this.phase!=='opening'&&window.FPHistory174){void FPHistory174.jump();return;}if(this.phase==='opening'){this.pendingBottom=true;return;}this.write(box,box.scrollHeight,'auto');},
+  requestBottom(box=this.box){if(!isCurrentMessagesBox(box))return;if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&this.phase!=='opening'&&window.FPHistory174){void FPHistory174.jump();return;}if(this.phase==='opening'){this.pendingBottom=true;return;}this.write(box,box.scrollHeight,'auto');},
   focus(target,behavior='smooth',topGap=8){const box=this.box||target?.closest?.('#messages');if(!target||!box||this.isOpening())return false;const boxRect=box.getBoundingClientRect();const rect=target.getBoundingClientRect();return this.write(box,box.scrollTop+rect.top-boxRect.top-topGap,behavior);},
   preservePrepend(box,beforeTop,beforeHeight,loaderHeight=0){if(!isCurrentMessagesBox(box)||this.phase==='opening')return;this.write(box,beforeTop+box.scrollHeight-beforeHeight+loaderHeight,'auto');}
 };
@@ -680,9 +694,9 @@ function scrollMessagesToBottom(box){scrollCoordinator.requestBottom(box);}
 function scrollToFirstUnread(box=document.getElementById('messages')){const firstUnread=getFirstUnreadMessageElement(box);return Boolean(firstUnread&&scrollCoordinator.focus(firstUnread,'auto',8));}
 
 let viewStateSaveTimer=null;
-function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[...box.querySelectorAll('.msg[data-message-id]')];if(!messages.length)return null;const boxTop=box.getBoundingClientRect().top;let fallback=null;for(const el of messages){const rect=el.getBoundingClientRect();const id=Number(el.dataset.messageId||el.dataset.id);if(!Number.isInteger(id)||id<=0)continue;if(!fallback)fallback={anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};if(rect.bottom>=boxTop){return {anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};}}return fallback;}
+function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[...box.querySelectorAll('.msg[data-message-id]')];if(!messages.length)return null;const boxTop=box.getBoundingClientRect().top;let fallback=null;for(const el of messages){const rect=el.getBoundingClientRect();const raw=el.dataset.messageId||el.dataset.id;const numeric=Number(raw);const id=Number.isInteger(numeric)&&numeric>0?numeric:raw;if(!id)continue;if(!fallback)fallback={anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};if(rect.bottom>=boxTop){return {anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};}}return fallback;}
 function scheduleViewStateSave(){if(!state.roomId||scrollCoordinator.isOpening())return;clearTimeout(viewStateSaveTimer);viewStateSaveTimer=setTimeout(()=>{void saveViewStateNow();},VIEW_STATE_SAVE_DEBOUNCE_MS);}
-async function saveViewStateNow({keepalive=false}={}){const roomId=state.roomId;const persisted=STORAGE.get(STORAGE.roomState(roomId));const box=document.getElementById('messages');if(!roomId||!persisted?.deviceId||!box)return;const atBottom=isMessagesAtBottom(box);const anchor=atBottom?null:getFirstVisibleMessageAnchor(box);if(!anchor?.anchorMessageId&&!atBottom)return;await fetch(`/api/rooms/${roomId}/view-state`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,anchorMessageId:anchor?.anchorMessageId||null,anchorOffsetPx:anchor?.anchorOffsetPx||0,atBottom}),keepalive:Boolean(keepalive)}).catch(()=>{});}
+async function saveViewStateNow({keepalive=false}={}){const roomId=state.roomId;const persisted=STORAGE.get(STORAGE.roomState(roomId));const box=document.getElementById('messages');if(!roomId||!persisted?.deviceId||!box)return;const atBottom=isMessagesAtBottom(box);const anchor=atBottom?null:getFirstVisibleMessageAnchor(box);if(!anchor?.anchorMessageId&&!atBottom)return;await fetch(`/api/rooms/${roomId}/view-state`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,anchorMessageId:Number.isSafeInteger(Number(anchor?.anchorMessageId))?Number(anchor.anchorMessageId):null,anchorOffsetPx:anchor?.anchorOffsetPx||0,atBottom}),keepalive:Boolean(keepalive)}).catch(()=>{});}
 let lastLifecycleViewStateSaveAt=0;
 function saveViewStateForLifecycle(){if(scrollCoordinator.isOpening())return;const now=Date.now();if(now-lastLifecycleViewStateSaveAt<500)return;lastLifecycleViewStateSaveAt=now;if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}void saveViewStateNow({keepalive:true});}
 function restoreMessagesViewState(box,viewState){const target=getViewStateMessageElement(box,viewState);if(!target||!isCurrentMessagesBox(box)||scrollCoordinator.isOpening())return false;const offset=Number(viewState?.anchorOffsetPx)||0;const boxTop=box.getBoundingClientRect().top;const targetTop=target.getBoundingClientRect().top;return scrollCoordinator.write(box,box.scrollTop+targetTop-boxTop-offset,'auto');}
@@ -720,23 +734,15 @@ async function loadHistoryUntilMessage(messageId){if(window.FPHistory174)return 
 function autoResizeMessageInput(input){if(!input)return;const lineHeight=parseFloat(getComputedStyle(input).lineHeight)||22;const maxHeight=lineHeight*4;input.style.height=`${lineHeight}px`;const nextHeight=Math.min(input.scrollHeight,maxHeight);input.style.height=`${Math.max(lineHeight,nextHeight)}px`;input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';}
 async function renderChatView(messages,deviceId,viewState=null){const view=captureRoomView170();resetUnreadDividerSession(state.roomId);messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>showChatsList()); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{if(document.visibilityState!=='visible')return;if(!state.roomId)return;entries.forEach((entry)=>{if(!entry.isIntersecting)return;const el=entry.target;if(el.dataset.incoming!=='1')return;if(el.dataset.read==='1')return;markMessageRead(el.dataset.messageId||el.dataset.id);unreadVisibleObserver?.unobserve(el);});},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); await FPWork174.each(messages,async m=>{appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext,view.key).catch(()=>"[cannot decrypt]"); if(!isRoomViewCurrent170(view))return; appendMessage(box,m,txt,mine,false);},{current:()=>isRoomViewCurrent170(view)});if(!isRoomViewCurrent170(view))return;if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
 box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();});
-if(typeof MutationObserver==='function'){
-  unreadDividerOutgoingObserver=new MutationObserver((records)=>{
-    if(!isCurrentMessagesBox(box)||!isMessagesAtBottom(box))return;
-    const outgoingAdded=records.some((record)=>[...record.addedNodes].some((node)=>node.nodeType===1&&(node.matches?.('.bubble-wrap.mine')||node.querySelector?.('.bubble-wrap.mine'))));
-    if(outgoingAdded)dismissUnreadDivider(box);
-  });
-  unreadDividerOutgoingObserver.observe(box,{childList:true});
-}
 document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
 renderPresenceStatus();
 const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>{sendBtn.disabled=!input.value.trim();}; input.addEventListener('input',()=>{syncSendBtn();autoResizeMessageInput(input);const draft=ensureDraftState(state.roomId);draft.text=input.value;scheduleDraftSave(state.roomId);renderChats();}); input.addEventListener('keydown',(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit();}}); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);await loadDraftForCurrentRoom();if(!isRoomViewCurrent170(view))return;syncSendBtn();}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
- async function fetchMediaThumbUrl(media){const view=captureRoomView170();const persisted=STORAGE.get(STORAGE.roomState(view.roomId));if(!persisted?.deviceId||!media?.public_id)return'';try{const r=await fetch(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`);if(!r.ok)throw new Error('thumb');const enc=await r.blob();const dec=await decryptBlobWithIvPrefix(enc,'image/webp',view.key);if(!isRoomViewCurrent170(view))return'';return URL.createObjectURL(dec);}catch{return'';}}
+ async function fetchMediaThumbUrl(media){const view=captureRoomView170();const persisted=STORAGE.get(STORAGE.roomState(view.roomId));if(!persisted?.deviceId||!media?.public_id)return'';try{const dec=await readEncryptedMedia174(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`,'image/webp',view.key,{signal:view.context?.signal});if(!isRoomViewCurrent170(view))return'';return URL.createObjectURL(dec);}catch{return'';}}
 const fetchMediaThumbUrlWithoutTracking=fetchMediaThumbUrl;
 fetchMediaThumbUrl=async function(...args){pendingMediaThumbLoads+=1;try{return await fetchMediaThumbUrlWithoutTracking(...args);}finally{pendingMediaThumbLoads=Math.max(0,pendingMediaThumbLoads-1);}};
 function openMediaViewer(messageMedia,startIndex=0){mediaViewerState={messageMedia,index:startIndex,loaded:new Map()};renderMediaViewer();}
 function renderMediaViewer(){const root=document.getElementById('mediaViewerRoot')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'mediaViewerRoot'}));const v=mediaViewerState;if(!v){root.innerHTML='';return;}const m=v.messageMedia[v.index];root.innerHTML=`<div class="media-viewer-overlay"><button class="media-viewer-close" type="button">×</button><div class="media-viewer-content"><div class="media-progress-ring">Загрузка...</div></div>${v.messageMedia.length>1?'<button class="media-viewer-nav prev">←</button><button class="media-viewer-nav next">→</button>':''}</div>`;root.querySelector('.media-viewer-overlay').onclick=(e)=>{if(e.target.classList.contains('media-viewer-overlay')){mediaViewerState=null;renderMediaViewer();}};root.querySelector('.media-viewer-close').onclick=()=>{mediaViewerState=null;renderMediaViewer();};root.querySelector('.prev')?.addEventListener('click',(e)=>{e.stopPropagation();if(v.index>0){v.index--;renderMediaViewer();}});root.querySelector('.next')?.addEventListener('click',(e)=>{e.stopPropagation();if(v.index<v.messageMedia.length-1){v.index++;renderMediaViewer();}});loadViewerMedia(m,root.querySelector('.media-viewer-content'));}
-async function loadViewerMedia(media,container){try{const persisted=STORAGE.get(STORAGE.roomState(state.roomId));const res=await fetch(`/api/media/${media.public_id}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`);if(!res.ok)throw new Error('load');const enc=await res.blob();const plain=await decryptBlobWithIvPrefix(enc,media.mime_type);const url=URL.createObjectURL(plain);container.innerHTML=media.media_kind==='video'?`<video controls autoplay src="${url}"></video>`:`<img src="${url}" alt="media">`;}catch{container.innerHTML='<div class="media-error-box">Не удалось загрузить медиа <button type="button" class="btn btn-secondary">Повторить</button></div>';container.querySelector('button')?.addEventListener('click',()=>loadViewerMedia(media,container));}}
+async function loadViewerMedia(media,container){try{const persisted=STORAGE.get(STORAGE.roomState(state.roomId));const key=state.key;const plain=await readEncryptedMedia174(`/api/media/${media.public_id}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,media.mime_type,key);const url=URL.createObjectURL(plain);container.innerHTML=media.media_kind==='video'?`<video controls autoplay src="${url}"></video>`:`<img src="${url}" alt="media">`;}catch{container.innerHTML='<div class="media-error-box">Не удалось загрузить медиа <button type="button" class="btn btn-secondary">Повторить</button></div>';container.querySelector('button')?.addEventListener('click',()=>loadViewerMedia(media,container));}}
 function appendMessage(box,m,txt,mine,autoScroll=true){
   const isMedia=m.type==='media';
   const mediaList=Array.isArray(m.media)?m.media:[];
@@ -753,7 +759,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     source:mine&&m.status==='sending'?'optimistic':'render'
   });
   if(storeResult?.record?.deleted)return null;
-  if(storeResult?.record)m={...m,status:storeResult.record.status,reply_to_message_id:storeResult.record.replyToMessageId};
+  if(storeResult?.record)m={...m,...storeResult.record.raw,status:storeResult.record.status,edited_at:storeResult.record.editedAt,reply_to_message_id:storeResult.record.replyToMessageId};
   if(storeResult?.record&&typeof storeResult.record.text==='string'){
     renderText=storeResult.record.text;
     txt=renderText;
@@ -799,12 +805,14 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   let touchStartX=0,touchStartY=0,currentDx=0,tracking=false;
   w.addEventListener('touchstart',(e)=>{
     if(e.touches.length!==1||!bubble)return;
+    if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat')return;
     const t=e.touches[0];
     touchStartX=t.clientX;touchStartY=t.clientY;currentDx=0;tracking=true;
     w.classList.remove('swipe-reset');w.classList.add('swiping');bubble.style.transform='';
   },{passive:true});
   w.addEventListener('touchmove',(e)=>{
     if(!tracking||e.touches.length!==1||!bubble)return;
+    if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat'){tracking=false;currentDx=0;bubble.style.transform='';w.classList.remove('swiping');return;}
     const t=e.touches[0];
     const dx=t.clientX-touchStartX;
     const dy=t.clientY-touchStartY;
@@ -816,9 +824,10 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     swipeIcon.style.opacity=String(Math.max(0.12,progress));
     swipeIcon.style.transform=`translateY(-50%) scale(${0.8+progress*0.2})`;
   },{passive:true});
-  const finishSwipe=()=>{
+  const finishSwipe=(event)=>{
     if(!bubble)return;
-    const shouldReply=tracking&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD;
+    const allowed=event.type!=='touchcancel'&&(!window.FPGesture135||FPGesture135.currentLayer(event,event.target)==='chat');
+    const shouldReply=allowed&&tracking&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD;
     w.classList.remove('swiping');w.classList.add('swipe-reset');
     bubble.style.transform='';swipeIcon.style.opacity='';swipeIcon.style.transform='';
     tracking=false;currentDx=0;
@@ -853,7 +862,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     if(!autoScroll)pendingIncomingReadIds.push(Number(m.id));
     observeUnreadMessage(w);
   }
-  if(autoScroll)scrollCoordinator.requestBottom(box);
+  if(autoScroll){if(mine&&isCurrentMessagesBox(box))dismissUnreadDivider(box);scrollCoordinator.requestBottom(box);window.FPHistory174?.trim('newer');}
   return w;
 }
 const renderChatViewWithoutLazyHistory=renderChatView;
@@ -1168,8 +1177,7 @@ function ensureStableWsConnected(deviceId,timeoutMs=8000){
 function sendClientState(visibleOverride=null){return sendStableClientState(visibleOverride);}
 function ensureWsConnected(deviceId,timeoutMs=8000){return ensureStableWsConnected(deviceId,timeoutMs);}
 function connectWs(deviceId){return ensureStableWsConnected(deviceId);}
-window.addEventListener('online',()=>{startAppSessionSync();});
-window.addEventListener('offline',()=>{if(hasKnownSessionRooms())setLocalConnectionState('disconnected');});
+
 
 function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){if(state.ws)state.ws.close();state.ws=null;state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
 function hideMenu(){els.context.classList.add('hidden')}
@@ -1346,11 +1354,26 @@ document.addEventListener('touchmove',(e)=>{
 },{passive:true});
 document.addEventListener('touchend',()=>{edgeSwipe.tracking=false;},{passive:true});
 document.addEventListener('touchcancel',()=>{edgeSwipe.tracking=false;},{passive:true});
-const restoreWsOnResume=()=>{if(document.visibilityState!=='visible')return;startAppSessionSync();};const handleAppResume=()=>{sendClientState(true);restoreWsOnResume();checkAppVersionOnEntry();};
-window.addEventListener('focus',handleAppResume);
-window.addEventListener('beforeunload',()=>{sendClientState(false);saveViewStateForLifecycle();});
-window.addEventListener('pagehide',()=>{sendClientState(false);saveViewStateForLifecycle();});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){stopAppSyncWatchdog();saveViewStateForLifecycle();sendClientState(false);return;}sendClientState(true);handleAppResume();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();});window.addEventListener('focus',()=>sendClientState(true));window.addEventListener('pageshow',()=>{lastLifecycleViewStateSaveAt=0;sendClientState(true);flushPendingReads(state.roomId,activeChatDeviceId);});window.addEventListener('pageshow',handleAppResume);
+let appResumeTimer174=null,appResumeWork174=null;
+const handleAppResume=()=>{
+  if(appResumeWork174)return appResumeWork174;
+  if(document.visibilityState!=='visible')return;
+  checkAppVersionOnEntry();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();
+  const work=Promise.resolve(startAppSessionSync()).finally(()=>{if(appResumeWork174===work)appResumeWork174=null;});
+  appResumeWork174=work;return work;
+};
+window.FPLifecycle170?.subscribe(event=>{
+  if(['background','pagehide','beforeunload'].includes(event.lastType)){
+    clearTimeout(appResumeTimer174);appResumeTimer174=null;
+    stopAppSyncWatchdog();saveViewStateForLifecycle();sendClientState(false);return;
+  }
+  if(event.lastType==='offline'){if(hasKnownSessionRooms())setLocalConnectionState('disconnected');return;}
+  if(!window.FPMediaSend170||!event.pageActive||event.visibility!=='visible')return;
+  if(['foreground','focus','online','pageshow'].includes(event.lastType)){
+    if(event.lastType==='pageshow')lastLifecycleViewStateSaveAt=0;
+    if(appResumeTimer174===null)appResumeTimer174=setTimeout(()=>{appResumeTimer174=null;void handleAppResume();},0);
+  }
+});
 
 window.addEventListener('popstate',()=>{const handled=handleAndroidBackNavigation();if(handled){pushAppHistoryState();}});
 
@@ -1358,6 +1381,10 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{setView(b.datase
 document.addEventListener('click',(event)=>{const target=event.target?.closest?.('.chat-row,#createBtn,#joinBtn,#pasteJoinBtn,#restoreBtn');if(target)void maybeRequestNotificationsFromUserGesture();},true);
 pushAppHistoryState();
 (async()=>{
+  if(window.FPStartup174?.ready&&!(await FPStartup174.ready)){
+    els.content.innerHTML='<div class="panel"><p>Не удалось загрузить приложение. Обновите страницу.</p><button class="btn" onclick="location.reload()">Повторить</button></div>';
+    hideBootSplash();return;
+  }
   await registerServiceWorker();
   const updateStarted=await checkAppVersionOnEntry();
   if(updateStarted)return;
@@ -1606,12 +1633,29 @@ async function createVideoThumbBlob(file){
     return {thumbnailBlob:thumbnailBlob||new Blob([], {type:'image/webp'}),width:video.videoWidth||null,height:video.videoHeight||null,durationSeconds};
   }finally{URL.revokeObjectURL(objectUrl);}
 }
-async function deleteUploadedPendingMedia(items){const persisted=STORAGE.get(STORAGE.roomState(state.roomId));if(!persisted?.deviceId||!state.roomId)return;const mediaIds=items.map((item)=>item.uploadedMedia?.id).filter(Boolean);if(!mediaIds.length)return;await fetch(`/api/rooms/${state.roomId}/media/pending`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,mediaIds})}).catch(()=>{});}
+async function deleteUploadedPendingMedia(items,roomId=state.roomId,deviceId=STORAGE.get(STORAGE.roomState(roomId))?.deviceId){
+  if(!roomId||!deviceId)return;
+  const mediaIds=items.map(item=>item.uploadedMedia?.id).filter(Boolean);
+  const uploadIds=items.map(item=>item.uploadId).filter(Boolean);
+  if(!mediaIds.length&&!uploadIds.length)return;
+  await fetch(`/api/rooms/${roomId}/media/pending`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,mediaIds,uploadIds})}).catch(()=>{});
+}
 async function openMediaPreviewFromFiles(rawFiles){const view=captureRoomView170();let files=[...rawFiles];if(files.length>MEDIA_LIMITS.maxFiles){alert('Можно отправить максимум 10 файлов за раз.');files=files.slice(0,MEDIA_LIMITS.maxFiles);}const items=[];let total=0;for(const originalFile of files){let f=originalFile;const type=f.type||'';const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');const isVid=ALLOWED_VIDEO_TYPES.has(type)||type.startsWith('video/');if(!isImg&&!isVid)continue;if(isVid&&f.size>MEDIA_LIMITS.maxVideoSize){alert('Видео больше 100 МБ. Сожмите его перед отправкой.');continue;}if(isImg&&f.size>MEDIA_LIMITS.maxImageSize){const shouldCompress=confirm('Фото больше 10 МБ. Сжать перед отправкой?');if(!shouldCompress)continue;const compressed=await compressImageFile(f);if(!compressed)continue;f=compressed;}if(total+f.size>MEDIA_LIMITS.maxTotalSize)break;const objectUrl=URL.createObjectURL(f);let thumb;let meta={width:null,height:null,durationSeconds:null};if(isImg){const t=await createImageThumbBlob(f);thumb=t.thumbnailBlob;meta=t;}else{const t=await createVideoThumbBlob(f).catch(()=>null);if(t){thumb=t.thumbnailBlob;meta=t;}else{thumb=new Blob([],{type:'image/webp'});}}const thumbUrl=thumb.size?URL.createObjectURL(thumb):objectUrl;items.push({id:crypto.randomUUID(),file:f,kind:isVid?'video':'image',objectUrl,thumbnailBlob:thumb,thumbnailObjectUrl:thumbUrl,width:meta.width,height:meta.height,durationSeconds:meta.durationSeconds,uploadedMedia:null,uploadError:null});total+=f.size;}
 if(!isRoomViewCurrent170(view)){for(const item of items){URL.revokeObjectURL(item.objectUrl);URL.revokeObjectURL(item.thumbnailObjectUrl);}return;}if(!items.length)return;mediaPreviewState={roomId:view.roomId,items,caption:'',sending:false,failedIndex:null};renderMediaPreviewModal();}
 function closeMediaPreviewModal(){if(!mediaPreviewState)return;mediaPreviewState.items.forEach((i)=>{try{URL.revokeObjectURL(i.objectUrl);}catch{}try{URL.revokeObjectURL(i.thumbnailObjectUrl);}catch{}});mediaPreviewState=null;const root=document.getElementById('mediaPreviewRoot');if(root)root.innerHTML='';}
 function renderMediaPreviewModal(){const root=document.getElementById('mediaPreviewRoot');if(!root||!mediaPreviewState)return;const items=mediaPreviewState.items;const gridClass=items.length===1?'one':(items.length<=4?'few':'many');root.innerHTML=`<div class="media-preview-overlay"><div class="media-preview-sheet"><div class="media-preview-header"><button class="media-preview-remove" type="button">×</button><div class="media-preview-count">${items.length>1?`✓ ${items.length}`:''}</div><strong>Выбрано ${items.length}</strong></div><div class="media-preview-grid ${gridClass}">${items.map((item,idx)=>`<div class="media-preview-item" data-idx="${idx}"><img src="${item.thumbnailObjectUrl||item.objectUrl}"><span class="media-preview-order">${idx+1}</span><button class="media-preview-remove media-item-remove" type="button" data-remove="${idx}">×</button>${item.kind==='video'?'<span class="media-video-play">▶</span>':''}</div>`).join('')}</div><div class="media-preview-footer"><textarea class="media-caption-input" placeholder="Добавить подпись...">${safeText(mediaPreviewState.caption||'')}</textarea><button class="media-send-btn" type="button">➤</button><div class="media-upload-progress"></div></div></div></div>`;
-root.querySelector('.media-preview-overlay').onclick=async(e)=>{if(e.target.classList.contains('media-preview-overlay')){await deleteUploadedPendingMedia(mediaPreviewState?.items||[]);closeMediaPreviewModal();}};root.querySelector('.media-preview-header .media-preview-remove').onclick=async()=>{await deleteUploadedPendingMedia(mediaPreviewState?.items||[]);closeMediaPreviewModal();};root.querySelectorAll('[data-remove]').forEach(btn=>btn.onclick=()=>{const idx=Number(btn.dataset.remove);const [x]=mediaPreviewState.items.splice(idx,1);if(x){URL.revokeObjectURL(x.objectUrl);URL.revokeObjectURL(x.thumbnailObjectUrl);}if(!mediaPreviewState.items.length)closeMediaPreviewModal();else renderMediaPreviewModal();});root.querySelector('.media-caption-input').oninput=(e)=>{mediaPreviewState.caption=e.target.value;};root.querySelector('.media-send-btn').onclick=()=>sendMediaFromPreview(root);
+const preview=mediaPreviewState;
+const cancel=()=>window.FPMediaSend170?.cancelPreview(preview);
+root.querySelector('.media-preview-overlay').onclick=e=>{if(e.target.classList.contains('media-preview-overlay'))void cancel();};
+root.querySelector('.media-preview-header .media-preview-remove').onclick=cancel;
+root.querySelectorAll('[data-remove]').forEach(btn=>{btn.disabled=preview.sending;btn.onclick=async()=>{
+  if(preview.sending||mediaPreviewState!==preview)return;
+  const [item]=preview.items.splice(Number(btn.dataset.remove),1);
+  if(item){URL.revokeObjectURL(item.objectUrl);URL.revokeObjectURL(item.thumbnailObjectUrl);void deleteUploadedPendingMedia([item],preview.roomId);}
+  if(!preview.items.length)closeMediaPreviewModal();else renderMediaPreviewModal();
+};});
+root.querySelector('.media-caption-input').oninput=e=>{preview.caption=e.target.value;};
+root.querySelector('.media-send-btn').onclick=()=>sendMediaFromPreview(root);
 }
 async function sendMediaFromPreview(root){if(!mediaPreviewState||mediaPreviewState.sending)return;mediaPreviewState.sending=true;const persisted=STORAGE.get(STORAGE.roomState(state.roomId));const btn=root.querySelector('.media-send-btn');const prog=root.querySelector('.media-upload-progress');const total=mediaPreviewState.items.length;for(let i=0;i<total;i++){const item=mediaPreviewState.items[i];if(item.uploadedMedia)continue;btn.textContent='…';prog.textContent=`Загрузка ${Math.round((i/total)*100)}%`;const encryptedFile=await encryptBlobWithIvPrefix(item.file);const encryptedThumb=await encryptBlobWithIvPrefix(item.thumbnailBlob);const nameEnc=await encryptText(item.file.name||'media');const fd=new FormData();fd.append('deviceId',persisted.deviceId);fd.append('encryptedFile',encryptedFile,'file.bin');fd.append('encryptedThumbnail',encryptedThumb,'thumb.bin');fd.append('originalNameCiphertext',nameEnc.ciphertext);fd.append('originalNameIv',nameEnc.iv);fd.append('mimeType',item.file.type);fd.append('mediaKind',item.kind);fd.append('sizeBytes',String(item.file.size));fd.append('encryptedSizeBytes',String(encryptedFile.size));fd.append('thumbSizeBytes',String(item.thumbnailBlob.size));fd.append('thumbEncryptedSizeBytes',String(encryptedThumb.size));fd.append('width',String(item.width||0));fd.append('height',String(item.height||0));fd.append('durationSeconds',String(item.durationSeconds||0));fd.append('fileOrder',String(i));try{item.uploadedMedia=await uploadEncryptedMediaXhr(state.roomId,persisted.deviceId,fd,(l,t)=>{if(t)prog.textContent=`Загрузка ${Math.round(((i+l/t)/total)*100)}%`;});}catch{const retry=confirm(`Не удалось загрузить файл ${i+1} из ${total}. Повторить?`);if(retry){i--;continue;}mediaPreviewState.sending=false;return;}}
 const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');mediaPreviewState.sending=false;return;}const caption=(mediaPreviewState.caption||'').trim();const enc=await encryptText(caption||'');const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const mediaIds=mediaPreviewState.items.map(x=>x.uploadedMedia?.id).filter(Boolean);const notificationPreview=caption?caption.slice(0,80):buildMediaFallbackText(mediaPreviewState.items.map(x=>({media_kind:x.kind})),caption);try{state.ws.send(JSON.stringify({type:'message:new',roomId:state.roomId,messageType:'media',ciphertext:enc.ciphertext,iv:enc.iv,notificationPreview,replyToMessageId,mediaIds}));}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');mediaPreviewState.sending=false;return;}draft.replyTo=null;await clearDraftOnServer(state.roomId);closeMediaPreviewModal();}

@@ -77,6 +77,8 @@
     emit('pagehide', { persisted: Boolean(event?.persisted) });
   }
 
+  const onBeforeUnload=()=>emit('beforeunload');
+  window.addEventListener('beforeunload',onBeforeUnload);
   document.addEventListener('visibilitychange', onVisibility, { passive: true });
   window.addEventListener('online', onOnline, { passive: true });
   window.addEventListener('offline', onOffline, { passive: true });
@@ -92,6 +94,7 @@
   }
 
   function destroy() {
+    window.removeEventListener('beforeunload',onBeforeUnload);
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);

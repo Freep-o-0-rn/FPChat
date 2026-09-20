@@ -316,14 +316,13 @@
     const cached = assetCache.get(key);
     if (cached) return cached.promise;
 
-    const entry = { url: '', promise: null };
+    const entry = { url: '', promise: null, controller:new AbortController() };
     entry.promise = (async () => {
       const persisted = STORAGE.get(STORAGE.roomState(roomId));
       if (!persisted?.deviceId) throw new Error('gallery device unavailable');
-      const response = await fetch(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`);
-      if (!response.ok) throw new Error(`gallery media ${response.status}`);
-      const encrypted = await response.blob();
-      const plain = await decryptBlobWithIvPrefix(encrypted, item.mime_type || 'application/octet-stream');
+      const key=await getRoomKey(roomId);
+      const plain=await readEncryptedMedia174(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,item.mime_type || 'application/octet-stream',key,{signal:entry.controller.signal});
+      if(entry.controller.signal.aborted||assetCache.get(mediaKey(roomId,item))!==entry)throw new DOMException('Stale gallery asset','AbortError');
       entry.url = URL.createObjectURL(plain);
       return { url: entry.url };
     })();
@@ -331,7 +330,7 @@
     try {
       return await entry.promise;
     } catch (error) {
-      assetCache.delete(key);
+      if(assetCache.get(key)===entry)assetCache.delete(key);
       throw error;
     }
   }
@@ -339,6 +338,7 @@
   function dropAsset(roomId, item) {
     const key = mediaKey(roomId, item);
     const entry = assetCache.get(key);
+    entry?.controller?.abort();
     if (entry?.url) URL.revokeObjectURL(entry.url);
     assetCache.delete(key);
   }
@@ -346,6 +346,7 @@
   function pruneAssetCache(keep) {
     for (const [key, entry] of assetCache) {
       if (keep.has(key)) continue;
+      entry?.controller?.abort();
       if (entry?.url) URL.revokeObjectURL(entry.url);
       assetCache.delete(key);
     }

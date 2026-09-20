@@ -53,7 +53,7 @@ assert(networkSource.includes("Object.defineProperty(xhrProto, 'send'"), 'networ
 assert(networkSource.includes('function upload({'), 'network171 must expose the common XHR upload path');
 assert(networkSource.includes("MEDIA_CACHE_NAME = 'fpchat-media-v167'"), 'network171 must keep the existing managed cache format');
 assert(networkSource.includes('fpMediaCache171Put'), 'network171 must gate physical managed-cache writes');
-assert(networkSource.includes("id: 'media-download-budget171'"), 'network171 must bound media download concurrency');
+assert(/id:\s*\x27media-download-budget171\x27/.test(networkSource), 'network171 must bound media download concurrency');
 assert(packageJson.scripts?.['check:171'] === 'node ./scripts/check-build171.js', 'package.json must expose npm run check:171');
 
 const allowedLegacyFetchFiles = new Set([

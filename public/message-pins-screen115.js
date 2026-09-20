@@ -111,10 +111,8 @@
       if (media?.public_id && typeof decryptBlobWithIvPrefix === 'function') {
         const deviceId = roomDevice(roomId);
         if (deviceId) {
-          const response = await fetch(`/api/media/${encodeURIComponent(media.public_id)}/thumb?deviceId=${encodeURIComponent(deviceId)}`, { cache: 'no-store' });
-          if (!response.ok) throw new Error('thumbnail request failed');
-          const encrypted = await response.blob();
-          const plain = await decryptBlobWithIvPrefix(encrypted, 'image/webp');
+          const key=await getRoomKey(roomId);
+          const plain=await readEncryptedMedia174(`/api/media/${encodeURIComponent(media.public_id)}/thumb?deviceId=${encodeURIComponent(deviceId)}`,'image/webp',key,{cache:'no-store'});
           return await blobToDataUrl(plain);
         }
       }

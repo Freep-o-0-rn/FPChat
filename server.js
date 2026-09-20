@@ -27,7 +27,7 @@ if (pushEnabled) {
 }
 
 const db = createDb(DATABASE_PATH);
-const UPLOAD_DIR = path.join(__dirname, 'data', 'uploads');
+const UPLOAD_DIR = process.env.FPCHAT_UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 110 * 1024 * 1024 } });
 const app = express();
@@ -812,7 +812,15 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
   const encryptedFile = req.files?.encryptedFile?.[0];
   if (!encryptedFile) return res.status(400).json({ ok: false, error: 'encryptedFile required' });
   const encryptedThumb = req.files?.encryptedThumbnail?.[0] || null;
-  const publicId = randomToken(24);
+  const uploadId = String(req.body?.uploadId || '');
+  if (uploadId && !/^[a-f0-9]{32}$/.test(uploadId)) return res.status(400).json({ ok: false, error: 'invalid uploadId' });
+  const publicId = uploadId || randomToken(24);
+  const previousUpload = q.findMediaByPublicId.get(publicId);
+  if (previousUpload) {
+    if (previousUpload.room_id !== room.id || previousUpload.status !== 'pending') return res.status(409).json({ ok: false, error: 'uploadId already used' });
+    return res.json({ ok: true, media: mediaToDto(previousUpload, req) });
+  }
+  if (req.aborted || res.destroyed) return;
   const serverFilename = `media_${publicId}.bin`;
   const thumbFilename = encryptedThumb ? `thumb_${publicId}.bin` : null;
   fs.writeFileSync(path.join(UPLOAD_DIR, serverFilename), encryptedFile.buffer);
@@ -836,6 +844,13 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
     Number(req.body?.durationSeconds || 0) || null
   );
   const media = q.findMediaByPublicId.get(publicId);
+  res.once('close', () => {
+    if (res.writableFinished) return;
+    const pending = q.findMediaByPublicId.get(publicId);
+    if (!pending || pending.status !== 'pending') return;
+    safeUnlink(pending.server_filename);safeUnlink(pending.thumbnail_filename);
+    q.deletePendingMediaById.run(pending.id);
+  });
   return res.json({ ok: true, media: mediaToDto(media, req) });
 });
 app.get('/api/media/:publicId/blob', (req, res) => {
@@ -864,6 +879,11 @@ app.delete('/api/rooms/:publicId/media/pending', (req, res) => {
   const deviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const mediaIds = Array.isArray(req.body?.mediaIds) ? req.body.mediaIds.map(Number).filter(Boolean) : [];
+  for (const uploadId of (Array.isArray(req.body?.uploadIds) ? req.body.uploadIds.slice(0, 10) : [])) {
+    if (!/^[a-f0-9]{32}$/.test(String(uploadId))) continue;
+    const pending = q.findMediaByPublicId.get(uploadId);
+    if (pending?.room_id === room.id && pending.status === 'pending') mediaIds.push(pending.id);
+  }
   const rows = q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds));
   for (const media of rows) {
     safeUnlink(media.server_filename);

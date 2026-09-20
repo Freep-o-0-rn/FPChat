@@ -54,7 +54,7 @@ assert(sources['public/text-send170.js'].includes("beginOperation(roomId, 'text-
 assert(sources['public/text-send170.js'].includes('encryptForKey(context.key, text)'), 'text-send170 must encrypt with the captured room key');
 assert(sources['public/text-send170.js'].includes('form.onsubmit = submit'), 'text-send170 must become the assigned text-submit owner');
 assert(sources['public/text-send170.js'].includes('/media-send170.js'), 'text-send170 must chain the guarded media owner');
-assert(sources['public/media-send170.js'].includes("beginOperation(roomId, 'media-send')"), 'media-send170 must use an independent operation context');
+assert(/beginOperation\(context\.roomId,\s*'media-send'\)/.test(sources['public/media-send170.js']), 'media-send170 must use an independent operation context');
 assert(sources['public/media-send170.js'].includes('encryptBlobForKey(context.key'), 'media-send170 must encrypt blobs with the captured room key');
 assert(sources['public/media-send170.js'].includes('uploadEncryptedMediaXhr(roomId, deviceId'), 'media-send170 must upload to the captured room/device');
 

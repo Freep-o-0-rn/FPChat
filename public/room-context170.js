@@ -242,6 +242,7 @@
     const script = document.createElement('script');
     script.src = `/text-send170.js${suffix}`;
     script.dataset.fpTextSend170 = '1';
+    script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
 
@@ -259,6 +260,7 @@
     script.src = `/room-open170.js${suffix}`;
     script.dataset.fpRoomOpen170 = '1';
     script.onload = loadTextSendOwner;
+    script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
 
@@ -276,6 +278,7 @@
     script.src = `/connection170.js${suffix}`;
     script.dataset.fpConnection170 = '1';
     script.onload = loadRoomOpenOwner;
+    script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
 

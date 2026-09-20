@@ -436,70 +436,85 @@
     }
   }
 
-  function acquireMediaSlot(signal) {
-    if (signal?.aborted) return Promise.reject(new DOMException('Media request aborted', 'AbortError'));
-    if (stats.mediaBudget.active < stats.mediaBudget.limit) {
-      stats.mediaBudget.active += 1;
-      stats.mediaBudget.peakActive = Math.max(stats.mediaBudget.peakActive, stats.mediaBudget.active);
-      return Promise.resolve(true);
+  let reservedMediaSlots=0;
+  function drainMediaSlots(){
+    while(mediaWaiters.length&&reservedMediaSlots+mediaWaiters[0].weight<=stats.mediaBudget.limit){
+      const waiter=mediaWaiters.shift();
+      waiter.signal?.removeEventListener('abort',waiter.onAbort);
+      reservedMediaSlots+=waiter.weight;stats.mediaBudget.active++;
+      stats.mediaBudget.peakActive=Math.max(stats.mediaBudget.peakActive,stats.mediaBudget.active);
+      waiter.resolve();
     }
-    return new Promise((resolve, reject) => {
-      const waiter = { resolve, reject, signal, onAbort: null };
-      waiter.onAbort = () => {
-        const index = mediaWaiters.indexOf(waiter);
-        if (index >= 0) mediaWaiters.splice(index, 1);
-        stats.mediaBudget.queued = mediaWaiters.length;
-        stats.mediaBudget.cancelled += 1;
-        reject(new DOMException('Media request aborted', 'AbortError'));
+    stats.mediaBudget.queued=mediaWaiters.length;
+  }
+  function acquireMediaSlot(signal,weight){
+    if(signal?.aborted)return Promise.reject(new DOMException('Media request aborted','AbortError'));
+    return new Promise((resolve,reject)=>{
+      const waiter={resolve,reject,signal,weight,onAbort:null};
+      waiter.onAbort=()=>{
+        const index=mediaWaiters.indexOf(waiter);if(index<0)return;
+        mediaWaiters.splice(index,1);stats.mediaBudget.cancelled++;
+        reject(new DOMException('Media request aborted','AbortError'));drainMediaSlots();
       };
-      if (signal?.aborted) {
-        waiter.onAbort();
-        return;
-      }
-      signal?.addEventListener('abort', waiter.onAbort, { once: true });
-      mediaWaiters.push(waiter);
-      stats.mediaBudget.queued = mediaWaiters.length;
+      signal?.addEventListener('abort',waiter.onAbort,{once:true});
+      mediaWaiters.push(waiter);drainMediaSlots();
     });
   }
-
-  function releaseMediaSlot() {
-    const waiter = mediaWaiters.shift();
-    stats.mediaBudget.queued = mediaWaiters.length;
-    if (waiter) {
-      waiter.signal?.removeEventListener('abort', waiter.onAbort);
-      stats.mediaBudget.peakActive = Math.max(stats.mediaBudget.peakActive, stats.mediaBudget.active);
-      waiter.resolve(true);
-      return;
-    }
-    stats.mediaBudget.active = Math.max(0, stats.mediaBudget.active - 1);
+  function releaseMediaSlot(weight){
+    reservedMediaSlots=Math.max(0,reservedMediaSlots-weight);
+    stats.mediaBudget.active=Math.max(0,stats.mediaBudget.active-1);drainMediaSlots();
   }
 
-  use({
-    id: 'media-download-budget171',
-    priority: 250,
-    source: 'network171',
-    handler: async ({ input, init, next }) => {
-      if (!isMediaDownload(input, init)) return next(input, init);
-      const signal = mediaRequestSignal(input, init);
-      await acquireMediaSlot(signal);
-      try {
-        const response = await next(input, init);
-        // fetch resolves at response headers. Keep the slot until the encrypted
-        // body is consumed; otherwise slow downloads escape the concurrency cap.
-        if (response?.body && typeof response.arrayBuffer === 'function') {
-          const body = await response.arrayBuffer();
-          const buffered = new Response(body, {status:response.status,statusText:response.statusText,headers:response.headers});
-          Object.defineProperty(buffered, 'url', {value:response.url});
-          stats.mediaBudget.completed += 1;
-          return buffered;
-        }
-        stats.mediaBudget.completed += 1;
-        return response;
-      } finally {
-        releaseMediaSlot();
-      }
+  // One original through download/decrypt, or four thumbnails. Do not copy a
+  // complete encrypted video merely to retain its slot. Backpressure stays live.
+  use({id:'media-download-budget171',priority:90,source:'network171',handler:async({input,init,next})=>{
+    if(!isMediaDownload(input,init))return next(input,init);
+    const signal=mediaRequestSignal(input,init);
+    const url=new URL(typeof input==='string'?input:input.url,location.href);
+    const original=url.pathname.endsWith('/blob');
+    const weight=original?stats.mediaBudget.limit:1;
+    const byteLimit=original?100*1024*1024+64:4*1024*1024;
+    await acquireMediaSlot(signal,weight);
+    let released=false,reader,streamController,read=0;
+    const release=()=>{if(released)return;released=true;signal?.removeEventListener('abort',abort);releaseMediaSlot(weight);};
+    const abort=()=>{try{streamController?.error(new DOMException('Media request aborted','AbortError'));}catch{};void reader?.cancel().catch(()=>{});if(!init?.fpMediaLease174)release();};
+    if(init?.fpMediaLease174)init.fpMediaLease174.release=release;
+    signal?.addEventListener('abort',abort,{once:true});
+    try{
+      if(signal?.aborted)throw new DOMException('Media request aborted','AbortError');
+      const response=await next(input,init);
+      if(signal?.aborted)throw new DOMException('Media request aborted','AbortError');
+      if(Number(response.headers.get('content-length'))>byteLimit){void response.body?.cancel().catch(()=>{});throw new RangeError('Media body exceeds resource limit');}
+      if(!response.body){stats.mediaBudget.completed++;release();return response;}
+      reader=response.body.getReader();
+      const body=new ReadableStream({
+        start(controller){streamController=controller;},
+        async pull(controller){
+          try{
+            const chunk=await reader.read();
+            if(chunk.done){controller.close();stats.mediaBudget.completed++;if(!init?.fpMediaLease174)release();return;}
+            read+=chunk.value.byteLength;
+            if(read>byteLimit){void reader.cancel().catch(()=>{});throw new RangeError('Media body exceeds resource limit');}
+            controller.enqueue(chunk.value);
+          }catch(error){controller.error(error);release();}
+        },
+        cancel(reason){release();return reader.cancel(reason);}
+      },{highWaterMark:0});
+      const streamed=new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});
+      Object.defineProperty(streamed,'url',{value:response.url});
+      return streamed;
+    }catch(error){release();throw error;}
+  }});
+  async function consumeMedia(input,init,consume){
+    const lease={release:null};let response;
+    try{
+      response=await coordinatorFetch(input,{...init,fpMediaLease174:lease});
+      return await consume(response);
+    }finally{
+      if(response?.body&&!response.bodyUsed)void response.body.cancel().catch(()=>{});
+      lease.release?.();
     }
-  });
+  }
 
   // ---- one physical mutation gate for the managed encrypted-media cache --------
   const MEDIA_CACHE_NAME = 'fpchat-media-v167';
@@ -531,23 +546,26 @@
 
       cacheProto.put = function fpMediaCache171Put(request, response) {
         if (cacheNameByInstance.get(this) !== MEDIA_CACHE_NAME) return nativeCachePut.call(this, request, response);
-        if (clearingMediaCache()) return Promise.resolve(undefined);
+        const discard=()=>{if(response?.body&&!response.bodyUsed)void response.body.cancel().catch(()=>{});};
+        if (clearingMediaCache()){discard();return Promise.resolve(undefined);}
         const cache = this;
         const key = cacheRequestKey(request);
         if (key && mediaCacheWrites.has(key)) {
           stats.mediaCache.joinedWrites += 1;
+          discard();
           return mediaCacheWrites.get(key).then(() => undefined);
         }
 
         const task = (async () => {
           try {
-            if (clearingMediaCache()) return;
+            if (clearingMediaCache()){discard();return;}
             const existing = await cache.match(request);
             if (existing) {
               stats.mediaCache.skippedExisting += 1;
+              discard();
               return;
             }
-            if (clearingMediaCache()) return;
+            if (clearingMediaCache()){discard();return;}
             await nativeCachePut.call(cache, request, response);
             stats.mediaCache.writes += 1;
           } catch (error) {
@@ -601,7 +619,7 @@
         openLayers: [...xhrOpenLayers.values()].map((layer) => ({ id: layer.id, priority: layer.priority, source: layer.source })),
         sendLayers: [...xhrSendLayers.values()].map((layer) => ({ id: layer.id, priority: layer.priority, source: layer.source }))
       },
-      mediaBudget: { ...stats.mediaBudget },
+      mediaBudget: { ...stats.mediaBudget, reservedSlots:reservedMediaSlots, originalLimit:1, thumbnailLimit:4, wholeBodyCopies:0 },
       mediaCache: { ...stats.mediaCache, format: MEDIA_CACHE_NAME },
       layers: [...layers.values()]
         .sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id))
@@ -635,6 +653,7 @@
     fetch: coordinatorFetch,
     nativeFetch,
     upload,
+    consumeMedia,
     use,
     snapshot,
     hasLayer,

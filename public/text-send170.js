@@ -192,6 +192,7 @@
     const script = document.createElement('script');
     script.src = `/media-send170.js${suffix}`;
     script.dataset.fpMediaSend170 = '1';
+    script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
 })();

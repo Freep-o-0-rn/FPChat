@@ -239,11 +239,9 @@
     resetLegacyDrawerSwipe();
     syncBodyLayer();
   };
-  window.addEventListener('blur', reset, true);
-  window.addEventListener('pagehide', reset, true);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') reset();
-    else syncBodyLayer();
+  window.FPLifecycle170?.subscribe(event=>{
+    if(['blur','pagehide','background'].includes(event.lastType))reset();
+    else if(event.lastType==='foreground')syncBodyLayer();
   });
 
   window.FPGesture135 = Object.freeze({

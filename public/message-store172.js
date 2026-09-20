@@ -254,9 +254,8 @@
   function pruneRoom(room) {
     if (!room || room.messages.size <= MAX_MESSAGES_PER_ROOM) return;
     const referenced = new Set();
-    for (const values of room.replyDependents.values()) {
-      for (const value of values) referenced.add(String(value));
-    }
+    // Map is sourceId -> dependentIds. Keep the sources while replies need them.
+    for (const sourceId of room.replyDependents.keys()) referenced.add(String(sourceId));
     const entries = [...room.messages.entries()].sort((a, b) => a[1].touchedAt - b[1].touchedAt);
     for (const [key, record] of entries) {
       if (room.messages.size <= MAX_MESSAGES_PER_ROOM) break;
@@ -637,6 +636,8 @@
     updateStatus,
     promote,
     get,
+    pending: (roomId) => [...(roomFor(roomId, false)?.messages.values() || [])]
+      .filter(record => !record.id && record.clientMessageId && !record.deleted),
     resolveReply,
     dependents,
     roomSnapshot,
