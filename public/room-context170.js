@@ -296,5 +296,9 @@
     document.body.appendChild(script);
   }
 
-  loadLifecycleOwner();
+  // Room-open170 captures the lifecycle wrapper as its worker. Fetch timing
+  // must never decide which wrapper is outermost (including on a warm preload).
+  if(window.FPStartup174&&!window.FPRoomLifecycle98Ready){
+    window.addEventListener('fpchat:room-lifecycle-ready174',loadLifecycleOwner,{once:true});
+  }else loadLifecycleOwner();
 })();

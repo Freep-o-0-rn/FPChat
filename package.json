@@ -13,7 +13,12 @@
     "check:172": "node ./scripts/check-build172.js",
     "check:173": "node ./scripts/check-build173.js",
     "check:169-173": "node ./scripts/check-build169-173.js",
-    "test:173:browser": "node ./scripts/regression173-browser.cjs"
+    "test:173:browser": "node ./scripts/regression173-browser.cjs",
+    "check:174": "node ./scripts/check-build174.js",
+    "check:169-174": "node ./scripts/check-build169-173.js --174",
+    "test:174:browser": "node ./scripts/regression174-browser.cjs",
+    "bench:174:list": "node ./scripts/benchmark174.cjs",
+    "bench:174:history": "node ./scripts/benchmark-history174.cjs"
   },
   "license": "MIT",
   "dependencies": {

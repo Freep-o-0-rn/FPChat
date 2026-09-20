@@ -251,6 +251,25 @@
         }
       } catch {}
 
+      // Preload fetches early, but never executes scripts out of dependency order.
+      // Edges below document the existing execution chains and the room-entry gate.
+      const startupDependencies174 = {
+        'app.js':['network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js'],
+        'voice.js':['app.js','typing.js'],
+        'voice-polish123.js':['voice.js'],
+        'message-context.js':['app.js','message-selection.js'],
+        'message-context-fix.js':['message-context.js'],
+        'message-actions.js':['message-context-fix.js'],
+        'message-pins.js':['message-actions.js'],
+        'message-pins-screen114.js':['message-pins.js'],
+        'room-lifecycle.js':['app.js','settings-fix.js'],
+        'room-open170.js':['room-lifecycle.js','room-context170.js','lifecycle170.js','connection170.js'],
+        'text-send170.js':['room-open170.js'],
+        'media-send170.js':['text-send170.js']
+      };
+      const preload174 = ['network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js','app.js','settings-fix.js','room-lifecycle.js'];
+      window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,execution:'existing ordered chains with room-lifecycle gate'});
+
       const css = document.createElement('link');
       css.rel = 'stylesheet';
       css.href = `/styles.css${buildSuffix}`;
@@ -311,7 +330,35 @@
       voicePins127Css.href = `/voice-pins127.css${buildSuffix}`;
       document.head.appendChild(voicePins127Css);
 
+      // Fetch the critical chain after CSS hints; optional feature downloads
+      // keep their existing onload chains instead of competing at startup.
+      for(const name of preload174){
+        const hint=document.createElement('link');hint.rel='preload';hint.as='script';hint.href=`/${name}${buildSuffix}`;
+        document.head.appendChild(hint);
+      }
+
       const loadApp = () => {
+        const work = document.createElement('script');
+        work.src = `/work174.js${buildSuffix}`;
+        work.onload = loadHistoryThenApp;
+        work.onerror = () => {
+          // Preserve a functioning client if the optional scheduler asset fails.
+          window.FPWork174 = {each: async (items, visit, {current=()=>true}={}) => {
+            for(let i=0;i<items.length;i++){if(!current())return false;await visit(items[i],i);}
+            return current();
+          }};
+          loadHistoryThenApp();
+        };
+        document.body.appendChild(work);
+      };
+      const loadHistoryThenApp = () => {
+        const history = document.createElement('script');
+        history.src = `/history174.js${buildSuffix}`;
+        history.onload = loadAppAfterWork;
+        history.onerror = loadAppAfterWork;
+        document.body.appendChild(history);
+      };
+      const loadAppAfterWork = () => {
         const script = document.createElement('script');
         script.src = `/app.js${buildSuffix}`;
         script.defer = true;
@@ -341,6 +388,10 @@
 
           const settingsFix = document.createElement('script');
           settingsFix.src = `/settings-fix.js${buildSuffix}`;
+          settingsFix.onerror = () => {
+            window.FPRoomLifecycle98Ready = 'failed';
+            window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
+          };
           document.body.appendChild(settingsFix);
 
           const chatFix = document.createElement('script');

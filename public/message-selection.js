@@ -415,6 +415,7 @@
       if (selection && isSelectableMessage(node)) ensureCheck(node);
     });
     window.FPDOM173.on('message', 'unmounted', ({ node }) => {
+      if (node.dataset.fpEvicted174) return; // Window eviction keeps the selection's ids.
       if (!selection || !isSelectableMessage(node)) return;
       const id = messageId(node);
       if (!id || !selection.ids.has(id)) return;
@@ -474,6 +475,16 @@
     });
     observer.observe(document.body, { childList: true, subtree: true });
   }
+
+  // Deletion is a canonical event, even when the selected message is offscreen.
+  window.addEventListener('fpchat:message-store172-changed', (event) => {
+    if (!selection || event.detail?.roomId !== selection.roomId) return;
+    const id = numericId(event.detail.messageId);
+    if (!id || !selection.ids.has(id) || !window.FPMessageStore172?.get(selection.roomId, id)?.deleted) return;
+    selection.ids.delete(id);
+    selection.mineById.delete(id);
+    updateBars();
+  });
 
   document.querySelectorAll(ROOT).forEach(decorateContext);
 })();

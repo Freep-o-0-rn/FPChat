@@ -108,7 +108,7 @@ async function main() {
         const a=auditRooms[0];let release,started;
         const gate=new Promise(resolve=>started=resolve);
         const off=FPNetwork171.use({id:'audit-hydration',priority:-1000,handler:({input,init,next})=>{
-          if(String(input).includes('/messages?')&&String(input).includes('before=10')){started();return new Promise(resolve=>release=()=>resolve(new Response(JSON.stringify({messages:[],hasMore:false}))));}
+          if(String(input).includes('/messages?')&&/before=(10|2)(?:&|$)/.test(String(input))){started();return new Promise(resolve=>release=()=>resolve(new Response(JSON.stringify({messages:[],hasMore:false}))));}
           return next(input,init);
         }});
         try{

@@ -181,7 +181,8 @@
       else box.scrollTop = box.scrollHeight;
     } else if (wasAbove) {
       const removedHeight = Math.max(0, beforeHeight - box.scrollHeight);
-      box.scrollTop = Math.max(0, beforeTop - removedHeight);
+      if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.write(box, beforeTop - removedHeight, 'auto');
+      else box.scrollTop = Math.max(0, beforeTop - removedHeight);
     }
   }
 

@@ -199,7 +199,12 @@
   if (!document.getElementById('fpchat-room-lifecycle-js')) {
     const lifecycleScript = document.createElement('script');
     lifecycleScript.id = 'fpchat-room-lifecycle-js';
-    lifecycleScript.src = '/room-lifecycle.js?v=99';
+    const suffix = new URL(document.currentScript.src).search;
+    lifecycleScript.src = `/room-lifecycle.js${suffix}`;
+    lifecycleScript.onerror = () => {
+      window.FPRoomLifecycle98Ready = 'failed';
+      window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
+    };
     lifecycleScript.onload = () => {
       if (state.notif.enabled && getNotificationPermission() === 'granted') {
         void syncPushPresentationSettings();

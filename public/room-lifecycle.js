@@ -97,6 +97,7 @@
     wrap.dataset.messageId = String(message.id);
     wrap.dataset.incoming = incoming ? '1' : '0';
     wrap.dataset.read = String(isRead);
+    wrap.dataset.status = String(message.status || 'sent');
     const label = systemEventText(message);
     wrap.innerHTML = `<div class="system-event-chip">${safeText(label)}</div>`;
     box.appendChild(wrap);
@@ -324,6 +325,9 @@
       }
     };
   };
+
+  window.FPRoomLifecycle98Ready = true;
+  window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
 
   // Repair an already-open screen if app startup completed before this compatibility layer loaded.
   setTimeout(async () => {
