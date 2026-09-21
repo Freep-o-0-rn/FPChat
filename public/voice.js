@@ -1400,6 +1400,9 @@
   if (lastRoomId) void refreshVoiceSnapshot(lastRoomId);
 
   window.FPVoice = {
+    // Build 175: programmatic text changes use the same UI owner as native input.
+    // Do not dispatch synthetic input: that would also run typing/draft handlers.
+    syncComposer: (form = document.getElementById('sendForm')) => syncComposer(form),
     cancelRecording: () => stopRecording('cancel'),
     stopPlayback: () => stopActivePlayback(false),
     clearPreview: () => clearPreview(true),

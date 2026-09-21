@@ -416,6 +416,7 @@
     try { autoResizeMessageInput(input); } catch {}
     const send = document.getElementById('sendBtn');
     if (send) send.disabled = !originalText.trim();
+    window.FPVoice?.syncComposer?.(input.closest('#sendForm'));
     renderEditBar();
     requestAnimationFrame(() => {
       try { input.focus({ preventScroll: true }); } catch { input.focus(); }

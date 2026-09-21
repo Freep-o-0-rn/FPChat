@@ -126,6 +126,7 @@
         if (unchanged) { draft.text = ''; draft.replyTo = null; }
         try { updateReplyComposerBar(); } catch {}
         if (sendBtn) sendBtn.disabled = !String(input?.value || '').trim();
+        window.FPVoice?.syncComposer?.(form);
         try { autoResizeMessageInput(input); } catch {}
       }
 
