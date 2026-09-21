@@ -612,7 +612,7 @@ function flushPendingReads(roomId=state.roomId,deviceId=activeChatDeviceId){if(!
 function queueReceivedMessageIds(roomId,deviceId,messageIds){if(!roomId||!deviceId||!Array.isArray(messageIds)||!messageIds.length)return;const ids=messageIds.map(Number).filter((id)=>Number.isSafeInteger(id)&&id>0);if(!ids.length)return;if(!pendingReceivedQueue.has(roomId))pendingReceivedQueue.set(roomId,{deviceId,ids:new Set()});const entry=pendingReceivedQueue.get(roomId);entry.deviceId=deviceId;ids.forEach((id)=>entry.ids.add(id));}
 function clearReceivedMessageIds(roomId,messageIds){const entry=pendingReceivedQueue.get(roomId);if(!entry||!Array.isArray(messageIds))return;messageIds.map(Number).filter((id)=>Number.isSafeInteger(id)&&id>0).forEach((id)=>entry.ids.delete(id));if(!entry.ids.size)pendingReceivedQueue.delete(roomId);}
 function flushPendingReceived(roomId=state.roomId,deviceId=activeChatDeviceId){if(!roomId||!deviceId)return false;const entry=pendingReceivedQueue.get(roomId);if(!entry?.ids?.size)return true;const ws=state.ws;if(!ws||ws.readyState!==WebSocket.OPEN||ws.deviceId!==deviceId)return false;const messageIds=[...entry.ids].map(Number).filter((id)=>Number.isSafeInteger(id)&&id>0);if(!messageIds.length){pendingReceivedQueue.delete(roomId);return true;}try{const payload=messageIds.length===1?{type:'message:received',roomId,messageId:messageIds[0]}:{type:'message:received:bulk',roomId,messageIds};ws.send(JSON.stringify(payload));pendingReceivedQueue.delete(roomId);return true;}catch{return false;}}
-function markMessagesReceived(roomId,deviceId,messageIds){if(!roomId||!deviceId||!Array.isArray(messageIds)||!messageIds.length)return false;queueReceivedMessageIds(roomId,deviceId,messageIds);const flushed=flushPendingReceived(roomId,deviceId);if(!flushed){ensureStableWsConnected(deviceId).then(()=>{flushPendingReceived(roomId,deviceId);}).catch(()=>{});}return flushed;}
+function markMessagesReceived(roomId,deviceId,messageIds){if(!roomId||!deviceId||!Array.isArray(messageIds)||!messageIds.length)return false;queueReceivedMessageIds(roomId,deviceId,messageIds);const flushed=flushPendingReceived(roomId,deviceId);if(!flushed){ensureWsConnected(deviceId).then(()=>{flushPendingReceived(roomId,deviceId);}).catch(()=>{});}return flushed;}
 function markIncomingMessagesRead(roomId,deviceId,messageIds){if(!roomId||!deviceId||!Array.isArray(messageIds)||!messageIds.length)return false;const ids=[...new Set(messageIds.map(Number).filter((id)=>Number.isInteger(id)&&id>0))];if(!ids.length)return false;queueReadIds(roomId,deviceId,ids);const flushed=flushPendingReads(roomId,deviceId);if(!flushed){ensureWsConnected(deviceId).then(()=>{flushPendingReads(roomId,deviceId);}).catch(()=>{});}return flushed;}function formatUnreadLabel(count){if(count===1)return '1 новое сообщение ↓';if(count>=2&&count<=4)return `${count} новых сообщения ↓`;return `${count} новых сообщений ↓`;}
 function renderNewMessagesPill(count){const pill=document.getElementById('newMessagesPill');if(!pill)return;const unreadCount=Number(count)||0;if(isMessagesAtBottom()){pill.classList.add('hidden');pill.textContent='';return;}pill.textContent=unreadCount>0?formatUnreadLabel(unreadCount):'Вниз ↓';pill.classList.remove('hidden');}
 function recomputePendingUnread(){const unreadEls=[...document.querySelectorAll('.bubble-wrap[data-incoming="1"][data-read="0"]')];pendingIncomingReadIds=unreadEls.map(el=>Number(el.dataset.messageId||el.dataset.id)).filter(id=>Number.isInteger(id)&&id>0);pendingIncomingReadIds=[...new Set(pendingIncomingReadIds)];return pendingIncomingReadIds.length;}
@@ -1132,7 +1132,7 @@ async function reconcileKnownChats(deviceId){
   if(!deviceId||document.visibilityState!=='visible'||!hasKnownSessionRooms())return false;
   updateAppSyncWatchdog();
   const unreadPromise=refreshKnownChatsUnread().catch(()=>false);
-  const wsPromise=ensureStableWsConnected(deviceId).catch(()=>false);
+  const wsPromise=ensureWsConnected(deviceId).catch(()=>false);
   const wsReady=await wsPromise;
   const unreadComplete=await unreadPromise;
   if(wsReady){
@@ -1150,8 +1150,7 @@ function scheduleStableWsReconnect(){
     manualClose:window.FPConnection170?.isManualClose?.()===true,
     shouldRun:stableWsShouldRun(),
     online:navigator.onLine!==false,
-    getDesiredDeviceId:()=>stableWsDesiredDeviceId,
-    ensure:ensureStableWsConnected
+    getDesiredDeviceId:()=>stableWsDesiredDeviceId
   }));
 }
 function shouldRunAppSyncWatchdog(){return document.visibilityState==='visible'&&hasKnownSessionRooms();}
@@ -1222,8 +1221,12 @@ function ensureStableWsConnected(deviceId,timeoutMs=8000){
   return connectStableWs(safeDeviceId,timeoutMs);
 }
 function sendClientState(visibleOverride=null){return sendStableClientState(visibleOverride);}
-function ensureWsConnected(deviceId,timeoutMs=8000){return ensureStableWsConnected(deviceId,timeoutMs);}
-function connectWs(deviceId){return ensureStableWsConnected(deviceId);}
+function ensureWsConnected(deviceId,timeoutMs=8000){
+  const manager=window.FPConnection170;
+  if(manager?.ensureConnected)return manager.ensureConnected(deviceId,timeoutMs);
+  return ensureStableWsConnected(deviceId,timeoutMs);
+}
+function connectWs(deviceId){return ensureWsConnected(deviceId);}
 
 
 function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){window.FPConnection170?.closeCurrent?.({manual:true});state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
