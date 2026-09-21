@@ -844,13 +844,9 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
     Number(req.body?.durationSeconds || 0) || null
   );
   const media = q.findMediaByPublicId.get(publicId);
-  res.once('close', () => {
-    if (res.writableFinished) return;
-    const pending = q.findMediaByPublicId.get(publicId);
-    if (!pending || pending.status !== 'pending') return;
-    safeUnlink(pending.server_filename);safeUnlink(pending.thumbnail_filename);
-    q.deletePendingMediaById.run(pending.id);
-  });
+  // Once the pending media row is committed, keep it independent of response delivery.
+  // A client that loses the response retries the same uploadId and recovers this row.
+  // Explicit cancel/delete and the existing 24h stale-pending cleanup own orphan cleanup.
   return res.json({ ok: true, media: mediaToDto(media, req) });
 });
 app.get('/api/media/:publicId/blob', (req, res) => {
