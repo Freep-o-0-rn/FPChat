@@ -1,6 +1,7 @@
-/* Build 170: single WebSocket change/event owner.
-   The existing app.js stable WebSocket path still creates/reconnects the socket.
-   This layer owns change/open/close notification only; it never creates a second socket. */
+/* Build 170/176: single stable WebSocket current-slot/reconnect owner.
+   app.js still executes the existing connect/payload worker and constructs the socket.
+   This layer owns current-socket replacement, manual-close state, reconnect timing,
+   and connection change/open/close notification; it never creates a second socket. */
 (() => {
   if (window.FPConnection170) return;
 
@@ -10,6 +11,8 @@
   const subscribers = new Set();
   let reconnectTimer = null;
   let reconnectAttempt = 0;
+  let socketGeneration = 0;
+  let manualClose = false;
 
   function socketSnapshot(socket = currentSocket) {
     if (!socket) return { exists: false, readyState: null };
@@ -69,6 +72,71 @@
     watchSocket(socket);
     emit(reason, socket);
     return socket;
+  }
+
+  function setManualClose(value) {
+    manualClose = Boolean(value);
+    return manualClose;
+  }
+
+  function isManualClose() {
+    return manualClose;
+  }
+
+  function isCurrent(socket, generation = null) {
+    if (!socket || socket !== currentSocket) return false;
+    return generation === null || Number(generation) === socketGeneration;
+  }
+
+  function requestClose(socket = currentSocket, { code, reason } = {}) {
+    if (!socket || socket !== currentSocket) return false;
+    try {
+      if (code === undefined) socket.close();
+      else socket.close(code, reason);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function beginReplacement({ manual = false, code, reason } = {}) {
+    manualClose = Boolean(manual);
+    socketGeneration += 1;
+    const previous = currentSocket;
+    if (previous) {
+      try {
+        if (code === undefined) previous.close();
+        else previous.close(code, reason);
+      } catch {}
+    }
+    return socketGeneration;
+  }
+
+  function adoptCurrent(socket, generation = socketGeneration) {
+    if (!socket || Number(generation) !== socketGeneration) return false;
+    setCurrent(socket, 'changed');
+    return true;
+  }
+
+  function releaseCurrent(socket, generation = null) {
+    if (!isCurrent(socket, generation)) return false;
+    socketGeneration += 1;
+    setCurrent(null, 'changed');
+    return true;
+  }
+
+  function closeCurrent({ manual = true, code, reason } = {}) {
+    manualClose = Boolean(manual);
+    socketGeneration += 1;
+    const previous = currentSocket;
+    if (previous) {
+      try {
+        if (code === undefined) previous.close();
+        else previous.close(code, reason);
+      } catch {}
+    }
+    setCurrent(null, manualClose ? 'manual-close' : 'changed');
+    return Boolean(previous);
   }
 
   function subscribe(listener, { immediate = true } = {}) {
@@ -143,14 +211,22 @@
     ensureConnected,
     scheduleReconnect,
     clearReconnect,
-    resetReconnectAttempt
+    resetReconnectAttempt,
+    setManualClose,
+    isManualClose,
+    isCurrent,
+    requestClose,
+    beginReplacement,
+    adoptCurrent,
+    releaseCurrent,
+    closeCurrent
   });
 
   try {
     window.FPRuntime?.registerOwner?.('connection170', {
-      role: 'websocket-change-events',
-      mode: 'active-signal-owner',
-      transportOwner: 'app.js stableWs'
+      role: 'websocket-current-reconnect',
+      mode: 'active-owner',
+      transportWorker: 'app.js stableWs'
     });
   } catch {}
 

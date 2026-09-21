@@ -49,7 +49,7 @@ let mediaPreviewState=null;
 let mediaViewerState=null;
 const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
-let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let chatViewReadyRoomId=null;let chatOpenToken=0;let unreadDividerSession={roomId:null,messageId:null,dismissed:false};let unreadDividerOutgoingObserver=null;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsManualClose=false;let stableWsSyncPromise=null;let unreadRefreshPromise=null;let appSyncWatchdogTimer=null;let unreadEventSequence=0;const unreadEventSequenceByRoom=new Map();let unreadSyncSequence=0;const unreadSyncSequenceByRoom=new Map();
+let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let chatViewReadyRoomId=null;let chatOpenToken=0;let unreadDividerSession={roomId:null,messageId:null,dismissed:false};let unreadDividerOutgoingObserver=null;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsSyncPromise=null;let unreadRefreshPromise=null;let appSyncWatchdogTimer=null;let unreadEventSequence=0;const unreadEventSequenceByRoom=new Map();let unreadSyncSequence=0;const unreadSyncSequenceByRoom=new Map();
 let appVersionCheckInFlight=false;
 let deferredInstallPrompt=null;
 function setBootSplashText(title, text) {
@@ -267,8 +267,7 @@ function removeStaleRoomFromSync(roomId){
   }catch{}
   saveChats();
   if(isActive){
-    try{state.ws?.close(1000,'room not found');}catch{}
-    state.ws=null;
+    window.FPConnection170?.closeCurrent?.({manual:true,code:1000,reason:'room not found'});
     state.roomId=null;
     activeChatDeviceId=null;
     activeChatHistory=null;
@@ -1148,7 +1147,7 @@ function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&hasKnownSes
 function clearStableWsReconnect(){return Boolean(window.FPConnection170?.clearReconnect?.());}
 function scheduleStableWsReconnect(){
   return Boolean(window.FPConnection170?.scheduleReconnect?.({
-    manualClose:stableWsManualClose,
+    manualClose:window.FPConnection170?.isManualClose?.()===true,
     shouldRun:stableWsShouldRun(),
     online:navigator.onLine!==false,
     getDesiredDeviceId:()=>stableWsDesiredDeviceId,
@@ -1164,7 +1163,7 @@ function runAppSyncWatchdog(){
   if(navigator.onLine===false){setLocalConnectionState('disconnected');return;}
   const ws=state.ws;
   if(!ws||ws.readyState!==WebSocket.OPEN||ws.deviceId!==deviceId){void reconcileKnownChats(deviceId);return;}
-  if(!sendStableClientState()){try{ws.close();}catch{}return;}
+  if(!sendStableClientState()){window.FPConnection170?.requestClose?.(ws);return;}
   setLocalConnectionState('connected');
   void refreshKnownChatsUnread().catch(()=>{});
 }
@@ -1190,24 +1189,23 @@ function connectStableWs(deviceId,timeoutMs=8000){
   if(current?.readyState===WebSocket.OPEN&&current.deviceId===safeDeviceId){sendStableClientState();return Promise.resolve(true);}
   if(current?.readyState===WebSocket.CONNECTING&&current.deviceId===safeDeviceId&&stableWsConnectPromise)return stableWsConnectPromise;
   clearStableWsReconnect();
-  if(current){stableWsSequence+=1;try{current.close();}catch{}}
-  const sequence=++stableWsSequence;
+  const socketGeneration=window.FPConnection170.beginReplacement({manual:false});
   const protocol=location.protocol==='https:'?'wss':'ws';
   let ws;
   try{ws=new WebSocket(`${protocol}://${location.host}?device=${encodeURIComponent(safeDeviceId)}`);}catch{scheduleStableWsReconnect();return Promise.resolve(false);}
   ws.deviceId=safeDeviceId;
-  ws.isFpCurrent=()=>state.ws===ws&&stableWsSequence===sequence;
-  state.ws=ws;
+  ws.isFpCurrent=()=>window.FPConnection170.isCurrent(ws,socketGeneration);
+  if(!window.FPConnection170.adoptCurrent(ws,socketGeneration)){window.FPConnection170.requestClose(ws);scheduleStableWsReconnect();return Promise.resolve(false);}
   stableWsConnectDeviceId=safeDeviceId;
   let promise;
   promise=new Promise((resolve)=>{
     let settled=false;
-    const timer=setTimeout(()=>{if(settled)return;try{ws.close();}catch{}finish(false);},timeoutMs);
+    const timer=setTimeout(()=>{if(settled)return;window.FPConnection170?.requestClose?.(ws);finish(false);},timeoutMs);
     const finish=(ok)=>{if(settled)return;settled=true;clearTimeout(timer);if(stableWsConnectPromise===promise)stableWsConnectPromise=null;resolve(Boolean(ok&&ws.isFpCurrent()&&ws.readyState===WebSocket.OPEN));};
     let incomingChain=Promise.resolve();
-    ws.onopen=()=>{if(!ws.isFpCurrent())return;window.FPConnection170?.resetReconnectAttempt?.();stableWsManualClose=false;setLocalConnectionState('connected');sendStableClientState();resetPendingReadAttempts();flushPendingReads(state.roomId,safeDeviceId);resendPendingTextMessages();finish(true);void syncAllRoomsAfterReconnect(safeDeviceId);};
-    ws.onerror=()=>{if(!ws.isFpCurrent())return;setLocalConnectionState('disconnected');try{ws.close();}catch{}};
-    ws.onclose=()=>{if(!ws.isFpCurrent()){finish(false);return;}state.ws=null;resetPendingReadAttempts();setLocalConnectionState('disconnected');finish(false);if(!stableWsManualClose&&stableWsShouldRun())scheduleStableWsReconnect();};
+    ws.onopen=()=>{if(!ws.isFpCurrent())return;window.FPConnection170?.resetReconnectAttempt?.();window.FPConnection170?.setManualClose?.(false);setLocalConnectionState('connected');sendStableClientState();resetPendingReadAttempts();flushPendingReads(state.roomId,safeDeviceId);resendPendingTextMessages();finish(true);void syncAllRoomsAfterReconnect(safeDeviceId);};
+    ws.onerror=()=>{if(!ws.isFpCurrent())return;setLocalConnectionState('disconnected');window.FPConnection170?.requestClose?.(ws);};
+    ws.onclose=()=>{if(!ws.isFpCurrent()){finish(false);return;}window.FPConnection170.releaseCurrent(ws,socketGeneration);resetPendingReadAttempts();setLocalConnectionState('disconnected');finish(false);if(!window.FPConnection170.isManualClose()&&stableWsShouldRun())scheduleStableWsReconnect();};
     ws.onmessage=(event)=>{if(!ws.isFpCurrent())return;incomingChain=incomingChain.then(async()=>{let payload;try{payload=JSON.parse(event.data);}catch{return;}await handleStableWsPayload(payload,safeDeviceId);}).catch(()=>{});};
   });
   stableWsConnectPromise=promise;
@@ -1217,7 +1215,7 @@ function ensureStableWsConnected(deviceId,timeoutMs=8000){
   const safeDeviceId=String(deviceId||'').trim();
   if(!safeDeviceId)return Promise.resolve(false);
   stableWsDesiredDeviceId=safeDeviceId;
-  stableWsManualClose=false;
+  window.FPConnection170?.setManualClose?.(false);
   if(state.ws?.readyState===WebSocket.OPEN&&state.ws.deviceId===safeDeviceId){setLocalConnectionState('connected');sendStableClientState();return Promise.resolve(true);}
   if(state.ws?.readyState===WebSocket.CONNECTING&&state.ws.deviceId===safeDeviceId&&stableWsConnectPromise)return stableWsConnectPromise;
   setLocalConnectionState('connecting');
@@ -1228,7 +1226,7 @@ function ensureWsConnected(deviceId,timeoutMs=8000){return ensureStableWsConnect
 function connectWs(deviceId){return ensureStableWsConnected(deviceId);}
 
 
-function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){if(state.ws)state.ws.close();state.ws=null;state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
+function showRoomMenu(roomId,x,y){els.context.innerHTML='';[['Переименовать у себя',()=>{const v=prompt('Новое имя',state.roomNames[roomId]||''); if(v!==null){if(v.trim())state.roomNames[roomId]=v.trim(); else delete state.roomNames[roomId]; saveRoomNames(); renderChats(); if(state.roomId===roomId)openChat(roomId);}}],[state.roomMute[roomId]?'Включить уведомления в этом чате':'Выключить уведомления в этом чате',()=>{state.roomMute[roomId]=!state.roomMute[roomId];saveRoomMute();renderChats();const st=STORAGE.get(STORAGE.roomState(roomId));if(st?.deviceId){fetch('/api/push/mute-room',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId,deviceId:st.deviceId,muted:state.roomMute[roomId]})});if(!state.roomMute[roomId])syncRoomPushSubscription(roomId).catch(()=>{});}}],['Скопировать invite-ссылку',()=>{const st=STORAGE.get(STORAGE.roomState(roomId)); if(!st?.inviteLink){alert('Invite-ссылка уже использована или устарела.');return;} navigator.clipboard.writeText(st.inviteLink);} ],['Удалить из списка',()=>{if(confirm('Удалить чат из списка?')){state.chats=state.chats.filter(c=>c.roomId!==roomId);saveChats();hideMenu();if(state.roomId===roomId){window.FPConnection170?.closeCurrent?.({manual:true});state.roomId=null;}setView('chats');renderChats();if(typeof updatePushBadge==='function')updateUnreadPresentation();}}]].forEach(([t,fn],idx)=>{const b=document.createElement('button');b.className='context-item'+(t.includes('Удалить')?' danger':'');if(idx>0)b.dataset.sep='1';b.textContent=t;b.onclick=()=>{fn();hideMenu()};els.context.appendChild(b)});els.context.classList.remove('hidden');const margin=8;let left=x;let top=y;const rect=els.context.getBoundingClientRect();if(left+rect.width>window.innerWidth-margin){left=window.innerWidth-rect.width-margin;}if(top+rect.height>window.innerHeight-margin){top=window.innerHeight-rect.height-margin;}left=Math.max(margin,left);top=Math.max(margin,top);els.context.style.left=left+'px';els.context.style.top=top+'px';els.context.onclick=(e)=>{e.stopPropagation()};}
 function hideMenu(){els.context.classList.add('hidden')}
 els.context?.addEventListener('click',(event)=>{
   if(Date.now()<roomMenuTouchLockUntil){
