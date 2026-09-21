@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Build" src="https://img.shields.io/badge/development-Build%20174-7b2cff?style=flat-square">
+  <img alt="Build" src="https://img.shields.io/badge/development-Build%20175-7b2cff?style=flat-square">
   <img alt="Stable" src="https://img.shields.io/badge/main-Build%20168-2ea44f?style=flat-square">
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-22.x-339933?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="PWA" src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat-square">
@@ -41,7 +41,7 @@ FPChat активно развивается. Проект уже прошёл �
 
 > [!NOTE]
 > **Стабильная ветка `main` сейчас соответствует Build 168.**  
-> Актуальная ветка разработки — **`build/174-development`**. Build 174 прошла автоматические проверки; ручная приёмка на физических Android/iPhone ещё остаётся отдельным этапом.
+> Актуальная ветка разработки — **`build/175-development`**. В 175 исправлены send/mic, конфликт drawer/long press и идентичность сообщения после ACK. Ручная приёмка на физических Android/iPhone остаётся отдельным этапом.
 
 ---
 
@@ -218,14 +218,16 @@ FPChat/
 
 ---
 
-## 🧪 Проверка Build 174
+## 🧪 Проверка Build 175
 
-Для ветки `build/174-development` доступны автоматизированные проверки:
+Для ветки `build/175-development` доступны накопительные автоматизированные проверки:
 
 ```bash
 npm run check:169-174
 npm run test:173:browser
 npm run test:174:browser
+npm run test:174:audit
+npm run test:175
 ```
 
 Дополнительно доступны benchmarks списка чатов и длинной истории:
@@ -235,15 +237,16 @@ npm run bench:174:list
 npm run bench:174:history
 ```
 
-На текущем этапе Build 174 автоматическая регрессия пройдена. Результаты, ограничения измерений и сценарии отката подробно описаны в:
+Отчёты содержат результаты, границы автоматического покрытия и точки отката:
 
+- [FPChat Build 175 — исправления, регрессия и точечный rollback](./docs/FPChat_Build175_Progress.md)
 - [FPChat Build 174 — реализация, проверки и измерения](./docs/FPChat_Build174_Complete.md)
 - [План оптимизации Build 169–175](./docs/FPChat_Plan_169-175.md)
 - [История развития FPChat](./CHANGELOG.md)
 
 ---
 
-## 🛣️ Текущий roadmap
+## 🛣️ Исходный план серии 169–175
 
 ```text
 169  FPRuntime / diagnostics
@@ -261,7 +264,7 @@ npm run bench:174:history
 175  Server composition / media I/O / SQL / updater
 ```
 
-**Build 175 ещё не начата.** Она является финальным интеграционным этапом серии 169–175 и должна сохранить владельцев и пользовательские инварианты предыдущих сборок.
+Выше сохранён первоначальный план серии. По уточнённой области Build 175 выполняет точечные UI-исправления и регрессию; серверные изменения из первоначального плана в неё не включены. Пользовательская дорожная карта 175–180 этим изменением не редактируется.
 
 ---
 

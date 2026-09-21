@@ -22,7 +22,8 @@
     "test:174:audit": "node ./scripts/regression174-audit.cjs",
     "test:175:identity": "node ./scripts/regression175-identity.cjs",
     "test:175:composer": "node ./scripts/regression175-composer.cjs",
-    "test:175:drawer": "node ./scripts/regression175-drawer.cjs"
+    "test:175:drawer": "node ./scripts/regression175-drawer.cjs",
+    "test:175": "npm run test:175:identity && npm run test:175:composer && npm run test:175:drawer"
   },
   "license": "MIT",
   "dependencies": {
