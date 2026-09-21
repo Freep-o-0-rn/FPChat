@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `175` — `build/175-development`, код и автоматическая регрессия завершены; приёмка физических устройств открыта.
+**Сборка разработки:** `176` — `build/176-development`, архитектурный перенос lifecycle/room/connection/sync и накопительная автоматическая регрессия завершены; приёмка физических устройств открыта.
 
 **Стабильная сборка в main:** `168`
 
@@ -20,6 +20,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
+| 21.09.2026 | **Build 176** | LifecycleManager, RoomSessionManager, ConnectionManager и SyncCoordinator без замены существующих workers |
 | 21.09.2026 | **Build 175** | Send/mic, исключение ложного long press при drawer и canonical ID после ACK |
 | 20.09.2026 | **Build 174** | Точечный render, порционная работа, dependency-safe startup и ограниченное окно истории |
 | 17–19.09.2026 | **Build 173–169** | Диагностика, владельцы room/network/store/gesture и совместная регрессия; ветка разработки |
@@ -35,6 +36,20 @@
 
 > [!NOTE]
 > В ранней истории использовались обозначения `Alpha` и `Beta`, а номера иногда откатывались или использовались повторно. Например, **Beta 50** из мая и современный **Build 50** из сентября — это разные этапы разработки.
+
+---
+
+# ⚙️ Build 176 — lifecycle, room session, connection и sync
+
+**21 сентября 2026 · ветка `build/176-development`**
+
+- Lifecycle-сигналы остаются у `FPLifecycle170`; request cooldown использует общий foreground-сигнал с compatibility fallback только при отсутствии владельца.
+- `FPRoomContext170` сохраняет generation/cancellation экранной сессии отдельно от долгих операций; unread observer освобождается при выходе, voice-send привязан к отдельному operation lifetime.
+- `FPConnection170` владеет current socket lifecycle, generation/manual-close и reconnect timer/attempt, но сам `new WebSocket` и payload worker остаются существующими в `app.js`.
+- `FPSyncCoordinator176` — тонкий adapter над существующими reconnect/resume sync-входами; общий `stableWsSyncPromise` остаётся единственной дедупликацией batch.
+- Поздние sync/API результаты не откатывают свежие WS preview/unread и не меняют DOM/read новой активной комнаты.
+- Накопительная проверка на GitHub Actions: 6/6 static/VM 169–174, 17/17 browser 173, 17/17 browser 174, 18/18 audit 174 и 24/24 сценария 175 — **76/76 browser PASS, 0 FAIL**. Дополнительно проверены 176 ownership/runtime-инварианты.
+- [Полный отчёт Build 176](docs/FPChat_Build176_Progress.md). `main` и production остаются на Build 168; физические mobile/PWA, push и реальный микрофон автоматическим Chromium-runner не подтверждаются.
 
 ---
 

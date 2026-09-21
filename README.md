@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Build" src="https://img.shields.io/badge/development-Build%20175-7b2cff?style=flat-square">
+  <img alt="Build" src="https://img.shields.io/badge/development-Build%20176-7b2cff?style=flat-square">
   <img alt="Stable" src="https://img.shields.io/badge/main-Build%20168-2ea44f?style=flat-square">
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-22.x-339933?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="PWA" src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat-square">
@@ -41,7 +41,7 @@ FPChat активно развивается. Проект уже прошёл �
 
 > [!NOTE]
 > **Стабильная ветка `main` сейчас соответствует Build 168.**  
-> Актуальная ветка разработки — **`build/175-development`**. В 175 исправлены send/mic, конфликт drawer/long press и идентичность сообщения после ACK. Ручная приёмка на физических Android/iPhone остаётся отдельным этапом.
+> Актуальная ветка разработки — **`build/176-development`**. Build 176 закрепляет LifecycleManager, RoomSessionManager, ConnectionManager и SyncCoordinator без замены действующих workers. Накопительная автоматическая регрессия пройдена; физическая iOS/Android, push и реальный микрофон остаются отдельной ручной приёмкой.
 
 ---
 
@@ -218,12 +218,13 @@ FPChat/
 
 ---
 
-## 🧪 Проверка Build 175
+## 🧪 Проверка Build 176
 
-Для ветки `build/175-development` доступны накопительные автоматизированные проверки:
+Для ветки `build/176-development` доступны накопительные автоматизированные проверки:
 
 ```bash
 npm run check:169-174
+npm run check:176
 npm run test:173:browser
 npm run test:174:browser
 npm run test:174:audit
@@ -239,6 +240,7 @@ npm run bench:174:history
 
 Отчёты содержат результаты, границы автоматического покрытия и точки отката:
 
+- [FPChat Build 176 — lifecycle, room, connection, sync и итоговая приёмка](./docs/FPChat_Build176_Progress.md)
 - [FPChat Build 175 — исправления, регрессия и точечный rollback](./docs/FPChat_Build175_Progress.md)
 - [FPChat Build 174 — реализация, проверки и измерения](./docs/FPChat_Build174_Complete.md)
 - [План оптимизации Build 169–175](./docs/FPChat_Plan_169-175.md)
