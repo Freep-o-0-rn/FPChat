@@ -246,6 +246,24 @@
     document.body.appendChild(script);
   }
 
+  function loadSyncCoordinator176() {
+    if (window.FPSyncCoordinator176) {
+      loadRoomOpenOwner();
+      return;
+    }
+    const existing = document.querySelector('script[data-fp-sync-coordinator176]');
+    if (existing) {
+      existing.addEventListener('load', loadRoomOpenOwner, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = `/sync-coordinator176.js${suffix}`;
+    script.dataset.fpSyncCoordinator176 = '1';
+    script.onload = loadRoomOpenOwner;
+    script.onerror = () => window.FPStartup174?.fail();
+    document.body.appendChild(script);
+  }
+
   function loadRoomOpenOwner() {
     if (window.__fpRoomOpen170Installed) {
       loadTextSendOwner();
@@ -266,18 +284,18 @@
 
   function loadConnectionOwner() {
     if (window.FPConnection170) {
-      loadRoomOpenOwner();
+      loadSyncCoordinator176();
       return;
     }
     const existing = document.querySelector('script[data-fp-connection170]');
     if (existing) {
-      existing.addEventListener('load', loadRoomOpenOwner, { once: true });
+      existing.addEventListener('load', loadSyncCoordinator176, { once: true });
       return;
     }
     const script = document.createElement('script');
     script.src = `/connection170.js${suffix}`;
     script.dataset.fpConnection170 = '1';
-    script.onload = loadRoomOpenOwner;
+    script.onload = loadSyncCoordinator176;
     script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
