@@ -49,7 +49,7 @@ let mediaPreviewState=null;
 let mediaViewerState=null;
 const APP_BUILD_KEY='fpchat:app-build';
 const APP_UPDATE_RELOADING_KEY='fpchat:update-reloading';
-let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let chatViewReadyRoomId=null;let chatOpenToken=0;let unreadDividerSession={roomId:null,messageId:null,dismissed:false};let unreadDividerOutgoingObserver=null;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsReconnectTimer=null;let stableWsReconnectAttempt=0;let stableWsManualClose=false;let stableWsSyncPromise=null;let unreadRefreshPromise=null;let appSyncWatchdogTimer=null;let unreadEventSequence=0;const unreadEventSequenceByRoom=new Map();let unreadSyncSequence=0;const unreadSyncSequenceByRoom=new Map();
+let activeChatDeviceId=null;let activeChatHistory=null;let pendingIncomingReadIds=[];const pendingReadQueue=new Map();const pendingReceivedQueue=new Map();const messageStatusByKey=new Map();const pendingTextSends=new Map();let unreadVisibleObserver=null;let initialMessagesScrollPending=false;let pendingMediaThumbLoads=0;let chatViewReadyRoomId=null;let chatOpenToken=0;let unreadDividerSession={roomId:null,messageId:null,dismissed:false};let unreadDividerOutgoingObserver=null;const roomKeyCache=new Map();const lastKnownMessageIdByRoom=new Map();const bufferedRoomMessages=new Map();let stableWsDesiredDeviceId=null;let stableWsSequence=0;let stableWsConnectPromise=null;let stableWsConnectDeviceId=null;let stableWsManualClose=false;let stableWsSyncPromise=null;let unreadRefreshPromise=null;let appSyncWatchdogTimer=null;let unreadEventSequence=0;const unreadEventSequenceByRoom=new Map();let unreadSyncSequence=0;const unreadSyncSequenceByRoom=new Map();
 let appVersionCheckInFlight=false;
 let deferredInstallPrompt=null;
 function setBootSplashText(title, text) {
@@ -1145,12 +1145,15 @@ async function reconcileKnownChats(deviceId){
   return refreshKnownChatsUnread().catch(()=>false);
 }
 function stableWsShouldRun(){return Boolean(stableWsDesiredDeviceId&&hasKnownSessionRooms());}
-function clearStableWsReconnect(){if(stableWsReconnectTimer){clearTimeout(stableWsReconnectTimer);stableWsReconnectTimer=null;}}
+function clearStableWsReconnect(){return Boolean(window.FPConnection170?.clearReconnect?.());}
 function scheduleStableWsReconnect(){
-  if(stableWsReconnectTimer||stableWsManualClose||!stableWsShouldRun()||navigator.onLine===false)return;
-  const attempt=stableWsReconnectAttempt++;
-  const delay=Math.min(15000,500*2**Math.min(attempt,5))+Math.floor(Math.random()*250);
-  stableWsReconnectTimer=setTimeout(()=>{stableWsReconnectTimer=null;if(stableWsDesiredDeviceId)void ensureStableWsConnected(stableWsDesiredDeviceId);},delay);
+  return Boolean(window.FPConnection170?.scheduleReconnect?.({
+    manualClose:stableWsManualClose,
+    shouldRun:stableWsShouldRun(),
+    online:navigator.onLine!==false,
+    getDesiredDeviceId:()=>stableWsDesiredDeviceId,
+    ensure:ensureStableWsConnected
+  }));
 }
 function shouldRunAppSyncWatchdog(){return document.visibilityState==='visible'&&hasKnownSessionRooms();}
 function stopAppSyncWatchdog(){if(appSyncWatchdogTimer){clearInterval(appSyncWatchdogTimer);appSyncWatchdogTimer=null;}}
@@ -1202,7 +1205,7 @@ function connectStableWs(deviceId,timeoutMs=8000){
     const timer=setTimeout(()=>{if(settled)return;try{ws.close();}catch{}finish(false);},timeoutMs);
     const finish=(ok)=>{if(settled)return;settled=true;clearTimeout(timer);if(stableWsConnectPromise===promise)stableWsConnectPromise=null;resolve(Boolean(ok&&ws.isFpCurrent()&&ws.readyState===WebSocket.OPEN));};
     let incomingChain=Promise.resolve();
-    ws.onopen=()=>{if(!ws.isFpCurrent())return;stableWsReconnectAttempt=0;stableWsManualClose=false;setLocalConnectionState('connected');sendStableClientState();resetPendingReadAttempts();flushPendingReads(state.roomId,safeDeviceId);resendPendingTextMessages();finish(true);void syncAllRoomsAfterReconnect(safeDeviceId);};
+    ws.onopen=()=>{if(!ws.isFpCurrent())return;window.FPConnection170?.resetReconnectAttempt?.();stableWsManualClose=false;setLocalConnectionState('connected');sendStableClientState();resetPendingReadAttempts();flushPendingReads(state.roomId,safeDeviceId);resendPendingTextMessages();finish(true);void syncAllRoomsAfterReconnect(safeDeviceId);};
     ws.onerror=()=>{if(!ws.isFpCurrent())return;setLocalConnectionState('disconnected');try{ws.close();}catch{}};
     ws.onclose=()=>{if(!ws.isFpCurrent()){finish(false);return;}state.ws=null;resetPendingReadAttempts();setLocalConnectionState('disconnected');finish(false);if(!stableWsManualClose&&stableWsShouldRun())scheduleStableWsReconnect();};
     ws.onmessage=(event)=>{if(!ws.isFpCurrent())return;incomingChain=incomingChain.then(async()=>{let payload;try{payload=JSON.parse(event.data);}catch{return;}await handleStableWsPayload(payload,safeDeviceId);}).catch(()=>{});};

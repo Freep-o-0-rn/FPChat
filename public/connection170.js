@@ -8,6 +8,8 @@
   let currentSocket = null;
   let detachSocketEvents = () => {};
   const subscribers = new Set();
+  let reconnectTimer = null;
+  let reconnectAttempt = 0;
 
   function socketSnapshot(socket = currentSocket) {
     if (!socket) return { exists: false, readyState: null };
@@ -82,6 +84,35 @@
     return ensureStableWsConnected(deviceId, timeoutMs);
   }
 
+  function clearReconnect() {
+    if (!reconnectTimer) return false;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    return true;
+  }
+
+  function resetReconnectAttempt() {
+    reconnectAttempt = 0;
+  }
+
+  function scheduleReconnect({
+    manualClose = false,
+    shouldRun = false,
+    online = true,
+    getDesiredDeviceId,
+    ensure = ensureConnected
+  } = {}) {
+    if (reconnectTimer || manualClose || !shouldRun || online === false) return false;
+    const attempt = reconnectAttempt++;
+    const delay = Math.min(15000, 500 * 2 ** Math.min(attempt, 5)) + Math.floor(Math.random() * 250);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      const deviceId = typeof getDesiredDeviceId === 'function' ? getDesiredDeviceId() : '';
+      if (deviceId) void ensure(deviceId);
+    }, delay);
+    return true;
+  }
+
   // state.ws is already the canonical socket slot in app.js. Turn only that
   // property into an observable slot; preserve its value and all existing users.
   try {
@@ -109,7 +140,10 @@
     current: () => currentSocket,
     snapshot,
     subscribe,
-    ensureConnected
+    ensureConnected,
+    scheduleReconnect,
+    clearReconnect,
+    resetReconnectAttempt
   });
 
   try {
