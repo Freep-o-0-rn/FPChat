@@ -78,6 +78,10 @@
     return () => subscribers.delete(listener);
   }
 
+  function ensureConnected(deviceId, timeoutMs = 8000) {
+    return ensureStableWsConnected(deviceId, timeoutMs);
+  }
+
   // state.ws is already the canonical socket slot in app.js. Turn only that
   // property into an observable slot; preserve its value and all existing users.
   try {
@@ -104,7 +108,8 @@
   window.FPConnection170 = Object.freeze({
     current: () => currentSocket,
     snapshot,
-    subscribe
+    subscribe,
+    ensureConnected
   });
 
   try {
