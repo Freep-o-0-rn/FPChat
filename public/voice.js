@@ -802,9 +802,11 @@
     if (!form?.isConnected) return;
     const input = form.querySelector('#msgInput');
     const send = form.querySelector('#sendBtn');
-    const mic = form.querySelector('.fp-voice-record-btn');
-    if (!input || !send || !mic) return;
+    if (!input || !send) return;
     const empty = !String(input.value || '').trim();
+    send.disabled = empty;
+    const mic = form.querySelector('.fp-voice-record-btn');
+    if (!mic) return;
     const closed = form.closest('.chat-view')?.classList.contains('room-closed') === true;
     const currentBusy = Boolean(recordingState || uploadInFlight || previewState);
     form.classList.toggle('fp-voice-mic-mode', empty && !closed && !currentBusy);

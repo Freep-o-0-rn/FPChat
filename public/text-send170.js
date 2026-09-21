@@ -47,7 +47,6 @@
     if (!context) return;
 
     const input = form.querySelector('#msgInput') || document.getElementById('msgInput');
-    const sendBtn = form.querySelector('#sendBtn') || document.getElementById('sendBtn');
     const text = String(input?.value || '').trim();
     if (!text) return;
 
@@ -125,8 +124,7 @@
         input.value = '';
         if (unchanged) { draft.text = ''; draft.replyTo = null; }
         try { updateReplyComposerBar(); } catch {}
-        if (sendBtn) sendBtn.disabled = !String(input?.value || '').trim();
-        window.FPVoice?.syncComposer?.(form);
+        window.FPComposer177?.syncUI?.(form);
         try { autoResizeMessageInput(input); } catch {}
       }
 
