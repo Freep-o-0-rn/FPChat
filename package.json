@@ -29,7 +29,8 @@
     "test:177:xhr-upload": "node ./scripts/regression177-xhr-upload.cjs",
     "test:177:cache-owner": "node ./scripts/regression177-cache-owner.cjs",
     "test:177:cache-clear": "node ./scripts/regression177-cache-clear.cjs",
-    "test:177:resource-slots": "node ./scripts/regression177-resource-slots.cjs"
+    "test:177:resource-slots": "node ./scripts/regression177-resource-slots.cjs",
+    "test:177:resource-balance": "node ./scripts/regression177-resource-balance.cjs"
   },
   "license": "MIT",
   "dependencies": {
