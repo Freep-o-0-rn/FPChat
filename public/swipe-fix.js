@@ -204,6 +204,13 @@
     }
 
     if (swipe.axis !== "horizontal" || swipe.dx <= 0) return;
+    // Build 175: cancel competing pending actions before capture stops the row
+    // from receiving its own touchmove/touchend cleanup. Thresholds stay here.
+    if (manager?.claimAction && !manager.claimAction(`navigate:${swipe.mode}`, event)) {
+      if (swipe.modernSettings) resetModernSettingsVisual();
+      swipe = null;
+      return;
+    }
     swipe.owned = true;
     if (event.cancelable) event.preventDefault();
     event.stopImmediatePropagation();

@@ -121,6 +121,35 @@
     return layer !== 'base' && layer !== 'drawer';
   }
 
+  function cancelActions(session, reason, except = '') {
+    if (!session?.actions) return;
+    for (const [owner, cancel] of [...session.actions]) {
+      if (owner === except) continue;
+      session.actions.delete(owner);
+      try { cancel(reason); } catch (error) { console.error('[FPGesture135] action cleanup failed', error); }
+    }
+  }
+
+  function claimAction(owner, event) {
+    const session = currentSession(event);
+    if (!session || session.ended || (session.action && session.action !== owner)) return false;
+    session.action = owner;
+    cancelActions(session, 'claimed', owner);
+    pushRecent('claim', session, owner);
+    return true;
+  }
+
+  function watchAction(owner, event, cancel) {
+    const session = currentSession(event);
+    if (!session || session.ended || typeof cancel !== 'function') return null;
+    if (session.action && session.action !== owner) { cancel('claimed'); return null; }
+    session.actions.set(owner, cancel);
+    return {
+      claim: () => currentSession(event) === session && claimAction(owner, event),
+      release: () => { if (session.actions.get(owner) === cancel) session.actions.delete(owner); }
+    };
+  }
+
   function promote(session, target = null) {
     if (!session) return null;
     const manager = window.FPLayer173;
@@ -131,6 +160,7 @@
     const next = detectLayer(target);
     if ((PRIORITY[next] ?? 0) > (PRIORITY[session.layer] ?? 0)) {
       session.layer = next;
+      cancelActions(session, 'layer');
       pushRecent('promote', session, next);
     }
     if (Number.isFinite(managerVersion)) session.layerVersion = managerVersion;
@@ -147,6 +177,9 @@
       layer,
       layerVersion: window.FPLayer173?.version?.() ?? -1,
       startedAt: performance.now(),
+      action: null,
+      actions: new Map(),
+      ended: false,
       target
     };
     pushRecent('start', session);
@@ -164,6 +197,8 @@
     const session = kind === 'touch' ? touchSession : pointerSession;
     if (!session) return;
     promote(session, event?.target);
+    session.ended = true;
+    cancelActions(session, String(event?.type).endsWith('cancel') ? 'cancel' : 'end');
     pushRecent('end', session);
     queueMicrotask(() => {
       if (kind === 'touch' && touchSession === session) touchSession = null;
@@ -186,6 +221,8 @@
   }
 
   function canNavigate(mode, target = null, event = null) {
+    const action = currentSession(event)?.action;
+    if (action && action !== `navigate:${mode}`) return false;
     const layer = layerForEvent(event, target);
     if (mode === 'chat') return layer === 'chat';
     if (mode === 'settings') return layer === 'settings';
@@ -199,6 +236,7 @@
   }
 
   function touchStart(event) {
+    cancelActions(touchSession, 'restart');
     if (event.touches?.length !== 1) {
       touchSession = null;
       syncBodyLayer();
@@ -215,6 +253,7 @@
 
   function pointerStart(event) {
     if (event.pointerType === 'mouse' || (event.button != null && event.button !== 0)) return;
+    cancelActions(pointerSession, 'restart');
     pointerSession = makeSession('pointer', event);
   }
 
@@ -234,6 +273,8 @@
   window.addEventListener('pointercancel', (event) => endSession('pointer', event), { capture: true, passive: true });
 
   const reset = () => {
+    cancelActions(touchSession, 'lifecycle');
+    cancelActions(pointerSession, 'lifecycle');
     touchSession = null;
     pointerSession = null;
     resetLegacyDrawerSwipe();
@@ -243,19 +284,25 @@
     if(['blur','pagehide','background'].includes(event.lastType))reset();
     else if(event.lastType==='foreground')syncBodyLayer();
   });
+  window.addEventListener('fpchat:layer173', () => {
+    promote(touchSession, touchSession?.target);
+    promote(pointerSession, pointerSession?.target);
+  }, {passive: true});
 
   window.FPGesture135 = Object.freeze({
     priority: PRIORITY,
     detectLayer,
     currentLayer: (event = null, target = null) => layerForEvent(event, target),
     canNavigate,
+    claimAction,
+    watchAction,
     shouldBlockUnderlyingNavigation,
     resetLegacyDrawerSwipe,
     snapshot: () => ({
       owner: 'FPGesture135',
       layerSource: window.FPLayer173 ? 'FPLayer173' : 'legacy-dom-fallback',
-      touch: touchSession ? { id: touchSession.id, layer: touchSession.layer } : null,
-      pointer: pointerSession ? { id: pointerSession.id, layer: pointerSession.layer } : null,
+      touch: touchSession ? { id: touchSession.id, layer: touchSession.layer, action: touchSession.action, pendingActions: touchSession.actions.size } : null,
+      pointer: pointerSession ? { id: pointerSession.id, layer: pointerSession.layer, action: pointerSession.action, pendingActions: pointerSession.actions.size } : null,
       topLayer: detectLayer(),
       recent: recent.slice()
     })

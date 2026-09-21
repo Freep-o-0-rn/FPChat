@@ -21,7 +21,8 @@
     "bench:174:history": "node ./scripts/benchmark-history174.cjs",
     "test:174:audit": "node ./scripts/regression174-audit.cjs",
     "test:175:identity": "node ./scripts/regression175-identity.cjs",
-    "test:175:composer": "node ./scripts/regression175-composer.cjs"
+    "test:175:composer": "node ./scripts/regression175-composer.cjs",
+    "test:175:drawer": "node ./scripts/regression175-drawer.cjs"
   },
   "license": "MIT",
   "dependencies": {
