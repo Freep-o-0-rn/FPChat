@@ -1409,7 +1409,7 @@ const handleAppResume=()=>{
   if(appResumeWork174)return appResumeWork174;
   if(document.visibilityState!=='visible')return;
   checkAppVersionOnEntry();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();
-  const work=Promise.resolve(startAppSessionSync()).finally(()=>{if(appResumeWork174===work)appResumeWork174=null;});
+  const work=Promise.resolve(window.FPSyncCoordinator176.syncAfterResume()).finally(()=>{if(appResumeWork174===work)appResumeWork174=null;});
   appResumeWork174=work;return work;
 };
 window.FPLifecycle170?.subscribe(event=>{
