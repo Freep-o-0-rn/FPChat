@@ -24,7 +24,8 @@
     "test:175:composer": "node ./scripts/regression175-composer.cjs",
     "test:175:drawer": "node ./scripts/regression175-drawer.cjs",
     "test:175": "npm run test:175:identity && npm run test:175:composer && npm run test:175:drawer",
-    "check:176": "node ./scripts/check-build176.js"
+    "check:176": "node ./scripts/check-build176.js",
+    "test:177:network-fetch": "node ./scripts/regression177-network-fetch.cjs"
   },
   "license": "MIT",
   "dependencies": {
