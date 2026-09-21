@@ -248,7 +248,14 @@
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) renderCurrent();
-  });
+  if (window.FPLifecycle170?.subscribe) {
+    window.FPLifecycle170.subscribe((event) => {
+      if (event.lastType === 'foreground') renderCurrent();
+    });
+  } else {
+    // Compatibility fallback only when the centralized lifecycle owner failed to load.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) renderCurrent();
+    });
+  }
 })();
