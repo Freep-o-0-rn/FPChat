@@ -27,7 +27,8 @@
     "check:176": "node ./scripts/check-build176.js",
     "test:177:network-fetch": "node ./scripts/regression177-network-fetch.cjs",
     "test:177:xhr-upload": "node ./scripts/regression177-xhr-upload.cjs",
-    "test:177:cache-owner": "node ./scripts/regression177-cache-owner.cjs"
+    "test:177:cache-owner": "node ./scripts/regression177-cache-owner.cjs",
+    "test:177:cache-clear": "node ./scripts/regression177-cache-clear.cjs"
   },
   "license": "MIT",
   "dependencies": {

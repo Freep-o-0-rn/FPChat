@@ -593,7 +593,11 @@
     update();
     button.onclick = () => {
       const selected = update();
-      if (selected.length) void renderClearProgress(selected);
+      if (!selected.length) return;
+      const startClear = () => { void renderClearProgress(selected); };
+      const guard = window.FPStorage167ClearGuard;
+      if (guard?.runExclusive) void guard.runExclusive(startClear, button);
+      else startClear();
     };
   }
 

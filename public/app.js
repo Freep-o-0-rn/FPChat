@@ -1486,7 +1486,8 @@ async function applyAppUpdate(){
     }
     if('caches' in window){
       const keys=await caches.keys();
-      await Promise.all(keys.map((key)=>caches.delete(key)));
+      const managedMediaCache=String(window.FPStorage167?.cacheName||'fpchat-media-v167');
+      await Promise.all(keys.filter((key)=>key!==managedMediaCache&&!String(key).startsWith('fpchat-media-v')).map((key)=>caches.delete(key)));
     }
   }finally{
     location.reload();

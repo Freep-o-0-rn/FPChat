@@ -604,6 +604,14 @@
     }
   }
 
+  async function waitForMediaCacheIdle() {
+    while (mediaCacheWrites.size) {
+      const pending = [...new Set(mediaCacheWrites.values())];
+      if (!pending.length) break;
+      await Promise.allSettled(pending);
+    }
+  }
+
   function snapshot() {
     return {
       owner: 'FPNetwork171',
@@ -656,6 +664,7 @@
     consumeMedia,
     use,
     snapshot,
+    waitForMediaCacheIdle,
     hasLayer,
     expectedLayers: Object.freeze(Object.values(LEGACY_SPECS).map((item) => ({ ...item }))),
     mediaCacheName: MEDIA_CACHE_NAME
