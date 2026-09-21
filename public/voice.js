@@ -1105,6 +1105,14 @@
   }
 
   async function uploadAndSendVoice(data) {
+    const contexts = window.FPRoomContext170;
+    const operation = contexts?.beginOperation?.(data.roomId, 'voice-send') || null;
+    const draft = typeof ensureDraftState === 'function' ? ensureDraftState(data.roomId) : state.drafts?.[data.roomId];
+    const draftText = draft?.text || '';
+    const draftReply = draft?.replyTo || null;
+    const replyToMessageId = draftReply?.messageId || null;
+    let operationStatus = 'failed';
+
     uploadInFlight = true;
     syncComposer(data.form);
     startLocalActivity(data.roomId, 'audio');
@@ -1122,7 +1130,11 @@
       fd.append('metaCiphertext', meta.ciphertext);
       fd.append('metaIv', meta.iv);
 
-      const uploadResponse = await fetch(`/api/rooms/${encodeURIComponent(data.roomId)}/voice/upload`, { method: 'POST', body: fd });
+      const uploadResponse = await fetch(`/api/rooms/${encodeURIComponent(data.roomId)}/voice/upload`, {
+        method: 'POST',
+        body: fd,
+        signal: operation?.signal
+      });
       const uploadData = await uploadResponse.json().catch(() => null);
       if (!uploadResponse.ok || !uploadData?.ok || !uploadData.media?.id) throw new Error(uploadData?.error || 'voice upload failed');
       uploadedMedia = uploadData.media;
@@ -1132,8 +1144,6 @@
       if (!wsOk || !state.ws || state.ws.readyState !== WebSocket.OPEN || state.ws.deviceId !== data.deviceId) throw new Error('voice websocket unavailable');
 
       const enc = await encryptVoiceText(data.roomId, '');
-      const draft = typeof ensureDraftState === 'function' ? ensureDraftState(data.roomId) : state.drafts?.[data.roomId];
-      const replyToMessageId = draft?.replyTo?.messageId || null;
       if (replyToMessageId && typeof markReplyTargetRead === 'function' && currentRoomId() === data.roomId) markReplyTargetRead(replyToMessageId);
 
       state.ws.send(JSON.stringify({
@@ -1147,18 +1157,22 @@
         mediaIds: [Number(uploadedMedia.id)]
       }));
 
-      if (draft) {
+      const draftUnchanged = Boolean(draft && draft.text === draftText && draft.replyTo === draftReply);
+      if (draftUnchanged) {
         draft.replyTo = null;
         if (currentRoomId() === data.roomId && typeof updateReplyComposerBar === 'function') updateReplyComposerBar();
+        if (typeof clearDraftOnServer === 'function') {
+          try { await clearDraftOnServer(data.roomId); } catch {}
+        }
       }
-      if (typeof clearDraftOnServer === 'function') {
-        try { await clearDraftOnServer(data.roomId); } catch {}
-      }
+      operationStatus = 'sent';
       return true;
-    } catch {
+    } catch (error) {
+      operationStatus = error?.name === 'AbortError' ? 'cancelled' : 'failed';
       if (uploadedMedia?.id) await deletePendingVoice(data.roomId, data.deviceId, uploadedMedia.id);
       return false;
     } finally {
+      if (operation) contexts?.finishOperation?.(operation, operationStatus);
       uploadInFlight = false;
       stopLocalActivity('audio');
       syncComposer(data.form);
