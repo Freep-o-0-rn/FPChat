@@ -499,7 +499,7 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   chatViewReadyRoomId=roomId;
   await flushBufferedRoomMessages(roomId,deviceId);
   if(!isRoomViewCurrent170(view))return;
-  void ensureStableWsConnected(deviceId);
+  void window.FPConnection170.ensureConnected(deviceId);
   setActiveNav('chats');
   renderChats();
 }
