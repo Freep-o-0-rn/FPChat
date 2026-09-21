@@ -106,6 +106,15 @@
     return record?.id || record?.clientMessageId || '';
   }
 
+  function syncRawIdentity(record) {
+    // Build 175: ACK/history identity is independent of content-clock precedence.
+    // Renderers consume raw too; an older optimistic UUID must not replace the
+    // numeric server id after a remount or a late optimistic update.
+    if (!record?.raw) return;
+    if (record.id) record.raw.id = record.id;
+    if (record.clientMessageId) record.raw.client_message_id = record.clientMessageId;
+  }
+
   function recordByAny(room, idOrClient) {
     if (!room) return null;
     const id = numericId(idOrClient);
@@ -221,6 +230,7 @@
       record.clientMessageId = clientMessageId;
       room.clientToKey.set(clientMessageId, serverKey || [...room.messages.entries()].find(([, value]) => value === record)?.[0] || keyForClient(clientMessageId));
     }
+    syncRawIdentity(record);
     return record;
   }
 
@@ -334,6 +344,7 @@
         changed = true;
       }
       record.raw = nextRaw;
+      syncRawIdentity(record);
       record.contentClock = incomingClock;
       record.contentPriority = priority;
       record.lastSource = source;
@@ -493,6 +504,7 @@
     }
     if (patch.createdAt && !record.createdAt) record.createdAt = patch.createdAt;
     record.status = strongerStatus(record.status, patch.status || record.status);
+    syncRawIdentity(record);
     emit(room, record, 'promoted');
     return record;
   }
