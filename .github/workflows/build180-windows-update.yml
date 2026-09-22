@@ -17,6 +17,7 @@ on:
       - 'scripts/regression180-updater-rollback-contract.cjs'
       - 'scripts/test1807-rollback-isolated.ps1'
       - 'scripts/regression180-startup-graph.cjs'
+      - 'scripts/regression180-app-coordinator-decision.cjs'
       - '.github/workflows/build180-windows-update.yml'
   workflow_dispatch:
 
@@ -47,3 +48,5 @@ jobs:
         run: npm run test:180:rollback-isolated-windows
       - name: Static startup graph
         run: npm run test:180:startup-graph
+      - name: Static AppCoordinator decision
+        run: npm run test:180:app-coordinator-decision
