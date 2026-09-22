@@ -1,0 +1,70 @@
+# Build 177.16 — Current send entry points and operation context
+
+Baseline: `build/177-development` at `57ef82aaff572a1036d9e1c81ba4212a426d8824`.
+
+This step is descriptive only. It does not introduce SendManager, a submit listener, a queue, a pending store, or a new executor. The current text/media/voice owners remain active and keep their internal state.
+
+## Ownership map
+
+| Type | UI / entry point | Active executor | Room / operation context | Duplicate guard | Retry model | Cancel model | Identity | Activity owner |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Text | `#sendForm.onsubmit` installed by `FPTextSend170.bindCurrentForm()` | private `submit(event)` in `public/text-send170.js` | form is bound to active `FPRoomContext170`; executor captures `context.roomId`, `context.key`, device id; starts `beginOperation(roomId, 'text-send')` | `sendingForms: WeakSet` blocks a second concurrent executor for the same form | runtime-only `pendingTextSends`; same payload/clientMessageId is retransmitted up to 4 attempts at 1800 ms; reconnect calls `resendPendingTextMessages()`; ACK/status/echo clears the existing pending entry | stale form/context is rejected before send; operation records cancelled/failed on AbortError/error before queueing; no user cancel exists for an already queued text message | one `clientMessageId = crypto.randomUUID()` is shared by outbound payload, optimistic message and retry entry | `typing.js`: trusted input starts `typing`; submit stops it; retry does not create a second typing activity |
+| Media | preview send button calls global `sendMediaFromPreview(root)`; Build 170 replaces it with guarded `sendMediaFromPreview170` | private `send(preview, context, root, operation)` in `public/media-send170.js` | requires current `FPRoomContext170`, checks `preview.roomId`, captures room/key/device, starts `beginOperation(roomId, 'media-send')`; operation signal goes to `FPNetwork171.upload` | `preview.sending / cancelled / committed` and disabled preview controls | upload failure offers existing user retry; `item.uploadId ||= ...` survives that retry; already uploaded items are skipped on another send attempt; no timed message pending queue | preview cancel calls `cancelOperation(..., 'user-cancelled')`, aborting upload signal; uncommitted uploaded pending media is deleted | per-file `uploadId`; final `message:new` has no `clientMessageId` | `typing.js` observes `/media/upload`; image/video uploads maintain per-room counters and `activity:start/stop` with heartbeat and existing stop grace |
+| Voice | recording finalization with action `send`, or preview send button -> `sendPreview()` | `uploadAndSendVoice(data)` in `public/voice.js` | recording captures `rec.roomId/deviceId/form`; finalized data retains source room; executor starts `beginOperation(data.roomId, 'voice-send')`; operation signal goes to `/voice/upload` | `recordingState`, `previewState`, global `uploadInFlight`; `sendPreview()` refuses while upload is already in flight | failed direct send is retained as preview; preview send can be invoked again; no timed retry queue and no shared pending store | recording has existing cancel paths (gesture/API, lifecycle/background, room change); voice upload has an operation signal but no new shared cancel owner in this step | no `clientMessageId` in final `message:new`; upload/media id comes from server | `voice.js`: `recording_audio` during recording; `audio` during `uploadAndSendVoice`; both keep their existing heartbeat/stop timing |
+
+## Text details
+
+The only active text submit owner is `FPTextSend170`.
+
+`bindCurrentForm()` binds the concrete form to the current room context and assigns `form.onsubmit = submit`. The old handler is retained only as `form.__fpLegacySubmit170` for diagnostics/rollback and is not independently assigned.
+
+The text operation is intentionally split into two lifetimes:
+
+1. `FPRoomContext170.beginOperation(roomId, 'text-send')` describes the initial guarded send operation.
+2. After `queuePendingTextSend(outbound)`, the operation is finished with status `queued`.
+3. Existing `pendingTextSends` in `app.js` owns retransmission/ACK lifetime after that point.
+
+Therefore a future SendManager must not create another text retry queue or regenerate `clientMessageId` on retry. `pendingTextSends` is runtime-only; Build 177.16 adds no reload persistence.
+
+## Media details
+
+The original `sendMediaFromPreview` remains available only as `sendMediaFromPreview.__fpLegacy`. Build 170 is the active owner.
+
+The media executor preserves preview/caption state, per-file encrypted upload, XHR progress via `FPNetwork171.upload`, stable `uploadId` inside the existing retry loop, operation AbortSignal, pending-upload cleanup, and the final WebSocket `message:new`.
+
+There is no media `clientMessageId` and no media message retry map equivalent to `pendingTextSends`.
+
+Current file-selection scope is image/video only. `openMediaPreviewFromFiles()` filters unsupported MIME types and the input accepts `image/*,video/*`. A generic document/file executor is not currently established by this path; 177.19 must not assume one exists.
+
+## Voice details
+
+Recording and encoding are not a send-dispatch concern.
+
+The source room is captured before the executor:
+
+`recordingState.roomId -> finalizeRecording(rec) -> data.roomId -> uploadAndSendVoice(data)`
+
+`uploadAndSendVoice(data)` owns the existing ready-voice upload/send sequence. It uses `data.roomId`, not the currently visible room, starts `voice-send`, uploads encrypted audio, then emits the existing media `message:new`.
+
+If direct send fails, `finalizeRecording()` calls `showPreview(data)`. A later preview-send retries through the same `uploadAndSendVoice(preview)` executor. No voice `clientMessageId`, shared retry queue, or shared pending store exists.
+
+## Existing activity contracts
+
+Activity is deliberately not centralized:
+
+- text: `typing.js` owns `typing:start/stop`; only trusted input starts typing and submit stops it;
+- media: `typing.js` owns photo/video activity by observing actual `/media/upload` transport; loadend/abort/error/timeout all finish the existing counter;
+- voice: `voice.js` owns `recording_audio` and `audio`, including heartbeat and stop timing.
+
+177.17+ must call existing executors without introducing a second activity lifecycle.
+
+## 177.16 invariants for the next steps
+
+- No `FPSendManager177` exists yet.
+- No common `pendingSends`, `sendQueue`, or cross-type pending store exists.
+- `pendingTextSends` remains text-only and runtime-only.
+- Media keeps its preview/item/upload state.
+- Voice keeps `recordingState`, `previewState`, and `uploadInFlight`.
+- Text keeps its existing `clientMessageId`/ACK/reconnect semantics.
+- Media and voice must not be assigned a synthetic text-style `clientMessageId` merely to fit a dispatcher.
+- Operation contexts remain type-specific: `text-send`, `media-send`, `voice-send`.

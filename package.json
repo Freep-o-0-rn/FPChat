@@ -37,7 +37,8 @@
     "test:177:composer-draft-save": "node ./scripts/regression177-composer-draft-save.cjs",
     "test:177:composer-reply": "node ./scripts/regression177-composer-reply.cjs",
     "test:177:composer-edit": "node ./scripts/regression177-composer-edit.cjs",
-    "test:177:composer-voice-state": "node ./scripts/regression177-composer-voice-state.cjs"
+    "test:177:composer-voice-state": "node ./scripts/regression177-composer-voice-state.cjs",
+    "test:177:send-entry-contract": "node ./scripts/regression177-send-entry-contract.cjs"
   },
   "license": "MIT",
   "dependencies": {
