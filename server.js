@@ -422,8 +422,9 @@ function mediaToDto(media, req) {
 function cleanupStalePendingMedia() {
   const rows = q.listStalePendingMedia.all();
   for (const media of rows) {
-    safeUnlink(media.server_filename);
-    safeUnlink(media.thumbnail_filename);
+    const cleanupInput = { mediaKind: media.media_kind, media };
+    if (fpEncryptedImageUpload179.handles(cleanupInput)) fpEncryptedImageUpload179.cleanup(cleanupInput);
+    else cleanupPendingMediaFiles179(media);
     q.deletePendingMediaById.run(media.id);
   }
 }
@@ -857,9 +858,15 @@ function persistEncryptedMedia179({
   return q.findMediaByPublicId.get(publicId);
 }
 
+function cleanupPendingMediaFiles179(media) {
+  safeUnlink(media?.server_filename);
+  safeUnlink(media?.thumbnail_filename);
+}
+
 const fpEncryptedImageUpload179 = createEncryptedUpload179({
   mediaKind: 'image',
-  persist: persistEncryptedMedia179
+  persist: persistEncryptedMedia179,
+  cleanup: cleanupPendingMediaFiles179
 });
 app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedFile', maxCount: 1 }, { name: 'encryptedThumbnail', maxCount: 1 }]), (req, res) => {
   const room = q.findRoomByPublicId.get(req.params.publicId);
@@ -940,8 +947,9 @@ app.delete('/api/rooms/:publicId/media/pending', (req, res) => {
   }
   const rows = q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds));
   for (const media of rows) {
-    safeUnlink(media.server_filename);
-    safeUnlink(media.thumbnail_filename);
+    const cleanupInput = { mediaKind: media.media_kind, media };
+    if (fpEncryptedImageUpload179.handles(cleanupInput)) fpEncryptedImageUpload179.cleanup(cleanupInput);
+    else cleanupPendingMediaFiles179(media);
   }
   q.deletePendingMediaByIds.run(room.id, JSON.stringify(mediaIds));
   res.json({ ok: true, deleted: rows.length });

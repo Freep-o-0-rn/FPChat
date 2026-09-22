@@ -101,7 +101,9 @@
     "test:179:1795": "npm run test:179:final-composition && npm run test:179:entry-equivalence",
     "test:179": "npm run test:179:bootstrap-inventory && npm run test:179:1794 && npm run test:179:pins-contract && npm run test:179:loader-readiness && npm run test:179:1795",
     "test:179:encrypted-image-upload": "node ./scripts/regression179-encrypted-image-upload-wrapper.cjs",
-    "test:179:1796": "npm run test:179:encrypted-image-upload"
+    "test:179:1796": "npm run test:179:encrypted-image-upload",
+    "test:179:encrypted-image-cleanup": "node ./scripts/regression179-encrypted-image-cleanup.cjs",
+    "test:179:1797": "npm run test:179:encrypted-image-upload && npm run test:179:encrypted-image-cleanup"
   },
   "license": "MIT",
   "dependencies": {
