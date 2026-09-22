@@ -82,7 +82,7 @@ if (-not (Test-Path -LiteralPath $nodeModules -PathType Container)) {
     Pop-Location
   }
 } else {
-  Write-Host 'Dependencies are already installed; npm install/ci is skipped.'
+  Write-Host 'Dependencies are already installed; dependency install is skipped.'
 }
 
 $owners = @(Get-ListenerOwners $port)

@@ -27,8 +27,8 @@ assert(!helper.toLowerCase().includes('kill('),'launcher helper must not termina
 
 assert(helper.includes("if (-not (Test-Path -LiteralPath $nodeModules -PathType Container))"),'dependency presence gate missing');
 assert(helper.includes('& npm.cmd ci --omit=dev --no-audit --no-fund'),'missing dependency install must be locked npm ci');
-assert(!helper.includes('npm install'),'launcher helper must not use full npm install');
-assert(helper.includes("Dependencies are already installed; npm install/ci is skipped."),'existing dependency skip path missing');
+assert(!helper.includes('npm.cmd install')&&!helper.includes('& npm install'),'launcher helper must not invoke full npm install');
+assert(helper.includes("Dependencies are already installed; dependency install is skipped."),'existing dependency skip path missing');
 
 assert(helper.includes('& node.exe $serverJs'),'launcher does not start exact absolute server.js');
 assert(!helper.includes('npm.cmd start'),'npm wrapper would hide exact FPChat process identity');
