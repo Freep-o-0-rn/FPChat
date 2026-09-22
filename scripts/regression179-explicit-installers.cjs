@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const server=read('server.js'),boot=read('src/message-actions-bootstrap.js'),typing=read('src/typing-server.js');
+assert.equal((server.match(/installTypingServer\(\{/g)||[]).length,1);
+assert.equal((boot.match(/installTypingServer\(\{/g)||[]).length,0);
+assert(server.indexOf('installMessagePinsServer({')<server.indexOf('installTypingServer({'));
+assert(typing.includes('if (wss.__fpTypingInstalled) return;'));
+assert(typing.includes("wss.on('connection', (ws) => {"));
+assert(typing.includes("type: 'typing:update'"));
+console.log('PASS 179.4 I3 typing explicit once with guard/WS contract preserved');

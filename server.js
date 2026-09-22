@@ -10,6 +10,7 @@ const multer = require('multer');
 const { createDb } = require('./src/db');
 const { installMessageActionsServer } = require('./src/message-actions-server');
 const { installMessagePinsServer } = require('./src/message-pins-server');
+const { installTypingServer } = require('./src/typing-server');
 
 dotenv.config();
 
@@ -1250,6 +1251,13 @@ installMessagePinsServer({
   toIsoUtc,
   isRoomOpen,
   roomStatePayload
+});
+installTypingServer({
+  wss,
+  q,
+  sendToRoomParticipants,
+  isRoomOpen,
+  userBlocks: fpUserBlocks165
 });
 
 cleanupExpiredSoloRooms();

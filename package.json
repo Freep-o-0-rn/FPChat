@@ -94,7 +94,8 @@
     "test:179:explicit-text-block-guard": "node ./scripts/regression179-explicit-text-block-guard.cjs",
     "test:179:explicit-legacy-media-block-guard": "node ./scripts/regression179-explicit-legacy-media-block-guard.cjs",
     "test:179:explicit-media-upload-block-guard": "node ./scripts/regression179-explicit-media-upload-block-guard.cjs",
-    "test:179:explicit-invite-block-guard": "node ./scripts/regression179-explicit-invite-block-guard.cjs"
+    "test:179:explicit-invite-block-guard": "node ./scripts/regression179-explicit-invite-block-guard.cjs",
+    "test:179:explicit-installers": "node ./scripts/regression179-explicit-installers.cjs"
   },
   "license": "MIT",
   "dependencies": {
