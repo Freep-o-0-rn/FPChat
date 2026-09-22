@@ -29,6 +29,8 @@
   let refreshAtZero = false;
   let hostObserver = null;
   let authoritativeRowPreview = '';
+  let outgoingWatchTimer = 0;
+  const OUTGOING_WATCH_MS = 1500;
   const joining = new Set();
 
   const api = () => window.FPSystem144 || null;
@@ -82,6 +84,21 @@
     if (!response.ok || !data?.ok) throw new Error('request list unavailable');
     return Array.isArray(data.requests) ? data.requests : [];
   }
+  function scheduleOutgoingWatch(rows = [...requests.values()]) {
+    if (outgoingWatchTimer) {
+      clearTimeout(outgoingWatchTimer);
+      outgoingWatchTimer = 0;
+    }
+    if (document.visibilityState !== 'visible') return;
+    const pending = (rows || []).some((row) => row?.direction === 'outgoing' && row?.status === 'pending');
+    if (!pending) return;
+    outgoingWatchTimer = setTimeout(() => {
+      outgoingWatchTimer = 0;
+      if (document.visibilityState !== 'visible') return;
+      void syncRequests().catch(() => {});
+    }, OUTGOING_WATCH_MS);
+  }
+
   async function syncRequests() {
     if (syncPromise) return syncPromise;
     syncPromise = (async () => {
@@ -91,6 +108,7 @@
         window.FPChatRequestOwner147?.reconcile?.(rows);
         ensureSystemRow(rows);
         await decorateRow(rows);
+        scheduleOutgoingWatch(rows);
         return rows;
       } finally { syncPromise = null; }
     })();
@@ -409,7 +427,12 @@
     }
     document.getElementById('chatSearch')?.addEventListener('input',()=>queueMicrotask(()=>{ensureSystemRow();applyAuthoritativeRowPreview();}));
     const periodic=async()=>{if(!api())return;try{const rows=await syncRequests();await api().refresh();ensureSystemRow(rows);applyAuthoritativeRowPreview();if(overlay)await refreshOverlay();}catch{}};
-    void periodic(); window.addEventListener('focus',()=>{if(document.visibilityState==='visible')void periodic();}); window.addEventListener('pageshow',()=>void periodic()); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void periodic();}); setInterval(()=>{if(document.visibilityState==='visible')void periodic();},10000);
+    void periodic();
+    window.addEventListener('fpchat:chat-request-changed',()=>{if(document.visibilityState==='visible')void syncRequests().catch(()=>{});});
+    window.addEventListener('focus',()=>{if(document.visibilityState==='visible')void periodic();});
+    window.addEventListener('pageshow',()=>void periodic());
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void periodic();else scheduleOutgoingWatch([]);});
+    setInterval(()=>{if(document.visibilityState==='visible')void periodic();},10000);
   }
   function wait(n=0){if(api())install();else if(n<100)setTimeout(()=>wait(n+1),100);}
   wait();
