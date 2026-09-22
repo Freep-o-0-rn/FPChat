@@ -4,8 +4,16 @@ chcp 65001 >nul
 title FPChat Safe Updater
 
 set "SRC="
-set "DST=C:\_BOTS\FPChat"
-set "BACKUP_ROOT=C:\_BOTS\FPChat_backups"
+if defined FPCHAT_UPDATE_DST (
+    set "DST=%FPCHAT_UPDATE_DST%"
+) else (
+    set "DST=C:\_BOTS\FPChat"
+)
+if defined FPCHAT_UPDATE_BACKUP_ROOT (
+    set "BACKUP_ROOT=%FPCHAT_UPDATE_BACKUP_ROOT%"
+) else (
+    set "BACKUP_ROOT=C:\_BOTS\FPChat_backups"
+)
 set "SERVER_WAS_RUNNING=0"
 set "LIVE_FILES_TOUCHED=0"
 set "NODE_MAJOR="
@@ -197,29 +205,24 @@ if not exist "%DST%\data\" mkdir "%DST%\data" >nul 2>&1
 echo [7/7] Cleaning staging folder...
 rmdir /S /Q "%STAGE%" >nul 2>&1
 
-if "%SERVER_WAS_RUNNING%"=="1" (
-    echo Restarting FPChat server...
-    start "FPChat Server" /D "%DST%" cmd /c call "%DST%\start_chat.bat"
-    timeout /t 3 /nobreak >nul
-)
-
 echo.
 echo ========================================
 echo Update completed successfully.
 echo Backup: %BACKUP%
-if "%SERVER_WAS_RUNNING%"=="1" echo Server restart command was issued.
+if "%SERVER_WAS_RUNNING%"=="1" echo FPChat was stopped for the update and remains stopped.
+echo Start the server manually with start_chat.bat after checking the update.
 echo ========================================
-pause
+if /I not "%FPCHAT_UPDATE_NONINTERACTIVE%"=="1" pause
 exit /b 0
 
 :fail
 if defined STAGE if exist "%STAGE%\" rmdir /S /Q "%STAGE%" >nul 2>&1
-if "%SERVER_WAS_RUNNING%"=="1" if "%LIVE_FILES_TOUCHED%"=="0" (
-    echo Attempting to restart the previous FPChat server...
-    start "FPChat Server" /D "%DST%" cmd /c call "%DST%\start_chat.bat"
+if "%SERVER_WAS_RUNNING%"=="1" (
+    echo FPChat was stopped by the updater and was not restarted.
+    echo Start it manually with start_chat.bat after resolving the update error.
 )
 echo.
 echo Update was canceled. Existing data and .env were not intentionally removed.
 if "%LIVE_FILES_TOUCHED%"=="1" echo Live files may be incomplete; use the backup shown above before restarting.
-pause
+if /I not "%FPCHAT_UPDATE_NONINTERACTIVE%"=="1" pause
 exit /b 1

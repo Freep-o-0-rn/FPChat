@@ -1,0 +1,30 @@
+name: Build 180 Windows updater acceptance
+
+on:
+  push:
+    branches:
+      - build/180-development
+    paths:
+      - 'update.bat'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/test1805-update-isolated.ps1'
+      - 'scripts/regression180-windows-script-contract.cjs'
+      - '.github/workflows/build180-windows-update.yml'
+  workflow_dispatch:
+
+jobs:
+  update-isolated:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Static updater contract
+        run: npm run test:180:windows-script-contract
+      - name: Isolated Windows update
+        shell: powershell
+        run: npm run test:180:update-isolated-windows
