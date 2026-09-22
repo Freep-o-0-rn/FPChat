@@ -28,10 +28,12 @@ assert(!renderBlock.includes("input.addEventListener('input'"), 'render must not
 assert(!renderBlock.includes("input.addEventListener('keydown'"), 'render must not own a second normal keydown listener');
 assert(renderBlock.includes('window.FPTextSend170?.bindCurrentForm?.();'), 'text submit owner handoff must remain');
 
-assert(textSendSource.includes('if (boundForms.get(form) === context && form.onsubmit === submit) return true;'),
-  'FPTextSend170 repeated bind guard missing');
-assert.equal((textSendSource.match(/form\.onsubmit\s*=\s*submit;/g) || []).length, 1,
-  'FPTextSend170 must keep one submit assignment');
+assert(textSendSource.includes('if (boundForms.get(form) === context && form.onsubmit === dispatchSubmit) return true;'),
+  'FPTextSend170 repeated dispatch bind guard missing');
+assert.equal((textSendSource.match(/form\.onsubmit\s*=\s*dispatchSubmit;/g) || []).length, 1,
+  'FPTextSend170 must keep one dispatcher submit assignment');
+assert(textSendSource.includes('return manager.dispatch(() => submit(event));'),
+  'FPTextSend170 must dispatch to its existing submit executor exactly once');
 
 console.log('PASS FPComposer177 owns one idempotent normal form bind');
 console.log('PASS renderChatView delegates input/keydown bind without taking text-submit ownership');
