@@ -112,7 +112,10 @@
     "test:180:block-contract": "node ./scripts/regression180-block-contract.cjs",
     "test:180:1801": "npm run test:180:block-contract",
     "test:180:block-owner-bypass": "node ./scripts/regression180-block-owner-bypass.cjs",
-    "test:180:1802": "npm run test:180:block-contract && npm run test:180:block-owner-bypass"
+    "test:180:1802": "npm run test:180:block-contract && npm run test:180:block-owner-bypass",
+    "test:180:invite-block-static": "node ./scripts/regression180-invite-block-static.cjs",
+    "test:180:invite-block-integration": "node ./scripts/regression180-invite-block-integration.cjs",
+    "test:180:1803": "npm run test:180:1802 && npm run test:180:invite-block-static && npm run test:180:invite-block-integration"
   },
   "license": "MIT",
   "dependencies": {
