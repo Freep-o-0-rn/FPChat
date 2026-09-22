@@ -12,6 +12,7 @@ const { installMessageActionsServer } = require('./src/message-actions-server');
 const { installMessagePinsServer } = require('./src/message-pins-server');
 const { installTypingServer } = require('./src/typing-server');
 const { installUsernameServer } = require('./src/username-server');
+const { installSystemEventsServer } = require('./src/system-events-server');
 
 dotenv.config();
 
@@ -1261,6 +1262,10 @@ installTypingServer({
   userBlocks: fpUserBlocks165
 });
 installUsernameServer({
+  app,
+  db
+});
+installSystemEventsServer({
   app,
   db
 });
