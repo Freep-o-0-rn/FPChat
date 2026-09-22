@@ -59,11 +59,12 @@ assert(textSend.includes("return manager.dispatch(() => submit(event));"),
   '177.18 text entry must use the existing dispatcher');
 assert(mediaSend.includes("return manager.dispatch(() => executeMediaFromPreview170(root));"),
   '177.19 media entry must use the existing dispatcher');
-assert(!voice.includes('FPSendManager177'),'voice must not transfer to dispatcher before its dedicated step');
+assert(voice.includes("return manager.dispatch(() => uploadAndSendVoice(data));"),
+  '177.20 ready voice command must use the existing dispatcher');
 
 console.log('PASS FPSendManager177 is a stateless one-executor dispatcher');
 console.log('PASS dispatcher owns no listener, queue, pending store, retry, transport, operation or activity');
-console.log('PASS dispatcher loads before send owners; text and media dedicated entries are transferred');
+console.log('PASS dispatcher loads before send owners; text, media and ready-voice entries are transferred');
 
 run(async({browser,origin,errors})=>{
   const page=await browser.newPage({viewport:{width:390,height:844}});

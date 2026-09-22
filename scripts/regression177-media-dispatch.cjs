@@ -37,7 +37,8 @@ assert(media.includes('item.uploadId ||= crypto.randomUUID().replaceAll'), 'stab
 assert(media.includes("confirm(`Не удалось загрузить файл"),'existing media retry prompt changed');
 assert(media.includes('{signal:operation.signal}'),'media upload AbortSignal changed');
 assert(media.includes("type:'message:new',roomId,messageType:'media'"),'final media message send changed');
-assert(!voice.includes('FPSendManager177'),'voice must remain direct in 177.19');
+assert(voice.includes("return manager.dispatch(() => uploadAndSendVoice(data));"),
+  '177.20 ready voice command must now use SendManager');
 
 assert(app.includes("accept='image/*,video/*'"),'attachment input scope changed');
 assert(app.includes("const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');"),'image file path changed');
@@ -52,7 +53,7 @@ console.log('PASS one media preview entry dispatches exactly one existing media 
 console.log('PASS media uploadId/retry/cancel/operation/message worker remains unchanged');
 console.log('PASS photo/album/video share one executor and one dispatcher adapter');
 console.log('PASS generic document/file path remains unsupported and is not invented');
-console.log('PASS voice is not transferred in 177.19');
+console.log('PASS media contract remains intact after ready-voice transfer');
 
 run(async({browser,origin,errors})=>{
   const page=await browser.newPage({viewport:{width:390,height:844}});

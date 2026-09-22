@@ -44,7 +44,8 @@ assert(voice.includes("async function uploadAndSendVoice(data)"),'voice executor
 assert(voice.includes("contexts?.beginOperation?.(data.roomId, 'voice-send')"),'voice operation context changed');
 assert(voice.includes("signal: operation?.signal"),'voice upload operation signal changed');
 assert(voice.includes("if (!preview || uploadInFlight) return;"),'voice duplicate upload guard changed');
-assert(voice.includes("const sent = await uploadAndSendVoice(preview);"),'voice preview retry entry changed');
+assert(voice.includes("const sent = await dispatchReadyVoice177(preview);"),'voice preview ready-send entry changed');
+assert(voice.includes("return manager.dispatch(() => uploadAndSendVoice(data));"),'voice dispatcher must invoke the existing ready-voice executor');
 assert(voice.includes("roomId: rec.roomId"),'voice source room capture changed');
 assert(voice.includes("showPreview(data);"),'voice failed-send preview fallback missing');
 assert(!voice.includes('clientMessageId'),'voice must not gain text clientMessageId in 177.16');
@@ -66,8 +67,8 @@ assert(voice.includes("stopLocalActivity('audio');"),'voice send activity stop c
 assert(app.includes("accept='image/*,video/*'"),'current media input scope changed');
 assert(app.includes("if(!isImg&&!isVid)continue"),'current image/video media filter changed');
 
-for(const [name,source] of Object.entries({voice,app,typing})){
-  assert(!source.includes('FPSendManager177'),name+' unexpectedly transferred to SendManager before its dedicated step');
+for(const [name,source] of Object.entries({app,typing})){
+  assert(!source.includes('FPSendManager177'),name+' unexpectedly owns SendManager dispatch state');
 }
 for(const [name,source] of Object.entries({textSend,mediaSend,voice,app,typing})){
   assert(!source.includes('pendingSends'),name+' unexpectedly contains a common pendingSends store');

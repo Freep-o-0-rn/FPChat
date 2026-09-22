@@ -1183,6 +1183,12 @@
     }
   }
 
+  function dispatchReadyVoice177(data) {
+    const manager = window.FPSendManager177;
+    if (!manager?.dispatch) return false;
+    return manager.dispatch(() => uploadAndSendVoice(data));
+  }
+
   async function finalizeRecording(rec) {
     if (!rec || rec.finalized) return;
     rec.finalized = true;
@@ -1232,7 +1238,7 @@
       return;
     }
 
-    const sent = await uploadAndSendVoice(data);
+    const sent = await dispatchReadyVoice177(data);
     if (!sent) {
       showPreview(data);
       alert('Не удалось отправить голосовое сообщение. Запись сохранена в предпросмотре — можно повторить отправку.');
@@ -1317,7 +1323,7 @@
     if (!preview || uploadInFlight) return;
     try { preview.audio?.pause?.(); } catch {}
     preview.form?.classList.add('fp-voice-preview-sending');
-    const sent = await uploadAndSendVoice(preview);
+    const sent = await dispatchReadyVoice177(preview);
     preview.form?.classList.remove('fp-voice-preview-sending');
     if (sent && previewState === preview) clearPreview(true);
     else if (!sent) alert('Не удалось отправить голосовое сообщение. Запись осталась в предпросмотре.');

@@ -98,3 +98,15 @@ The single active media preview send entry is now:
 The worker still owns encryption, per-item stable `uploadId`, `FPNetwork171.upload`, progress, retry prompt, AbortSignal, pending-media cleanup, caption/reply handling and final stable WebSocket `message:new`.
 
 Image, album and video share this same executor and therefore use one dispatcher adapter. They are regression-tested as separate scenarios. The current attachment input accepts only `image/*,video/*`, and `openMediaPreviewFromFiles()` skips non-image/non-video MIME types. No generic document/file send path is introduced in 177.19.
+
+## Build 177.20 ready-voice command transfer
+
+Only the command that sends already prepared voice data is routed through SendManager:
+
+`finalizeRecording(rec) / sendPreview() -> dispatchReadyVoice177(data) -> FPSendManager177.dispatch(() => uploadAndSendVoice(data))`.
+
+`uploadAndSendVoice(data)` remains the existing voice executor. Recording, MediaRecorder lifecycle, chunk collection, waveform extraction, Blob creation, preview construction, voice encryption, `/voice/upload`, operation context, activity and final WebSocket `message:new` are not moved or rewritten.
+
+The dispatcher receives the already prepared `data` object. The executor continues to use `data.roomId` for encryption, `voice/upload`, draft handling and final message send. Therefore navigation to another room while upload is in flight cannot retarget the voice message.
+
+There is no fallback direct call to `uploadAndSendVoice(data)` if SendManager is unavailable or refuses the executor.
