@@ -25,9 +25,12 @@ for(const token of [
   "'media-send170.js':['text-send170.js']"
 ]) assert(index.includes(token),'FPStartup174 dependency/readiness contract changed: '+token);
 
-const preloadMatch=index.match(/const preload174\\s*=\\s*\\[([^\\]]+)\\];/);
-assert(preloadMatch,'preload174 list missing');
-const preloaded=[...preloadMatch[1].matchAll(/'([^']+)'/g)].map(match=>match[1]);
+const preloadStart=index.indexOf("const preload174 = [");
+assert(preloadStart>=0,'preload174 list missing');
+const preloadEnd=index.indexOf('];',preloadStart);
+assert(preloadEnd>preloadStart,'preload174 list is not closed');
+const preloadSource=index.slice(preloadStart,preloadEnd+2);
+const preloaded=[...preloadSource.matchAll(/'([^']+)'/g)].map(match=>match[1]);
 assert.deepEqual(preloaded,[
   'room-context170.js',
   'lifecycle170.js',
