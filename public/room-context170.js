@@ -253,13 +253,13 @@
     }
     const existing = document.querySelector('script[data-fp-send-manager177]');
     if (existing) {
-      existing.addEventListener('load', loadSendManager177, { once: true });
+      existing.addEventListener('load', loadTextSendOwner, { once: true });
       return;
     }
     const script = document.createElement('script');
     script.src = `/send-manager177.js${suffix}`;
     script.dataset.fpSendManager177 = '1';
-    script.onload = loadSendManager177;
+    script.onload = loadTextSendOwner;
     script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
@@ -289,13 +289,13 @@
     }
     const existing = document.querySelector('script[data-fp-room-open170]');
     if (existing) {
-      existing.addEventListener('load', loadTextSendOwner, { once: true });
+      existing.addEventListener('load', loadSendManager177, { once: true });
       return;
     }
     const script = document.createElement('script');
     script.src = `/room-open170.js${suffix}`;
     script.dataset.fpRoomOpen170 = '1';
-    script.onload = loadTextSendOwner;
+    script.onload = loadSendManager177;
     script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
