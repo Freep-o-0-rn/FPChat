@@ -1,0 +1,69 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const root = process.env.FPCHAT_TEST_ROOT || path.resolve(__dirname, '..');
+const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n');
+
+const app = read('public/app.js');
+const viewport = read('public/viewport-fix.js');
+
+const ownerStart = app.indexOf('const scrollCoordinator=');
+const ownerExport = app.indexOf('window.FPScroll173=scrollCoordinator;', ownerStart);
+assert(ownerStart >= 0 && ownerExport > ownerStart, 'FPScroll173 owner/export missing');
+const owner = app.slice(ownerStart, ownerExport);
+
+assert(owner.includes("write(box,top,behavior='auto')"), 'central scroll writer changed');
+assert(owner.includes("if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;"), 'scroll write executor changed');
+
+const initialStart = owner.indexOf('async applyInitial(viewState)');
+const initialEnd = owner.indexOf('stop(){', initialStart);
+assert(initialStart >= 0 && initialEnd > initialStart, 'initial scroll flow missing');
+const initial = owner.slice(initialStart, initialEnd);
+const unreadBranch = initial.indexOf('if(unreadTarget){');
+const noUnreadBranch = initial.indexOf("}else if(!activeChatHistory?.unreadCount&&!activeChatHistory?.unloadedUnreadCount){");
+const bottomBranch = initial.indexOf('if(viewState?.atBottom){');
+const restoreBranch = initial.indexOf('const target=getViewStateMessageElement(box,viewState);');
+assert(unreadBranch >= 0, 'initial unread branch missing');
+assert(noUnreadBranch > unreadBranch, 'unread no longer wins the initial decision');
+assert(bottomBranch > noUnreadBranch, 'saved bottom decision moved outside the no-unread branch');
+assert(restoreBranch > bottomBranch, 'saved anchor no longer follows the existing atBottom decision');
+assert(initial.includes("this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');"), 'first-unread target/offset changed');
+assert(initial.includes("this.write(box,box.scrollHeight,'auto');"), 'initial bottom fallback changed');
+assert(initial.includes("this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');"), 'saved-anchor offset formula changed');
+
+const bottomStart = owner.indexOf('requestBottom(box=this.box)');
+const bottomEnd = owner.indexOf('focus(target', bottomStart);
+assert(bottomStart >= 0 && bottomEnd > bottomStart, 'requestBottom flow missing');
+const bottom = owner.slice(bottomStart, bottomEnd);
+const jumpIndex = bottom.indexOf('void FPHistory174.jump();return;');
+const openingIndex = bottom.indexOf("if(this.phase==='opening'){this.pendingBottom=true;return;}");
+const writeIndex = bottom.indexOf("this.write(box,box.scrollHeight,'auto');");
+assert(jumpIndex >= 0 && openingIndex > jumpIndex && writeIndex > openingIndex, 'bottom conflict order changed');
+
+const focusStart = owner.indexOf('focus(target');
+const prependStart = owner.indexOf('preservePrepend(', focusStart);
+const focus = owner.slice(focusStart, prependStart);
+assert(focus.includes('this.isOpening())return false;'), 'focus can now override opening');
+const prepend = owner.slice(prependStart);
+assert(prepend.includes("if(!isCurrentMessagesBox(box)||this.phase==='opening')return;"), 'prepend can now override opening');
+
+assert(app.includes("function restoreMessagesViewState(box,viewState){const target=getViewStateMessageElement(box,viewState);if(!target||!isCurrentMessagesBox(box)||scrollCoordinator.isOpening())return false;"), 'saved restore no longer respects opening/current box');
+assert(app.includes("return scrollCoordinator.write(box,box.scrollTop+targetTop-boxTop-offset,'auto');"), 'saved restore bypasses FPScroll173');
+
+const scrollListener = app.match(/box\.addEventListener\('scroll',\(\)=>\{([^}]*)\}\);/);
+assert(scrollListener, 'messages native scroll observer missing');
+assert(scrollListener[1].includes('scheduleViewStateSave();'), 'native scroll no longer saves view state');
+assert(scrollListener[1].includes('recomputePendingUnread();'), 'native scroll no longer refreshes unread state');
+assert(!scrollListener[1].includes('scrollCoordinator.') && !scrollListener[1].includes('FPScroll173'), 'native user scroll gained a programmatic scroll writer');
+
+assert(viewport.includes('pinBottom = Boolean(chatIsOpen() && box && messagesAtBottom(box));'), 'keyboard bottom pin no longer requires the user to already be at bottom');
+assert(viewport.includes('window.FPScroll173.requestBottom(box);'), 'keyboard bottom pin bypasses FPScroll173 normal path');
+assert(viewport.includes("if (event.target?.closest?.('#messages')) stopBottomPin();"), 'deliberate history interaction no longer cancels keyboard bottom pin');
+
+console.log('PASS 178.22 FPScroll173 remains the existing message-scroll owner');
+console.log('PASS 178.22 initial unread/bottom/restore conflict order is unchanged');
+console.log('PASS 178.22 focus/prepend cannot override opening and native user scroll stays observational');
+console.log('PASS 178.22 keyboard bottom pin remains conditional and delegates through FPScroll173');
