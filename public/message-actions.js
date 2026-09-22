@@ -177,12 +177,10 @@
     if (typeof rebuildDateSeparators === 'function') rebuildDateSeparators(box);
 
     if (wasAtBottom) {
-      if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.requestBottom(box);
-      else box.scrollTop = box.scrollHeight;
+      window.FPScroll173?.requestBottom(box);
     } else if (wasAbove) {
       const removedHeight = Math.max(0, beforeHeight - box.scrollHeight);
-      if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.write(box, beforeTop - removedHeight, 'auto');
-      else box.scrollTop = Math.max(0, beforeTop - removedHeight);
+      window.FPScroll173?.write(box, beforeTop - removedHeight, 'auto');
     }
   }
 

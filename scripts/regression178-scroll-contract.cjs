@@ -65,8 +65,8 @@ assert(history.includes("rebuildDateSeparators(box);syncUnreadDivider(box);resto
 assert(history.includes("if(target)scrollCoordinator.focus(target,'auto',8);"), 'history jump target no longer delegates to focus');
 assert(history.includes("else scrollCoordinator.write(box,box.scrollHeight,'auto');"), 'history tail jump no longer delegates to bottom write');
 
-assert(actions.includes("if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.requestBottom(box);\n      else box.scrollTop = box.scrollHeight;"), 'message removal bottom behavior/fallback changed');
-assert(actions.includes("if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.write(box, beforeTop - removedHeight, 'auto');\n      else box.scrollTop = Math.max(0, beforeTop - removedHeight);"), 'message removal remove-above behavior/fallback changed');
+assert(actions.includes("window.FPScroll173?.requestBottom(box);"), 'message removal bottom path no longer delegates to FPScroll173');
+assert(actions.includes("window.FPScroll173?.write(box, beforeTop - removedHeight, 'auto');"), 'message removal remove-above path changed its target/offset/behavior');
 
 assert(app.includes("if(autoScroll){scrollCoordinator.requestBottom(box);window.FPHistory174?.trim('newer');}"), 'normal append auto-bottom no longer uses coordinator');
 assert(lifecycle.includes("if (autoScroll) scrollCoordinator.requestBottom(box);"), 'room lifecycle event auto-bottom no longer uses coordinator');
@@ -91,4 +91,4 @@ console.log('PASS 178.22 opening/unread/restore/bottom conflict order is unchang
 console.log('PASS 178.22 history load/trim/jump preserve the existing anchor/focus/bottom rules');
 console.log('PASS 178.22 deletion compensation keeps the existing target/offset/auto behavior');
 console.log('PASS 178.22 user scroll stays native/observational and keyboard pin remains conditional');
-console.log('PASS 178.22 known direct fallbacks remain explicit for one-at-a-time migration');
+console.log('PASS 178.22 remaining direct fallback stays explicit for one-at-a-time migration');
