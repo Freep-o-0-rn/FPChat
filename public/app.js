@@ -140,9 +140,8 @@ async function loadDraftForCurrentRoom(){
     try{text=await decryptText(serverDraft.iv,serverDraft.ciphertext,view.key);}catch{return;}
   }
   if(!canApply())return;
-  draft.text=text;input.value=text;
-  draft.replyTo=serverDraft?.reply_to_message_id?getMessageReplyMeta(serverDraft.reply_to_message_id):null;
-  autoResizeMessageInput(input);updateReplyComposerBar();renderChats();
+  const replyTo=serverDraft?.reply_to_message_id?getMessageReplyMeta(serverDraft.reply_to_message_id):null;
+  window.FPComposer177?.applyRestoredDraft?.({input,draft,text,replyTo});
 }
 function showMessageReplyMenu(messageId,x,y){hideMessageReplyMenu();const menu=document.createElement('div');menu.className='message-reply-menu';menu.innerHTML='<button type="button">Ответить</button>';menu.querySelector('button').onclick=()=>{const replyTo=getMessageReplyMeta(messageId);setSelectedReply(state.roomId,replyTo);hideMessageReplyMenu();};document.body.appendChild(menu);const margin=8;const rect=menu.getBoundingClientRect();let left=Math.min(x,window.innerWidth-rect.width-margin);let top=Math.min(y,window.innerHeight-rect.height-margin);left=Math.max(margin,left);top=Math.max(margin,top);menu.style.left=`${left}px`;menu.style.top=`${top}px`;setTimeout(()=>{document.addEventListener('click',hideMessageReplyMenu,{once:true});});}
 function hideMessageReplyMenu(){document.querySelector('.message-reply-menu')?.remove();}
@@ -805,6 +804,16 @@ const FPComposer177=Object.freeze({
   },
   bind(form=document.getElementById('sendForm')){
     return bindComposerForm177(form);
+  },
+  applyRestoredDraft({input,draft,text='',replyTo=null}={}){
+    if(!input||!draft||!input.isConnected)return false;
+    draft.text=text;
+    input.value=text;
+    draft.replyTo=replyTo;
+    autoResizeMessageInput(input);
+    updateReplyComposerBar();
+    renderChats();
+    return true;
   }
 });
 window.FPComposer177=FPComposer177;
