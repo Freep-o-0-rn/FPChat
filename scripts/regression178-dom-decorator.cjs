@@ -76,16 +76,14 @@ class FakeElement{
   querySelector(sel){if(sel==='.message-context-menu')return this.menu;if(sel==='.message-context-copy')return this.clone;return null;}
 }
 const documentStub={createElement(){return new FakeButton();}};
-const factory=new Function('document','ROOT','COPY','messageId','closeContext','requestAnimationFrame','startSelection',
+const factory=new Function('document','Element','selection','MENU','ROOT','COPY','messageId','closeContext','requestAnimationFrame','startSelection',
   createAction+'\n'+decorate+'\nreturn {decorateContext};');
-const api=factory(documentStub,'.message-context-root','.message-context-copy',()=>123,()=>{},fn=>fn(),()=>{});
-global.Element=FakeElement;
+const api=factory(documentStub,FakeElement,null,'.message-context-menu','.message-context-root','.message-context-copy',()=>123,()=>{},fn=>fn(),()=>{});
 const menu=new FakeMenu();
 const clone={classList:new FakeClassList()};
 const context=new FakeElement(menu,clone);
 api.decorateContext(context);
 api.decorateContext(context);
-delete global.Element;
 assert.equal(menu.children.length,1,'same context node received duplicate selection action');
 assert.equal(menu.children[0].listeners.filter(x=>x.type==='click').length,1,'same decorator action received duplicate click bind');
 
