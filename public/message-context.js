@@ -265,9 +265,10 @@
         const tracked = manager.currentViewer?.();
         if (tracked === viewer) manager.closeViewer(viewer, closeViewerBackToContextWorker177);
         else if (!tracked) closeViewerBackToContextWorker177(viewer);
-      } else {
-        if (typeof mediaViewerState !== 'undefined') mediaViewerState = null;
-        if (typeof renderMediaViewer === 'function') renderMediaViewer();
+      } else if (viewer) {
+        closeViewerBackToContextWorker177(viewer);
+      } else if (typeof renderMediaViewer === 'function') {
+        renderMediaViewer();
       }
     } catch {}
     restoreContextAfterViewer();
