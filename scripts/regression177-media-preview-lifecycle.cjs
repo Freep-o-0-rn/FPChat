@@ -94,8 +94,13 @@ run(async({browser,origin,errors})=>{
 
   const openRoom=async room=>{
     await page.evaluate(async roomId=>{showChatsList();await openChat(roomId);},room);
-    await page.waitForSelector('#mediaPreviewRoot');
-    await page.waitForFunction(roomId=>state.roomId===roomId,room);
+    await page.waitForSelector('#msgInput');
+    await page.waitForFunction(roomId=>
+      state.roomId===roomId &&
+      Boolean(document.getElementById('sendForm')) &&
+      Boolean(document.getElementById('mediaPreviewRoot')),
+      room
+    );
   };
 
   const makeFilesAndOpen=async names=>page.evaluate(async names=>{
