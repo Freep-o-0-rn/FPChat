@@ -29,7 +29,7 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
     throw new Error('FPChat Build 165 bootstrap: server startup marker was not found');
   }
 
-  const install = `\nrequire('./src/voice-server').installVoiceServer({\n  app,\n  db,\n  q,\n  upload,\n  UPLOAD_DIR,\n  fs,\n  path,\n  randomToken,\n  safeUnlink,\n  isRoomOpen,\n  userBlocks: fpUserBlocks165\n});\n`;
+  const install = `\n`;
 
   source = source.replace(marker, `${install}${marker}`);
   module._compile(source, filename);
