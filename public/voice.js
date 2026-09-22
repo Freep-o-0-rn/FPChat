@@ -807,10 +807,12 @@
     send.disabled = empty;
     const mic = form.querySelector('.fp-voice-record-btn');
     if (!mic) return;
-    const closed = form.closest('.chat-view')?.classList.contains('room-closed') === true;
+    const view = form.closest('.chat-view');
+    const closed = view?.classList.contains('room-closed') === true;
+    const editing = view?.classList.contains('fp-editing-message') === true;
     const currentBusy = Boolean(recordingState || uploadInFlight || previewState);
-    form.classList.toggle('fp-voice-mic-mode', empty && !closed && !currentBusy);
-    mic.disabled = closed || currentBusy || !empty;
+    form.classList.toggle('fp-voice-mic-mode', empty && !editing && !closed && !currentBusy);
+    mic.disabled = editing || closed || currentBusy || !empty;
   }
 
   function ensureComposer() {

@@ -346,38 +346,23 @@
     updateMessageStatusElement = wrapped;
   }
 
-  function editBar() {
-    return document.getElementById('editComposerBar');
-  }
-
   function renderEditBar() {
-    const form = document.getElementById('sendForm');
-    const view = form?.closest('.chat-view');
-    if (!form || !view || !editState) return;
-    view.classList.add('fp-editing-message');
-    let bar = editBar();
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'editComposerBar';
-      bar.className = 'edit-composer-bar';
-      bar.innerHTML = '<div class="edit-composer-accent"></div><div class="edit-composer-content"><div class="edit-composer-title">Редактирование сообщения</div><div class="edit-composer-preview"></div></div><button type="button" class="edit-composer-close" aria-label="Отменить редактирование">×</button>';
-      form.parentNode.insertBefore(bar, form);
-      bar.querySelector('.edit-composer-close')?.addEventListener('click', () => cancelEdit(true));
-    }
-    const preview = bar.querySelector('.edit-composer-preview');
-    if (preview) preview.textContent = editState.originalText;
+    if (!editState) return;
+    const input = document.getElementById('msgInput');
+    window.FPComposer177?.enterEditMode?.({
+      input,
+      originalText: editState.originalText,
+      onCancel: () => cancelEdit(true)
+    });
   }
 
   function restoreComposer(snapshot, focus = false) {
-    const input = document.getElementById('msgInput');
-    const view = input?.closest('.chat-view');
-    view?.classList.remove('fp-editing-message');
-    editBar()?.remove();
-    if (!input || !snapshot) return;
-    input.value = snapshot.text || '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    try { autoResizeMessageInput(input); } catch {}
-    if (focus) input.focus({ preventScroll: true });
+    window.FPComposer177?.exitEditMode?.({
+      input: document.getElementById('msgInput'),
+      snapshot,
+      restoreDraft: true,
+      focus
+    });
   }
 
   function cancelEdit(restoreDraft = true) {
@@ -386,8 +371,10 @@
     editState = null;
     if (restoreDraft) restoreComposer(snapshot, false);
     else {
-      document.querySelector('.chat-view')?.classList.remove('fp-editing-message');
-      editBar()?.remove();
+      window.FPComposer177?.exitEditMode?.({
+        input: document.getElementById('msgInput'),
+        restoreDraft: false
+      });
     }
   }
 
@@ -412,11 +399,6 @@
       snapshot: { text: input.value, replyTo: draft?.replyTo || null }
     };
     closeContext();
-    input.value = originalText;
-    try { autoResizeMessageInput(input); } catch {}
-    const send = document.getElementById('sendBtn');
-    if (send) send.disabled = !originalText.trim();
-    window.FPVoice?.syncComposer?.(input.closest('#sendForm'));
     renderEditBar();
     requestAnimationFrame(() => {
       try { input.focus({ preventScroll: true }); } catch { input.focus(); }
@@ -659,10 +641,7 @@
   document.addEventListener('input', (event) => {
     if (!editState || event.target?.id !== 'msgInput') return;
     event.stopImmediatePropagation();
-    const input = event.target;
-    const send = document.getElementById('sendBtn');
-    if (send) send.disabled = !input.value.trim();
-    try { autoResizeMessageInput(input); } catch {}
+    window.FPComposer177?.syncEditInput?.(event.target);
   }, true);
 
   document.addEventListener('submit', (event) => {

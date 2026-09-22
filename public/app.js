@@ -826,6 +826,48 @@ const FPComposer177=Object.freeze({
     if(close)close.onclick=typeof onCancel==='function'?onCancel:null;
     return true;
   },
+  enterEditMode({input=document.getElementById('msgInput'),originalText='',onCancel=null}={}){
+    const form=input?.closest('#sendForm');
+    const view=form?.closest('.chat-view');
+    if(!input||!form||!view)return false;
+    view.classList.add('fp-editing-message');
+    let bar=document.getElementById('editComposerBar');
+    if(!bar){
+      bar=document.createElement('div');
+      bar.id='editComposerBar';
+      bar.className='edit-composer-bar';
+      bar.innerHTML='<div class="edit-composer-accent"></div><div class="edit-composer-content"><div class="edit-composer-title">Редактирование сообщения</div><div class="edit-composer-preview"></div></div><button type="button" class="edit-composer-close" aria-label="Отменить редактирование">×</button>';
+      form.parentNode.insertBefore(bar,form);
+    }
+    const preview=bar.querySelector('.edit-composer-preview');
+    if(preview)preview.textContent=String(originalText||'');
+    const close=bar.querySelector('.edit-composer-close');
+    if(close)close.onclick=typeof onCancel==='function'?onCancel:null;
+    input.value=String(originalText||'');
+    autoResizeMessageInput(input);
+    FPComposer177.syncUI(form);
+    return true;
+  },
+  syncEditInput(input=document.getElementById('msgInput')){
+    if(!input)return false;
+    autoResizeMessageInput(input);
+    FPComposer177.syncUI(input.closest('#sendForm'));
+    return true;
+  },
+  exitEditMode({input=document.getElementById('msgInput'),snapshot=null,restoreDraft=true,focus=false}={}){
+    const view=input?.closest('.chat-view')||document.querySelector('.chat-view');
+    view?.classList.remove('fp-editing-message');
+    document.getElementById('editComposerBar')?.remove();
+    if(!restoreDraft||!input||!snapshot)return true;
+    input.value=snapshot.text||'';
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    autoResizeMessageInput(input);
+    FPComposer177.syncUI(input.closest('#sendForm'));
+    if(focus){
+      try{input.focus({preventScroll:true});}catch{input.focus();}
+    }
+    return true;
+  },
   applyRestoredDraft({input,draft,text='',replyTo=null}={}){
     if(!input||!draft||!input.isConnected)return false;
     draft.text=text;
