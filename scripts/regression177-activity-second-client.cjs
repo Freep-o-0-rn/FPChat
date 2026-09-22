@@ -165,6 +165,17 @@ run(async({browser,origin,errors})=>{
 
   await a.evaluate(()=>{
     window.testAudio17721 ||= [];
+    window.__fp17721Outgoing=[];
+    window.__fp17721OriginalSend=WebSocket.prototype.send;
+    WebSocket.prototype.send=function(payload){
+      try{
+        const parsed=JSON.parse(String(payload));
+        if(['activity:start','activity:stop','typing:start','typing:stop','message:new','message:send'].includes(parsed?.type)){
+          window.__fp17721Outgoing.push({at:performance.now(),type:parsed.type,activity:String(parsed.activity||''),roomId:String(parsed.roomId||'')});
+        }
+      }catch{}
+      return window.__fp17721OriginalSend.call(this,payload);
+    };
     navigator.mediaDevices.getUserMedia=async()=>{
       const audio=new AudioContext();
       const oscillator=audio.createOscillator();
@@ -273,7 +284,13 @@ run(async({browser,origin,errors})=>{
     await a.mouse.move(direct.x,direct.y);await a.mouse.up();
     await Promise.race([voiceSuccessReady,new Promise((_,reject)=>setTimeout(()=>reject(new Error('voice success upload not reached')),6000))]);
     await waitRemote('audio');
-    assert.equal((await remote()).label,'загружает аудио…');
+    const voiceSuccessRemote=await remote();
+    if(voiceSuccessRemote.label!=='загружает аудио…'){
+      const outgoing=await a.evaluate(()=>window.__fp17721Outgoing||[]);
+      console.log('DIAG voice-success remote='+JSON.stringify(voiceSuccessRemote));
+      console.log('DIAG voice-success outgoing='+JSON.stringify(outgoing));
+    }
+    assert.equal(voiceSuccessRemote.label,'загружает аудио…');
     releaseVoiceSuccess();
     const voiceSuccessStop=await waitClear();
     assert(voiceSuccessStop<2500,'voice success audio activity waited for safety timeout');
@@ -356,6 +373,8 @@ run(async({browser,origin,errors})=>{
       try{window.FPVoice?.cancelRecording?.();}catch{}
       try{window.FPVoice?.clearPreview?.();}catch{}
       try{if(mediaPreviewState)await window.FPMediaSend170?.cancelPreview?.(mediaPreviewState);}catch{}
+      if(window.__fp17721OriginalSend)WebSocket.prototype.send=window.__fp17721OriginalSend;
+      delete window.__fp17721OriginalSend;
       for(const {audio,oscillator,stream} of window.testAudio17721||[]){
         try{stream.getTracks().forEach(track=>track.stop());}catch{}
         try{oscillator.stop();}catch{}
