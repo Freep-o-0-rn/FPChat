@@ -119,7 +119,10 @@
     "test:180:windows-script-contract": "node ./scripts/regression180-windows-script-contract.cjs",
     "test:180:1804": "npm run test:180:1803 && npm run test:180:windows-script-contract",
     "test:180:update-isolated-windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test1805-update-isolated.ps1",
-    "test:180:1805": "npm run test:180:1803 && npm run test:180:windows-script-contract && npm run test:180:update-isolated-windows"
+    "test:180:1805": "npm run test:180:1803 && npm run test:180:windows-script-contract && npm run test:180:update-isolated-windows",
+    "test:180:launcher-contract": "node ./scripts/regression180-launcher-contract.cjs",
+    "test:180:launcher-isolated-windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test1806-launcher-isolated.ps1",
+    "test:180:1806": "npm run test:180:windows-script-contract && npm run test:180:launcher-contract && npm run test:180:launcher-isolated-windows"
   },
   "license": "MIT",
   "dependencies": {

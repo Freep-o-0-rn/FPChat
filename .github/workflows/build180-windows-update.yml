@@ -10,6 +10,10 @@ on:
       - 'package-lock.json'
       - 'scripts/test1805-update-isolated.ps1'
       - 'scripts/regression180-windows-script-contract.cjs'
+      - 'start_chat.bat'
+      - 'scripts/start-fpchat180.ps1'
+      - 'scripts/regression180-launcher-contract.cjs'
+      - 'scripts/test1806-launcher-isolated.ps1'
       - '.github/workflows/build180-windows-update.yml'
   workflow_dispatch:
 
@@ -28,3 +32,8 @@ jobs:
       - name: Isolated Windows update
         shell: powershell
         run: npm run test:180:update-isolated-windows
+      - name: Static launcher contract
+        run: npm run test:180:launcher-contract
+      - name: Isolated Windows launcher
+        shell: powershell
+        run: npm run test:180:launcher-isolated-windows
