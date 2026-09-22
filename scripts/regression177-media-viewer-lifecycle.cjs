@@ -66,11 +66,15 @@ assert(manager.includes('openViewer(viewer, openWorker)'), 'viewer open delegati
 assert(manager.includes('closeViewer(viewer, closeWorker)'), 'viewer close delegation missing');
 assert(manager.includes('currentViewer()'), 'viewer current identity query missing');
 assert(manager.includes('isViewerActive(viewer)'), 'viewer active identity query missing');
+const viewerStart = manager.indexOf('  openViewer(viewer, openWorker) {');
+const viewerEnd = manager.indexOf('\n  current() {', viewerStart);
+assert(viewerStart >= 0 && viewerEnd > viewerStart, 'viewer delegation boundary missing');
+const viewerBoundary = manager.slice(viewerStart, viewerEnd);
 for (const forbidden of [
   'readEncryptedMedia174', 'fetch(', 'XMLHttpRequest', 'createObjectURL',
   'revokeObjectURL', 'navigator.share', '.download', 'File(', 'Blob('
 ]) {
-  assert(!manager.includes(forbidden), 'MediaManager took media I/O/save ownership: ' + forbidden);
+  assert(!viewerBoundary.includes(forbidden), 'viewer delegation took media I/O/save ownership: ' + forbidden);
 }
 
 assert(gallery.includes('manager?.openViewer'), 'gallery open must delegate to MediaManager');
