@@ -103,3 +103,27 @@ Unmount removes only those mounted voice UI nodes and the existing composer-inpu
 The Build 173 DOM lifecycle owner is used for exact composer mount/unmount events. The old MutationObserver remains only as its existing compatibility fallback; no second observer is introduced.
 
 Acceptance executes one real recording session through press -> lock -> stop -> preview -> cancel and asserts exactly one MediaRecorder construction for that session, then unmounts room A, mounts room B and verifies exactly one mic/recording/preview UI set and stale-A isolation.
+
+
+### Permanent voice-recording guard from 177.25
+
+The Build 177 rule **do not rewrite voice recording** is executable, not only documentary.
+
+`npm run test:177:voice-recording-guard` fingerprints the existing pre-177.25 implementations from commit `0863cc96394c4a61f618d827e64b3ee27e53ce2f` for the press/lock/cancel/stop/finalize/preview path. Build 177.25 itself is allowed to wrap only composer voice UI mount/unmount; those recording functions must remain byte-for-byte equivalent after line-ending normalization.
+
+The guard covers:
+
+- `beginPressRecording`;
+- `lockRecording`;
+- `cancelRecordingByGesture`;
+- `handlePointerMove`;
+- `stopRecording`;
+- `finishPress`;
+- `finalizeRecording`;
+- `showPreview`;
+- `clearPreview`;
+- `togglePreviewPlayback`;
+- `sendPreview`;
+- `handleVisibilityLoss`.
+
+Every later Build 177 step that runs `test:177:voice-ui-lifecycle` runs this guard first. Updating the recorded fingerprints merely to make a later refactor pass is not allowed; changing these functions requires a separate explicitly approved voice-recording task. MediaManager may delegate lifecycle ownership around voice UI, but it must not reimplement MediaRecorder creation, press/lock gestures, recording state, preview behavior, or cancel semantics.
