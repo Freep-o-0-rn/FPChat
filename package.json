@@ -4,7 +4,7 @@
   "description": "Private invite-based chat MVP with client-side encryption",
   "main": "server.js",
   "scripts": {
-    "start": "node -r ./src/message-actions-bootstrap.js server.js",
+    "start": "node server.js",
     "start:diag169": "node ./scripts/start-diagnostics169.js",
     "db:diag169": "node ./scripts/db-baseline169.js",
     "check:169": "node ./scripts/check-build169.js",
@@ -86,7 +86,7 @@
     "test:179:pins-contract": "node ./scripts/regression179-message-pins-contract.cjs",
     "test:179:explicit-message-actions": "node ./scripts/regression179-explicit-message-actions.cjs",
     "test:179:explicit-message-pins": "node ./scripts/regression179-explicit-message-pins.cjs",
-    "test:179:1794": "npm run test:179:explicit-message-pins && npm run test:179:pins-contract",
+    "test:179:1794": "node ./scripts/regression179-1794.cjs",
     "test:179:loader-readiness": "node ./scripts/regression179-loader-readiness.cjs",
     "test:179:explicit-block-stores": "node ./scripts/regression179-explicit-block-stores.cjs",
     "test:179:explicit-participant-presence": "node ./scripts/regression179-explicit-participant-presence.cjs",
@@ -95,7 +95,11 @@
     "test:179:explicit-legacy-media-block-guard": "node ./scripts/regression179-explicit-legacy-media-block-guard.cjs",
     "test:179:explicit-media-upload-block-guard": "node ./scripts/regression179-explicit-media-upload-block-guard.cjs",
     "test:179:explicit-invite-block-guard": "node ./scripts/regression179-explicit-invite-block-guard.cjs",
-    "test:179:explicit-installers": "node ./scripts/regression179-explicit-installers.cjs"
+    "test:179:explicit-installers": "node ./scripts/regression179-explicit-installers.cjs",
+    "test:179:final-composition": "node ./scripts/regression179-final-composition.cjs",
+    "test:179:entry-equivalence": "node ./scripts/regression179-entry-equivalence.cjs",
+    "test:179:1795": "npm run test:179:final-composition && npm run test:179:entry-equivalence",
+    "test:179": "npm run test:179:bootstrap-inventory && npm run test:179:1794 && npm run test:179:pins-contract && npm run test:179:loader-readiness && npm run test:179:1795"
   },
   "license": "MIT",
   "dependencies": {
