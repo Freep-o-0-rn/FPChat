@@ -16,6 +16,7 @@ const { installSystemEventsServer } = require('./src/system-events-server');
 const { installStorageStats168 } = require('./src/storage-stats168');
 const { installUserBlocks165Server } = require('./src/user-blocks165');
 const { installUserBlockEventActions165 } = require('./src/user-block-event-actions165');
+const { installChatRequestsServer } = require('./src/chat-requests-server147');
 
 dotenv.config();
 
@@ -1288,6 +1289,13 @@ installUserBlocks165Server({
 installUserBlockEventActions165({
   app,
   userBlocks: fpUserBlocks165
+});
+installChatRequestsServer({
+  app,
+  db,
+  q,
+  isRoomOpen,
+  removeRoomCascade
 });
 
 cleanupExpiredSoloRooms();
