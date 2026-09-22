@@ -22,7 +22,7 @@ assert(managerBlock.includes('current()'),'MediaManager current preview read mis
 for(const forbidden of [
   'createImageThumbBlob','createVideoThumbBlob','compressImageFile','encrypt',
   'uploadEncryptedMedia','fetch(','XMLHttpRequest','MediaRecorder',
-  'URL.createObjectURL','URL.revokeObjectURL','sendMediaFromPreview'
+  'URL.createObjectURL','sendMediaFromPreview'
 ]){
   assert(!managerBlock.includes(forbidden),'MediaManager took forbidden media implementation: '+forbidden);
 }
@@ -32,8 +32,12 @@ const closeWorkerStart=app.indexOf('function closeMediaPreviewModalWorker177(pre
 assert(openStart>=0&&closeWorkerStart>openStart,'existing preview open worker missing');
 const openBlock=app.slice(openStart,closeWorkerStart);
 assert(openBlock.includes('const view=captureRoomView170();'),'room-open guard changed');
-assert(openBlock.includes('items.push({id:crypto.randomUUID(),file:f,kind:isVid?\'video\':\'image\''),
+assert(openBlock.includes("const item={id:crypto.randomUUID(),file:f,kind:isVid?'video':'image'"),
   'existing preview item creation/order changed');
+assert(openBlock.includes('items.push(item);total+=f.size;'),
+  'existing preview append/order changed');
+assert(openBlock.includes('FPMediaManager177.ownPreviewThumbnailObjectUrl(item);'),
+  'generated thumbnail cleanup ownership must be handed to MediaManager');
 assert(openBlock.includes("caption:'',sending:false,failedIndex:null"),'existing preview state shape changed');
 assert(openBlock.includes('FPMediaManager177.open(preview,(next)=>{mediaPreviewState=next;renderMediaPreviewModal();})'),
   'preview open must delegate only final lifecycle mount');
@@ -44,8 +48,11 @@ assert(closeFacadeStart>closeWorkerStart&&renderStart>closeFacadeStart,'preview 
 const closeWorker=app.slice(closeWorkerStart,closeFacadeStart);
 const closeFacade=app.slice(closeFacadeStart,renderStart);
 assert(closeWorker.includes('mediaPreviewState!==preview'),'close worker must only unmount its exact preview');
-assert(closeWorker.includes('URL.revokeObjectURL(i.objectUrl)'),'existing objectUrl close cleanup changed');
-assert(closeWorker.includes('URL.revokeObjectURL(i.thumbnailObjectUrl)'),'existing thumbnail close cleanup changed');
+assert(closeWorker.includes('URL.revokeObjectURL(i.objectUrl)'),'existing source objectUrl close cleanup changed');
+assert(closeWorker.includes('i.thumbnailObjectUrl===i.objectUrl'),
+  'fallback thumbnail/source alias cleanup changed');
+assert(managerBlock.includes('releasePreviewThumbnailObjectUrl(item)'),
+  'generated thumbnail cleanup must stay in MediaManager');
 assert(closeWorker.includes("root.innerHTML=''"),'existing preview DOM cleanup changed');
 assert(closeFacade.includes('FPMediaManager177.close(preview,closeMediaPreviewModalWorker177)'),
   'close facade must delegate to MediaManager');
@@ -56,7 +63,7 @@ assert(media.includes('closeMediaPreviewModal(preview);'),
   'media executor must close the exact preview identity after send/cancel');
 
 console.log('PASS MediaManager177 owns preview lifecycle plus generated thumbnail ObjectURL cleanup only');
-console.log('PASS existing validation/thumb/caption/reply/ObjectURL workers remain outside MediaManager');
+console.log('PASS validation/thumb/caption/reply/source ObjectURL workers remain outside MediaManager');
 console.log('PASS close is scoped to the exact preview identity');
 
 run(async({browser,origin,errors})=>{
