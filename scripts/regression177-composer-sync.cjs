@@ -29,7 +29,7 @@ assert(!textSendSource.includes('FPVoice?.syncComposer'), 'text-send must use th
 assert(textSendSource.includes('window.FPComposer177?.syncUI?.(form);'), 'text-send unified sync call missing');
 
 const syncStart = voiceSource.indexOf('  function syncComposer(form) {');
-const syncEnd = voiceSource.indexOf('\n\n  function ensureComposer()', syncStart);
+const syncEnd = voiceSource.indexOf('\n\n  function mountComposerVoiceUi177(form) {', syncStart);
 assert(syncStart >= 0 && syncEnd > syncStart, 'FPVoice syncComposer body missing');
 const syncBlock = voiceSource.slice(syncStart, syncEnd);
 assert(syncBlock.includes('send.disabled = empty;'), 'FPVoice must own normal send disabled calculation');
