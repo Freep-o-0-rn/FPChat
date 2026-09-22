@@ -750,7 +750,15 @@ function broadcastRoomState(room) {
   sendToRoomParticipants(room.public_id, { type: 'room:state', roomId: room.public_id, status: String(room.status || ROOM_OPEN).toLowerCase(), closedAt: toIsoUtc(room.closed_at) });
 }
 function broadcastPresenceUpdate(roomPublicId, payload) {
-  sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload });
+  const room = q.findRoomByPublicId.get(roomPublicId);
+  if (!room || !payload?.deviceId) return;
+  const event = { type: 'presence:update', roomId: roomPublicId, ...payload };
+  for (const participant of q.listParticipantsByRoom.all(room.id)) {
+    if (!fpUserBlocks165.canViewerSeePresence(participant.device_id, payload.deviceId)) continue;
+    const sockets = socketsByDevice.get(participant.device_id);
+    if (!sockets) continue;
+    for (const client of sockets) sendWsJson(client, event);
+  }
 }
 function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);

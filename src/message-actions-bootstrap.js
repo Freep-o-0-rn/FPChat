@@ -25,12 +25,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
   }
 
   replaceOnce(
-    `function broadcastPresenceUpdate(roomPublicId, payload) {\n  sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload });\n}`,
-    `function broadcastPresenceUpdate(roomPublicId, payload) {\n  const room = q.findRoomByPublicId.get(roomPublicId);\n  if (!room || !payload?.deviceId) return;\n  const event = { type: 'presence:update', roomId: roomPublicId, ...payload };\n  for (const participant of q.listParticipantsByRoom.all(room.id)) {\n    if (!fpUserBlocks165.canViewerSeePresence(participant.device_id, payload.deviceId)) continue;\n    const sockets = socketsByDevice.get(participant.device_id);\n    if (!sockets) continue;\n    for (const client of sockets) sendWsJson(client, event);\n  }\n}`,
-    'presence broadcaster'
-  );
-
-  replaceOnce(
     `  const sender = q.findParticipant.get(room.id, ws.deviceId);\n  if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');\n  if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');`,
     `  const sender = q.findParticipant.get(room.id, ws.deviceId);\n  if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');\n  if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');\n  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);\n  if (!blockGuard165.ok) return sendMessageRejected(ws, room, clientMessageId, 'blocked', blockGuard165.code);`,
     'text message block guard'
