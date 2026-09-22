@@ -153,19 +153,13 @@ run(async({browser,origin,errors})=>{
   await page.unroute('**/media/upload');
   console.log('PASS cancel before encryption closes the same preview without starting upload');
 
-  // Helper to observe existing pending cleanup requests.
-  await page.evaluate(()=>{
-    window.__fp17723Cleanup=[];
-    const originalFetch=window.fetch;
-    window.__fp17723OriginalFetch=originalFetch;
-    window.fetch=async function(input,init){
-      const url=typeof input==='string'?input:String(input?.url||'');
-      if(url.includes('/media/pending')&&String(init?.method||'GET').toUpperCase()==='DELETE'){
-        try{window.__fp17723Cleanup.push(JSON.parse(String(init?.body||'{}')));}catch{}
-      }
-      return originalFetch.apply(this,arguments);
-    };
-  });
+  // Observe the existing cleanup transport externally, without replacing app fetch ownership.
+  const cleanupRequests=[];
+  const onCleanupRequest=request=>{
+    if(!request.url().includes('/media/pending')||request.method()!=='DELETE')return;
+    try{cleanupRequests.push(JSON.parse(request.postData()||'{}'));}catch{}
+  };
+  page.on('request',onCleanupRequest);
 
   // 2) Cancel while upload is in flight, before server commit.
   await resetDraft(1772302);
@@ -193,8 +187,7 @@ run(async({browser,origin,errors})=>{
   await page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
   await waitPreviewGone();
   await page.unroute('**/media/upload');
-  const duringCleanup=await page.evaluate(()=>window.__fp17723Cleanup||[]);
-  assert(duringCleanup.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(duringIdentity.uploadId)),
+  assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(duringIdentity.uploadId)),
     'cancel during upload must use existing pending cleanup with the stable uploadId');
   console.log('PASS cancel during upload aborts existing operation and runs stable-uploadId cleanup');
 
@@ -248,18 +241,13 @@ run(async({browser,origin,errors})=>{
   }
   assert.equal(blobAfter,404,
     'cancel after server commit but before upload response must delete the pending server media');
-  const committedCleanup=await page.evaluate(()=>window.__fp17723Cleanup||[]);
-  assert(committedCleanup.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(committedIdentity.uploadId)),
+  assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(committedIdentity.uploadId)),
     'post-commit cancel must clean by uploadId when uploadedMedia response was never observed');
   assert.equal(await page.evaluate(()=>ensureDraftState(state.roomId).replyTo?.messageId||null),1772303,
     'post-commit upload cancel must preserve the existing reply draft');
   console.log('PASS cancel after server commit/before response removes orphan pending media by uploadId');
 
-  await page.evaluate(()=>{
-    if(window.__fp17723OriginalFetch)window.fetch=window.__fp17723OriginalFetch;
-    delete window.__fp17723OriginalFetch;
-    delete window.__fp17723Cleanup;
-  });
+  page.off('request',onCleanupRequest);
 
   assert.deepEqual(errors,[]);
   console.log('PASS existing cancel cleanup semantics remain intact in all three timing windows');
