@@ -63,7 +63,8 @@
     "test:178:message-render-owner": "node ./scripts/regression178-message-render-owner.cjs",
     "test:178:dom-decorator": "node ./scripts/regression178-dom-decorator.cjs",
     "test:178:read-contract": "node ./scripts/regression178-read-contract.cjs",
-    "test:178:read-visible-admission": "node ./scripts/regression178-read-visible-admission.cjs"
+    "test:178:read-visible-admission": "node ./scripts/regression178-read-visible-admission.cjs",
+    "test:178:read-flush-owner": "node ./scripts/regression178-read-flush-owner.cjs"
   },
   "license": "MIT",
   "dependencies": {
