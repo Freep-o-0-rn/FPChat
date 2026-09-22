@@ -54,17 +54,61 @@ lifecycle170
 
 `media-send170.js` dispatches `fpchat:send-owners-ready174` only after `FPMediaSend170` has been installed.
 
-### 4. Navigation gate
+### 4. Early preload versus late owners
+
+The early preload list remains ordered as:
+
+```text
+room-context170.js
+lifecycle170.js
+network171.js
+message-store172.js
+dom-lifecycle173.js
+layer-manager173.js
+work174.js
+history174.js
+app.js
+settings-fix.js
+room-lifecycle.js
+```
+
+This is a fetch hint only. It does not promote the later connection/send owners into early execution.
+
+The following owners remain deliberately late and are installed through the accepted room-context chain instead of the preload list:
+
+```text
+connection170.js
+sync-coordinator176.js
+room-open170.js
+send-manager177.js
+text-send170.js
+media-send170.js
+```
+
+### 5. Direct /i and /chat entry parity
+
+The direct-entry contract remains identical to the Build 168 main baseline:
+
+- server `/i/:publicId` returns `public/index.html`;
+- server `/chat/:publicId` returns `public/index.html`;
+- `parseInvite()` still accepts the existing `/i/<16..64 alphanumeric>` path and rejects the legacy hash form;
+- `parseChat()` still accepts the existing `/chat/<16 alphanumeric>` path;
+- direct invite entry still calls the existing `joinByInviteText(...)` path;
+- direct chat entry with local access still calls the existing `openChat(chat)` path.
+
+Only the readiness boundary is observed before those existing entry actions; their route syntax and workers are not replaced.
+
+### 6. Navigation gate
 
 `public/index.html` exposes `FPStartup174.ready`.
 
 That promise resolves successfully on `fpchat:send-owners-ready174` and resolves false through `FPStartup174.fail()` when a required owner asset fails.
 
-The startup IIFE in `app.js` awaits this promise before service-worker registration, version/update entry handling, invite/chat route processing and initial chat-list navigation.
+The startup IIFE in `app.js` awaits this promise before service-worker registration, version/update entry handling, direct `/i` and `/chat` route processing and initial chat-list navigation.
 
 Therefore room/open/send ownership is established before user navigation is allowed to proceed through the normal startup path.
 
-### 5. Visual boot compatibility layer
+### 7. Visual boot compatibility layer
 
 `boot-ready152.js` remains a visual reveal/legacy-layer readiness gate. It is not promoted to application coordination ownership in 180.8.
 
