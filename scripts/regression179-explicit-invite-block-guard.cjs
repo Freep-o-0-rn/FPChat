@@ -1,0 +1,13 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const server=read('server.js'),boot=read('src/message-actions-bootstrap.js');
+const at=server.indexOf("app.post('/api/invites/:inviteCode/join'");
+const block=server.slice(at,server.indexOf('const tx = db.transaction',at));
+assert(block.includes('fpUserBlocks165.inviteGuard(room.id, safeDeviceId)'));
+assert(block.includes('fpBlockedInviteEvents165.note({ roomId: room.id, joinerId: safeDeviceId, fallbackName: safeName })'));
+assert(block.includes('INVITE_BLOCKED_BY_CREATOR'));
+assert(block.includes('INVITE_CREATOR_BLOCKED_BY_YOU')||block.includes('inviteBlock165.code'));
+assert(!boot.includes("'invite block guard'"));
+console.log('PASS 179.4 T7 explicit invite block guard');

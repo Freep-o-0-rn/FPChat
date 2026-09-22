@@ -538,6 +538,18 @@ app.post('/api/invites/:inviteCode/join', async (req, res) => {
   const safeDeviceId = String(deviceId).slice(0, 64);
   const safeName = String(displayName).slice(0, 48);
   if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });
+  const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);
+  if (!inviteBlock165.ok) {
+    if (inviteBlock165.code === 'INVITE_BLOCKED_BY_CREATOR') {
+      try {
+        fpBlockedInviteEvents165.note({ roomId: room.id, joinerId: safeDeviceId, fallbackName: safeName });
+      } catch (error) {
+        console.error('Blocked invite system event failed', error);
+      }
+      return res.status(403).json({ ok: false, error: 'Вход недоступен: пользователь вас заблокировал.', code: inviteBlock165.code });
+    }
+    return res.status(403).json({ ok: false, error: 'Сначала разблокируйте пользователя.', code: inviteBlock165.code });
+  }
   if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });
   if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' });
   const roomSecret = invite.room_secret;

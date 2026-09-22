@@ -24,12 +24,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
     source = source.split(marker).join(replacement);
   }
 
-  replaceOnce(
-    `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
-    `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);\n  if (!inviteBlock165.ok) {\n    if (inviteBlock165.code === 'INVITE_BLOCKED_BY_CREATOR') {\n      try {\n        fpBlockedInviteEvents165.note({ roomId: room.id, joinerId: safeDeviceId, fallbackName: safeName });\n      } catch (error) {\n        console.error('Blocked invite system event failed', error);\n      }\n      return res.status(403).json({ ok: false, error: 'Вход недоступен: пользователь вас заблокировал.', code: inviteBlock165.code });\n    }\n    return res.status(403).json({ ok: false, error: 'Сначала разблокируйте пользователя.', code: inviteBlock165.code });\n  }\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
-    'invite block guard'
-  );
-
   const marker = '\ncleanupExpiredSoloRooms();\nsetInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);\nserver.listen(APP_PORT, APP_HOST, () => console.log(`FPChat listening on http://${APP_HOST}:${APP_PORT}`));';
   if (!source.includes(marker)) {
     throw new Error('FPChat Build 165 bootstrap: server startup marker was not found');
