@@ -355,7 +355,7 @@
   }
 
   document.addEventListener('input', (event) => {
-    if (event.target?.id !== 'msgInput') return;
+    if (event.target?.id !== 'msgInput' || !event.isTrusted) return;
     pulseLocalTyping(event.target);
   }, true);
 
