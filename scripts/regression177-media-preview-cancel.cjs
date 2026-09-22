@@ -164,11 +164,19 @@ run(async({browser,origin,errors})=>{
   // 2) Cancel while upload is in flight, before server commit.
   await resetDraft(1772302);
   assert((await openPhoto('cancel-during-upload.png')).active);
+  let duringCancelPromise=null;
+  let duringSnapshot=null;
   let duringStarted;
   const duringReady=new Promise(resolve=>{duringStarted=resolve;});
   await page.route('**/media/upload',async route=>{
+    duringSnapshot=await page.evaluate(()=>({
+      uploadId:mediaPreviewState?.items?.[0]?.uploadId||'',
+      operation:Boolean(mediaPreviewState?.operation),
+      sending:Boolean(mediaPreviewState?.sending)
+    }));
     duringStarted();
-    await new Promise(resolve=>setTimeout(resolve,250));
+    duringCancelPromise=page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
+    await new Promise(resolve=>setTimeout(resolve,50));
     try{await route.abort('aborted');}catch{}
   });
   await page.locator('#mediaPreviewRoot .media-send-btn').click();
@@ -176,36 +184,44 @@ run(async({browser,origin,errors})=>{
     duringReady,
     new Promise((_,reject)=>setTimeout(()=>reject(new Error('in-flight media upload not reached')),6000))
   ]);
-  const duringIdentity=await page.evaluate(()=>({
-    uploadId:mediaPreviewState?.items?.[0]?.uploadId||'',
-    operation:Boolean(mediaPreviewState?.operation),
-    sending:Boolean(mediaPreviewState?.sending)
-  }));
-  assert(duringIdentity.uploadId,'stable uploadId missing during upload');
-  assert.equal(duringIdentity.operation,true);
-  assert.equal(duringIdentity.sending,true);
-  const duringCancel=page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
+  assert(duringSnapshot?.uploadId,'stable uploadId missing during upload');
+  assert.equal(duringSnapshot.operation,true);
+  assert.equal(duringSnapshot.sending,true);
   await Promise.race([
-    duringCancel,
+    duringCancelPromise,
     new Promise((_,reject)=>setTimeout(()=>reject(new Error('cancel during upload did not settle')),5000))
   ]);
   await waitPreviewGone();
   await page.unroute('**/media/upload');
-  assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(duringIdentity.uploadId)),
+  assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(duringSnapshot.uploadId)),
     'cancel during upload must use existing pending cleanup with the stable uploadId');
   console.log('PASS cancel during upload aborts existing operation and runs stable-uploadId cleanup');
 
-  // 3) Server has committed pending media, but response is still withheld from XHR.
+  // 3) Server has committed pending media, but the browser has not received the upload response.
   await resetDraft(1772303);
   assert((await openPhoto('cancel-after-server-commit.png')).active);
-  let releaseResponse,markCommitted;
-  const responseGate=new Promise(resolve=>{releaseResponse=resolve;});
+  let committedCancelPromise=null;
+  let committedSnapshot=null;
+  let serverBlobStatus=null;
+  let markCommitted;
   const committedReady=new Promise(resolve=>{markCommitted=resolve;});
   await page.route('**/media/upload',async route=>{
     const response=await route.fetch();
+    committedSnapshot=await page.evaluate(()=>({
+      uploadId:mediaPreviewState?.items?.[0]?.uploadId||'',
+      uploadedMedia:mediaPreviewState?.items?.[0]?.uploadedMedia||null,
+      roomId:mediaPreviewState?.roomId||''
+    }));
+    if(!committedSnapshot.uploadId)throw new Error('uploadId missing after server commit');
+    serverBlobStatus=await page.evaluate(async({uploadId,deviceId})=>{
+      const response=await fetch(`/api/media/${encodeURIComponent(uploadId)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
+      return response.status;
+    },{uploadId:committedSnapshot.uploadId,deviceId:fixture.deviceId});
     markCommitted();
-    await responseGate;
-    try{await route.fulfill({response});}catch{}
+    committedCancelPromise=page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
+    await new Promise(resolve=>setTimeout(resolve,50));
+    // Do not deliver the already-produced upload response to the browser.
+    try{await route.abort('aborted');}catch{}
   });
   await page.locator('#mediaPreviewRoot .media-send-btn').click();
   await Promise.race([
@@ -213,24 +229,16 @@ run(async({browser,origin,errors})=>{
     new Promise((_,reject)=>setTimeout(()=>reject(new Error('server-committed upload not reached')),6000))
   ]);
 
-  const committedIdentity=await page.evaluate(()=>({
-    uploadId:mediaPreviewState?.items?.[0]?.uploadId||'',
-    uploadedMedia:mediaPreviewState?.items?.[0]?.uploadedMedia||null,
-    roomId:mediaPreviewState?.roomId||''
-  }));
-  assert(committedIdentity.uploadId,'uploadId missing after server commit');
-  assert.equal(committedIdentity.uploadedMedia,null,
+  assert(committedSnapshot?.uploadId,'uploadId missing after server commit');
+  assert.equal(committedSnapshot.uploadedMedia,null,
     'browser must not receive upload response before cancellation point');
+  assert.equal(serverBlobStatus,200,
+    'server pending media row/blob must exist before browser response delivery');
 
-  const blobBefore=await page.evaluate(async({uploadId,deviceId})=>{
-    const response=await fetch(`/api/media/${encodeURIComponent(uploadId)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
-    return response.status;
-  },{uploadId:committedIdentity.uploadId,deviceId:fixture.deviceId});
-  assert.equal(blobBefore,200,'server pending media row/blob must exist before response delivery');
-
-  const cancelPromise=page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
-  releaseResponse();
-  await cancelPromise;
+  await Promise.race([
+    committedCancelPromise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('post-commit cancel did not settle')),5000))
+  ]);
   await waitPreviewGone();
   await page.unroute('**/media/upload');
 
@@ -239,13 +247,13 @@ run(async({browser,origin,errors})=>{
     blobAfter=await page.evaluate(async({uploadId,deviceId})=>{
       const response=await fetch(`/api/media/${encodeURIComponent(uploadId)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
       return response.status;
-    },{uploadId:committedIdentity.uploadId,deviceId:fixture.deviceId});
+    },{uploadId:committedSnapshot.uploadId,deviceId:fixture.deviceId});
     if(blobAfter===404)break;
     await page.waitForTimeout(100);
   }
   assert.equal(blobAfter,404,
     'cancel after server commit but before upload response must delete the pending server media');
-  assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(committedIdentity.uploadId)),
+  assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(committedSnapshot.uploadId)),
     'post-commit cancel must clean by uploadId when uploadedMedia response was never observed');
   assert.equal(await page.evaluate(()=>ensureDraftState(state.roomId).replyTo?.messageId||null),1772303,
     'post-commit upload cancel must preserve the existing reply draft');
