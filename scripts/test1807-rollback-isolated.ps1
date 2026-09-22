@@ -56,12 +56,14 @@ try {
 
   Push-Location $source
   try {
-    $output = & cmd.exe /d /c update.bat 2>&1
+    $updateLog=Join-Path $root 'fault-update.log'
+    $updateCommand='update.bat > "' + $updateLog + '" 2>&1'
+    & cmd.exe /d /s /c $updateCommand
     $exitCode=$LASTEXITCODE
   } finally { Pop-Location }
 
   if ($exitCode -eq 0) { throw 'fault-injected update unexpectedly succeeded' }
-  $outputText=($output | Out-String)
+  $outputText=Get-Content -LiteralPath $updateLog -Raw
   if ($outputText -notmatch '\[TEST\] Injecting failure after live application and dependency writes') { throw 'fault injection point was not reached' }
   if ($outputText -notmatch '\[ROLLBACK\] Restore completed successfully') { throw "rollback did not report success`n$outputText" }
   if ($outputText -match '\[ROLLBACK ERROR\]') { throw "rollback reported an error`n$outputText" }
