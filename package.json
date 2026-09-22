@@ -82,7 +82,8 @@
     "test:178:keyboard-orientation": "node ./scripts/regression178-keyboard-orientation.cjs && node ./scripts/regression178-keyboard-orientation-browser.cjs",
     "test:178:release": "node ./scripts/regression178-release.cjs",
     "test:178:header-keyboard": "node ./scripts/regression178-header-keyboard.cjs && node ./scripts/regression178-header-keyboard-browser.cjs",
-    "test:179:bootstrap-inventory": "node ./scripts/regression179-bootstrap-inventory.cjs"
+    "test:179:bootstrap-inventory": "node ./scripts/regression179-bootstrap-inventory.cjs",
+    "test:179:pins-contract": "node ./scripts/regression179-message-pins-contract.cjs"
   },
   "license": "MIT",
   "dependencies": {
