@@ -75,7 +75,8 @@
     "test:178:gesture-layer-lifecycle": "node ./scripts/regression178-gesture-layer-lifecycle.cjs && node ./scripts/regression178-gesture-layer-browser.cjs",
     "test:178:scroll-contract": "node ./scripts/regression178-scroll-contract.cjs",
     "test:178:scroll-writer": "node ./scripts/regression178-scroll-writer.cjs && node ./scripts/regression178-scroll-writer-browser.cjs",
-    "test:178:prepend-user-scroll": "node ./scripts/regression178-prepend-user-scroll.cjs && node ./scripts/regression178-prepend-user-scroll-browser.cjs"
+    "test:178:prepend-user-scroll": "node ./scripts/regression178-prepend-user-scroll.cjs && node ./scripts/regression178-prepend-user-scroll-browser.cjs",
+    "test:178:unread-restore-bottom": "node ./scripts/regression178-unread-restore-bottom.cjs && node ./scripts/regression178-unread-restore-bottom-browser.cjs"
   },
   "license": "MIT",
   "dependencies": {
