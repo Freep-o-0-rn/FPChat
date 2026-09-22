@@ -18,6 +18,7 @@ const { installUserBlocks165Server } = require('./src/user-blocks165');
 const { installUserBlockEventActions165 } = require('./src/user-block-event-actions165');
 const { installChatRequestsServer } = require('./src/chat-requests-server147');
 const { installVoiceServer } = require('./src/voice-server');
+const { createEncryptedUpload179 } = require('./src/encrypted-upload179');
 
 dotenv.config();
 
@@ -821,6 +822,45 @@ function unregisterWsFromAllDevices(ws) {
   }
 }
 
+function persistEncryptedMedia179({
+  room,
+  req,
+  publicId,
+  encryptedFile,
+  encryptedThumb,
+  mimeType,
+  mediaKind,
+  sizeBytes
+}) {
+  const serverFilename = `media_${publicId}.bin`;
+  const thumbFilename = encryptedThumb ? `thumb_${publicId}.bin` : null;
+  fs.writeFileSync(path.join(UPLOAD_DIR, serverFilename), encryptedFile.buffer);
+  if (encryptedThumb) fs.writeFileSync(path.join(UPLOAD_DIR, thumbFilename), encryptedThumb.buffer);
+  q.createMedia.run(
+    publicId,
+    room.id,
+    Number(req.body?.fileOrder || 0),
+    serverFilename,
+    thumbFilename,
+    req.body?.originalNameCiphertext || null,
+    req.body?.originalNameIv || null,
+    mimeType,
+    mediaKind,
+    sizeBytes,
+    Number(req.body?.encryptedSizeBytes || encryptedFile.size),
+    Number(req.body?.thumbSizeBytes || 0) || null,
+    Number(req.body?.thumbEncryptedSizeBytes || 0) || null,
+    Number(req.body?.width || 0) || null,
+    Number(req.body?.height || 0) || null,
+    Number(req.body?.durationSeconds || 0) || null
+  );
+  return q.findMediaByPublicId.get(publicId);
+}
+
+const fpEncryptedImageUpload179 = createEncryptedUpload179({
+  mediaKind: 'image',
+  persist: persistEncryptedMedia179
+});
 app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedFile', maxCount: 1 }, { name: 'encryptedThumbnail', maxCount: 1 }]), (req, res) => {
   const room = q.findRoomByPublicId.get(req.params.publicId);
   if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
@@ -849,29 +889,19 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
     return res.json({ ok: true, media: mediaToDto(previousUpload, req) });
   }
   if (req.aborted || res.destroyed) return;
-  const serverFilename = `media_${publicId}.bin`;
-  const thumbFilename = encryptedThumb ? `thumb_${publicId}.bin` : null;
-  fs.writeFileSync(path.join(UPLOAD_DIR, serverFilename), encryptedFile.buffer);
-  if (encryptedThumb) fs.writeFileSync(path.join(UPLOAD_DIR, thumbFilename), encryptedThumb.buffer);
-  q.createMedia.run(
+  const persistenceInput = {
+    room,
+    req,
     publicId,
-    room.id,
-    Number(req.body?.fileOrder || 0),
-    serverFilename,
-    thumbFilename,
-    req.body?.originalNameCiphertext || null,
-    req.body?.originalNameIv || null,
+    encryptedFile,
+    encryptedThumb,
     mimeType,
     mediaKind,
-    sizeBytes,
-    Number(req.body?.encryptedSizeBytes || encryptedFile.size),
-    Number(req.body?.thumbSizeBytes || 0) || null,
-    Number(req.body?.thumbEncryptedSizeBytes || 0) || null,
-    Number(req.body?.width || 0) || null,
-    Number(req.body?.height || 0) || null,
-    Number(req.body?.durationSeconds || 0) || null
-  );
-  const media = q.findMediaByPublicId.get(publicId);
+    sizeBytes
+  };
+  const media = fpEncryptedImageUpload179.handles(persistenceInput)
+    ? fpEncryptedImageUpload179.save(persistenceInput)
+    : persistEncryptedMedia179(persistenceInput);
   // Once the pending media row is committed, keep it independent of response delivery.
   // A client that loses the response retries the same uploadId and recovers this row.
   // Explicit cancel/delete and the existing 24h stale-pending cleanup own orphan cleanup.
