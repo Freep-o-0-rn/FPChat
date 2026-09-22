@@ -40,7 +40,7 @@ if (pushEnabled) {
 
 const db = createDb(DATABASE_PATH);
 const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);
-const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db);
+const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db, { userBlocks: fpUserBlocks165 });
 const UPLOAD_DIR = process.env.FPCHAT_UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 110 * 1024 * 1024 } });

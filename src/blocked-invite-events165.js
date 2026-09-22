@@ -18,8 +18,9 @@ function parsePayload(value) {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-function createBlockedInviteEventStore(db) {
+function createBlockedInviteEventStore(db, { userBlocks } = {}) {
   if (!db) throw new Error('blocked invite event database is required');
+  if (!userBlocks?.relationship) throw new Error('blocked invite event block-state owner is required');
   ensureUsernameProfileSchema(db);
   ensureSystemEventsSchema(db);
 
@@ -32,12 +33,7 @@ function createBlockedInviteEventStore(db) {
       ORDER BY p.id ASC
       LIMIT 1
     `),
-    blockPair: db.prepare(`
-      SELECT public_id
-      FROM chat_request_blocks
-      WHERE blocker_device_id=? AND blocked_device_id=?
-      LIMIT 1
-    `),
+
     identity: db.prepare(`
       SELECT i.device_id,
              NULLIF(i.display_name,'') AS identity_name,
@@ -101,7 +97,7 @@ function createBlockedInviteEventStore(db) {
       return { ok: false, code: 'BLOCKED_INVITE_EVENT_CREATOR_MISSING' };
     }
 
-    const block = q.blockPair.get(creator.device_id, blockedDeviceId);
+    const block = userBlocks.relationship(creator.device_id, blockedDeviceId).blockedByMe;
     if (!block?.public_id) {
       return { ok: false, code: 'BLOCKED_INVITE_EVENT_BLOCK_MISSING' };
     }

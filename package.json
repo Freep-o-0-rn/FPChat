@@ -110,7 +110,9 @@
     "test:179:history-read-owner": "node ./scripts/regression179-history-read-owner.cjs",
     "test:179:1799": "npm run test:179:history-db-read-path && npm run test:179:history-read-owner",
     "test:180:block-contract": "node ./scripts/regression180-block-contract.cjs",
-    "test:180:1801": "npm run test:180:block-contract"
+    "test:180:1801": "npm run test:180:block-contract",
+    "test:180:block-owner-bypass": "node ./scripts/regression180-block-owner-bypass.cjs",
+    "test:180:1802": "npm run test:180:block-contract && npm run test:180:block-owner-bypass"
   },
   "license": "MIT",
   "dependencies": {
