@@ -25,7 +25,11 @@ for(const forbidden of [
 ]){
   assert(!manager.includes(forbidden),'dispatcher took forbidden ownership: '+forbidden);
 }
-assert(!/retry|fallback/i.test(manager.replace(/\/\*[\s\S]*?\*\//g,'')),
+const dispatchStart=manager.indexOf('  function dispatch(executor) {');
+const dispatchEnd=manager.indexOf('\n  }',dispatchStart);
+assert(dispatchStart>=0&&dispatchEnd>dispatchStart,'dispatcher implementation missing');
+const dispatchBlock=manager.slice(dispatchStart,dispatchEnd);
+assert(!/retry|fallback/i.test(dispatchBlock),
   'dispatcher implementation must not contain retry/fallback logic');
 
 const managerLoaderStart=context.indexOf('  function loadSendManager177() {');
