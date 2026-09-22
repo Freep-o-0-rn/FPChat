@@ -77,7 +77,8 @@
     "test:178:scroll-writer": "node ./scripts/regression178-scroll-writer.cjs && node ./scripts/regression178-scroll-writer-browser.cjs",
     "test:178:prepend-user-scroll": "node ./scripts/regression178-prepend-user-scroll.cjs && node ./scripts/regression178-prepend-user-scroll-browser.cjs",
     "test:178:unread-restore-bottom": "node ./scripts/regression178-unread-restore-bottom.cjs && node ./scripts/regression178-unread-restore-bottom-browser.cjs",
-    "test:178:geometry-writer-map": "node ./scripts/regression178-geometry-writer-map.cjs"
+    "test:178:geometry-writer-map": "node ./scripts/regression178-geometry-writer-map.cjs",
+    "test:178:geometry-owner": "node ./scripts/regression178-geometry-owner.cjs"
   },
   "license": "MIT",
   "dependencies": {
