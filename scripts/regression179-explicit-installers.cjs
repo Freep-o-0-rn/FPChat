@@ -9,4 +9,9 @@ assert(server.indexOf('installMessagePinsServer({')<server.indexOf('installTypin
 assert(typing.includes('if (wss.__fpTypingInstalled) return;'));
 assert(typing.includes("wss.on('connection', (ws) => {"));
 assert(typing.includes("type: 'typing:update'"));
-console.log('PASS 179.4 I3 typing explicit once with guard/WS contract preserved');
+assert.equal((server.match(/installUsernameServer\(\{/g)||[]).length,1);
+assert.equal((boot.match(/installUsernameServer\(\{/g)||[]).length,0);
+const username=read('src/username-server.js');
+assert(username.includes('if (app.__fpUsername140Installed) return;'));
+assert(server.indexOf('installTypingServer({')<server.indexOf('installUsernameServer({'));
+console.log('PASS 179.4 I3 typing + I4 username explicit with guards preserved');

@@ -11,6 +11,7 @@ const { createDb } = require('./src/db');
 const { installMessageActionsServer } = require('./src/message-actions-server');
 const { installMessagePinsServer } = require('./src/message-pins-server');
 const { installTypingServer } = require('./src/typing-server');
+const { installUsernameServer } = require('./src/username-server');
 
 dotenv.config();
 
@@ -1258,6 +1259,10 @@ installTypingServer({
   sendToRoomParticipants,
   isRoomOpen,
   userBlocks: fpUserBlocks165
+});
+installUsernameServer({
+  app,
+  db
 });
 
 cleanupExpiredSoloRooms();
