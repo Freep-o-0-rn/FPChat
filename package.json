@@ -125,7 +125,9 @@
     "test:180:1806": "npm run test:180:windows-script-contract && npm run test:180:launcher-contract && npm run test:180:launcher-isolated-windows",
     "test:180:rollback-contract": "node ./scripts/regression180-updater-rollback-contract.cjs",
     "test:180:rollback-isolated-windows": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test1807-rollback-isolated.ps1",
-    "test:180:1807": "npm run test:180:windows-script-contract && npm run test:180:launcher-contract && npm run test:180:rollback-contract && npm run test:180:rollback-isolated-windows"
+    "test:180:1807": "npm run test:180:windows-script-contract && npm run test:180:launcher-contract && npm run test:180:rollback-contract && npm run test:180:rollback-isolated-windows",
+    "test:180:startup-graph": "node ./scripts/regression180-startup-graph.cjs",
+    "test:180:1808": "npm run test:180:1807 && npm run test:180:startup-graph"
   },
   "license": "MIT",
   "dependencies": {
