@@ -52,7 +52,8 @@
     "test:177:media-viewer-lifecycle": "node ./scripts/regression177-media-viewer-lifecycle.cjs",
     "test:177:media-prefetch-release": "node ./scripts/regression177-media-prefetch-release.cjs",
     "test:177:request-promotion-watch": "node ./scripts/regression177-request-promotion-watch.cjs",
-    "test:178:message-store-incoming": "node ./scripts/regression178-message-store-incoming.cjs"
+    "test:178:message-store-incoming": "node ./scripts/regression178-message-store-incoming.cjs",
+    "test:178:message-store-ack": "node ./scripts/regression178-message-store-ack.cjs"
   },
   "license": "MIT",
   "dependencies": {
