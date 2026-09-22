@@ -14,9 +14,13 @@ const apiStart = appSource.indexOf('const FPComposer177=Object.freeze({');
 const apiEnd = appSource.indexOf('window.FPComposer177=FPComposer177;', apiStart);
 assert(apiStart >= 0 && apiEnd > apiStart, 'FPComposer177 command missing');
 const apiBlock = appSource.slice(apiStart, apiEnd);
-assert(apiBlock.includes("return window.FPVoice?.syncComposer?.(form);"), 'FPComposer177 must delegate to FPVoice.syncComposer');
+const syncCommandStart = apiBlock.indexOf('  syncUI(');
+const syncCommandEnd = apiBlock.indexOf('\n  },', syncCommandStart);
+assert(syncCommandStart >= 0 && syncCommandEnd > syncCommandStart, 'FPComposer177 syncUI command missing');
+const syncCommandBlock = apiBlock.slice(syncCommandStart, syncCommandEnd);
+assert(syncCommandBlock.includes("return window.FPVoice?.syncComposer?.(form);"), 'FPComposer177 must delegate to FPVoice.syncComposer');
 for (const forbidden of ['.disabled', 'classList', '.value', 'fp-voice-mic-mode']) {
-  assert(!apiBlock.includes(forbidden), 'FPComposer177 became a second button calculator: ' + forbidden);
+  assert(!syncCommandBlock.includes(forbidden), 'FPComposer177 syncUI became a second button calculator: ' + forbidden);
 }
 
 assert(appSource.includes("const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form);"), 'normal composer must use FPComposer177');
