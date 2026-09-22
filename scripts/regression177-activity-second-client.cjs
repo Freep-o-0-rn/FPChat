@@ -18,6 +18,10 @@ for(const forbidden of ['activity:start','activity:stop','typing:start','typing:
 }
 assert(typing.includes('const STOP_DELAY_MS = 3000;'),'text activity idle timing changed');
 assert(typing.includes('const MEDIA_STOP_GRACE_MS = 280;'),'media stop grace changed');
+assert(typing.includes("const renderedLabel = line.querySelector('.fp-typing-label');"),
+  'remote activity owner must validate that its visible label still exists');
+assert(typing.includes('renderedLabel?.textContent === label'),
+  'remote activity idempotence must not trust stale class/data metadata alone');
 assert(typing.includes("this.addEventListener('loadend', finish, { once: true });"),'media success cleanup changed');
 assert(typing.includes("this.addEventListener('abort', finish, { once: true });"),'media cancel cleanup changed');
 assert(typing.includes("this.addEventListener('error', finish, { once: true });"),'media error cleanup changed');
