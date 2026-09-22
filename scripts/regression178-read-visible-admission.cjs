@@ -8,15 +8,20 @@ const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
 const app=fs.readFileSync(path.join(root,'public/app.js'),'utf8').replace(/\r\n/g,'\n');
 
 function fn(source,name){
-  const wrapped='\n'+source;
-  const m=new RegExp('\\n\\s*(?:async\\s+)?function\\s+'+name+'\\s*\\(').exec(wrapped);
-  assert(m,'function missing: '+name);
-  const start=Math.max(0,m.index-1);
-  const rest=source.slice(start+1);
-  const next=/\n\s*(?:async\s+)?function\s+[A-Za-z0-9_]+\s*\(/g;
-  next.lastIndex=1;
-  const n=next.exec(rest);
-  return n?rest.slice(0,n.index):rest;
+  const match=new RegExp('(?:async\\s+)?function\\s+'+name+'\\s*\\(').exec(source);
+  assert(match,'function missing: '+name);
+  const start=match.index;
+  const brace=source.indexOf('{',start);
+  assert(brace>=0,'function body missing: '+name);
+  let depth=0;
+  for(let i=brace;i<source.length;i+=1){
+    if(source[i]==='{')depth+=1;
+    else if(source[i]==='}'){
+      depth-=1;
+      if(depth===0)return source.slice(start,i+1);
+    }
+  }
+  assert.fail('function end missing: '+name);
 }
 
 const admit=fn(app,'admitVisibleMessageRead178');
