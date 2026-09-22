@@ -50,7 +50,7 @@
     }
   }
 
-  async function cancelPreview(preview = mediaPreviewState) {
+  async function cancelPreviewWorker177(preview = mediaPreviewState) {
     if (!preview) return;
     if (!preview.committed) {
       preview.cancelled = true;
@@ -59,6 +59,12 @@
     if (mediaPreviewState === preview) closeMediaPreviewModal(preview);
     await preview.task?.catch(() => {});
     if (!preview.committed) await deleteUploadedPendingMedia(preview.items, preview.roomId);
+  }
+
+  function cancelPreview(preview = mediaPreviewState) {
+    const manager = window.FPMediaManager177;
+    if (!manager?.cancel) return false;
+    return manager.cancel(preview, cancelPreviewWorker177);
   }
 
   async function send(preview, context, root, operation) {

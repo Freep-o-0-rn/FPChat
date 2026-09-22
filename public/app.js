@@ -66,6 +66,12 @@ class FPMediaManager177Class {
     return true;
   }
 
+  cancel(preview, cancelWorker) {
+    const target = preview || this.#activePreview;
+    if (!target || typeof cancelWorker !== 'function') return false;
+    return cancelWorker(target);
+  }
+
   current() {
     return this.#activePreview;
   }
@@ -81,7 +87,7 @@ try {
   window.FPRuntime?.registerOwner?.('media-manager177', {
     role: 'media-preview-lifecycle',
     mode: 'active-owner',
-    owns: 'preview identity + open/close delegation only'
+    owns: 'preview identity + open/close/cancel delegation only'
   });
 } catch {}
 let mediaViewerState=null;

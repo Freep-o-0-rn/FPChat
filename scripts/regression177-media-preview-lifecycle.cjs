@@ -16,6 +16,7 @@ assert(managerStart>=0&&managerEnd>managerStart,'MediaManager177 class missing')
 const managerBlock=app.slice(managerStart,managerEnd);
 assert(managerBlock.includes('open(preview, mount)'),'MediaManager open command missing');
 assert(managerBlock.includes('close(preview, unmount)'),'MediaManager close command missing');
+assert(managerBlock.includes('cancel(preview, cancelWorker)'),'MediaManager cancel delegation missing');
 assert(managerBlock.includes('target !== this.#activePreview'),'stale preview close guard missing');
 assert(managerBlock.includes('current()'),'MediaManager current preview read missing');
 for(const forbidden of [
@@ -54,7 +55,7 @@ assert(app.includes('const draft=ensureDraftState(state.roomId)'),'existing repl
 assert(media.includes('closeMediaPreviewModal(preview);'),
   'media executor must close the exact preview identity after send/cancel');
 
-console.log('PASS MediaManager177 owns only preview identity and open/close delegation');
+console.log('PASS MediaManager177 owns preview identity and open/close/cancel delegation only');
 console.log('PASS existing validation/thumb/caption/reply/ObjectURL workers remain outside MediaManager');
 console.log('PASS close is scoped to the exact preview identity');
 

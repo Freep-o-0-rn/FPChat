@@ -29,3 +29,30 @@ The close path remains:
 Close is preview-identity scoped. A late close for preview A is rejected after preview B has become active, so leaving room A cannot destroy a newly opened preview in room B.
 
 ObjectURL lifetime is deliberately not redesigned here. Build 177.24 handles one resource kind at a time.
+
+
+## Build 177.23 — cancel delegation
+
+The preview cancel command is now routed through the lifecycle owner without moving the existing cleanup algorithm:
+
+`UI / existing caller -> FPMediaSend170.cancelPreview(preview) -> FPMediaManager177.cancel(preview, cancelPreviewWorker177) -> existing cancel worker`.
+
+`FPMediaManager177.cancel()` only selects the target preview and invokes the passed worker. It does not own encryption, AbortController/AbortSignal, pending media deletion, upload IDs, XHR, server cleanup, ObjectURL cleanup, or send state.
+
+The existing worker still performs, in the same order:
+
+1. mark the uncommitted preview as cancelled;
+2. cancel its existing `media-send` RoomContext operation;
+3. close only that exact preview through the 177.22 lifecycle owner;
+4. await the existing send task;
+5. delete uncommitted uploaded/pending media with the existing `deleteUploadedPendingMedia()` path.
+
+The send worker still has its original final safety cleanup: when the operation is aborted before message commit it calls `deleteUploadedPendingMedia(items, roomId, deviceId)` again. The server endpoint is idempotent for already-cleaned pending rows.
+
+Acceptance covers three distinct moments with one photo preview:
+
+- cancel before encryption/send begins: no upload is started and the existing close path runs;
+- cancel while `/media/upload` is in flight: the existing operation signal aborts XHR and pending cleanup is invoked with the same stable `uploadId`;
+- cancel after the server has committed the pending media row but before the browser receives the upload response: the client still only knows `uploadId`, and the existing `DELETE /media/pending` cleanup removes that committed pending row.
+
+No codec, encryption, upload, retry, SendManager, caption, reply, item ordering, ObjectURL ownership, or voice recording logic is changed in 177.23.
