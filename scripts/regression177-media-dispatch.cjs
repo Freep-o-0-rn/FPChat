@@ -85,7 +85,13 @@ run(async({browser,origin,errors})=>{
   });
 
   await page.evaluate(async room=>{showChatsList();await openChat(room);},fixture.roomId);
-  await page.waitForSelector('#mediaPreviewRoot');
+  await page.waitForSelector('#msgInput');
+  await page.waitForFunction(room=>
+    state.roomId===room &&
+    Boolean(document.getElementById('mediaPreviewRoot')) &&
+    Boolean(document.getElementById('sendForm')),
+    fixture.roomId
+  );
 
   await page.evaluate(()=>{
     window.__fp17719={messages:[],originalSend:WebSocket.prototype.send};
