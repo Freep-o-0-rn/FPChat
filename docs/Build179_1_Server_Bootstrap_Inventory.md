@@ -32,6 +32,16 @@ This loader interception remains part of the production composition contract unt
 
 T2–T7 refer to stores created by T1, so T1 cannot be removed while any of those textual guards remain.
 
+## A.1 Exact mutation count
+
+The bootstrap currently performs **9 concrete substitutions** against the `server.js` source:
+
+- 6 `replaceOnce(...)` patch calls: T1, T3, T4, T5, T6, T7;
+- 1 `replaceAllChecked(...)` call for T2, required to replace exactly **2** participant DTO sites;
+- 1 final `source.replace(...)` for T8 installer injection.
+
+That is 8 mutation operations in bootstrap code, producing 9 actual source-site substitutions.
+
 ## B. Installer inventory
 
 | ID | Installer / order | Dependencies passed by bootstrap | Current install guard | HTTP routes | WS / startup effects |
@@ -41,10 +51,10 @@ T2–T7 refer to stores created by T1, so T1 cannot be removed while any of thos
 | I3 | `installTypingServer` | `wss, q, sendToRoomParticipants, isRoomOpen, userBlocks: fpUserBlocks165` | `wss.__fpTypingInstalled` | none | Adds one `wss.on('connection')`; consumes `client:state`, `message:send`, `message:new`, `typing:start/stop`, `activity:start/stop`; emits `typing:update`; 7 s timeout; requires open room, active participant, visible active room and passing block guard. |
 | I4 | `installUsernameServer` | `app, db` | `app.__fpUsername140Installed` | GET profile username; GET/PATCH privacy; GET username check; GET user by username; PUT username; PATCH display-name; DELETE username | No direct WS effect. Ensures username/identity/privacy schemas; username/display-name writes use DB transactions. |
 | I5 | `installSystemEventsServer` | `app, db` | `app.__fpSystemEvents144Installed` | GET system state; GET system events; PATCH system events read | No direct WS effect. Ensures personal system-event schema/store. |
-| I6 | `installStorageStats168` | `app, db` | `app.__fpStorageStats168Installed` | GET `/api/storage/media-inventory` | No WS effect. Adds read-support indexes; metadata-only inventory; detects whether `deleted_for_all` exists. |
+| I6 | `installStorageStats168` | `app, db` | `app.__fpStorageStats168Installed` | GET `/api/storage/media-inventory` | No WS effect. Adds read-support indexes; metadata-only inventory. **Current behavior depends on I1 already running:** it probes `messages.deleted_for_all`, which is present because I1 added it, so deleted-for-all filtering is enabled. |
 | I7 | `installUserBlocks165Server` | `app, db, q, socketsByDevice, sendWsJson, toIsoUtc, userBlocks: fpUserBlocks165` | `app.__fpUserBlocks165Installed` | GET block status; GET room-status; POST block; DELETE block | Reuses the T1 store. Starts 1 s unref snapshot watcher; pair changes emit `user-block:changed` to both devices in shared rooms. |
 | I8 | `installUserBlockEventActions165` | `app, userBlocks: fpUserBlocks165` | `app.__fpUserBlockEventActions165Installed` | GET `/api/user-blocks/pair-status` | No direct WS effect; reads the same shared T1 relationship store. |
-| I9 | `installChatRequestsServer` | `app, db, q, isRoomOpen, removeRoomCascade` | `app.__fpChatRequests147Installed` plus explicit required-`q` checks | GET status, blocks, mine; DELETE block; POST create, claim, complete, reject, block | No direct WS effect. Starts 30 s unref reconciliation interval and may call `removeRoomCascade` for abandoned pending rooms. |
+| I9 | `installChatRequestsServer` | `app, db, q, isRoomOpen, removeRoomCascade` | `app.__fpChatRequests147Installed` plus explicit required-`q` checks | **9 actual endpoints:** GET status, blocks, mine; DELETE block; POST create, claim, complete, reject, block. Source has 8 `app.*` registration statements because one loop registers both `/reject` and `/block`. | No direct WS effect. Starts 30 s unref reconciliation interval and may call `removeRoomCascade` for abandoned pending rooms. |
 | I10 | `installVoiceServer` | `app, db, q, upload, UPLOAD_DIR, fs, path, randomToken, safeUnlink, isRoomOpen, userBlocks: fpUserBlocks165` | `app.__fpVoiceInstalled` | GET voice-meta; POST encrypted voice upload with `upload.single('encryptedFile')` | No direct WS effect. Ensures `voice_meta`; upload checks participant, open room, block guard, encrypted payload/mime/duration/size, persists pending audio/media and optional opaque metadata, with failure cleanup. |
 
 ## C. Guard / order facts required for 179.2–179.5
@@ -57,6 +67,9 @@ T2–T7 refer to stores created by T1, so T1 cannot be removed while any of thos
 6. I3 adds another `wss.on('connection')` listener beside the base server listener. It must remain exactly once.
 7. T1 + T7 are a minimal dependency/guard pair for blocked invite-attempt recording.
 8. T1 + T4/T5/T6/I3/I7/I8/I10 share the same `fpUserBlocks165` instance; no second block store should be introduced.
+9. I1 → I2 is a hard schema/order dependency: I2 references `messages.deleted_for_all` and `message_hidden` created/extended by I1.
+10. I1 → I6 is a behavior dependency in the current order: I6 probes for `deleted_for_all`; because I1 already ran, its inventory query includes the deleted-for-all predicate.
+11. T1 itself ensures username/block prerequisites before I4/I5: `createUserBlocks165()` ensures username profile schema, while `createBlockedInviteEventStore()` ensures username profile + system-event schemas. I4/I5 later re-ensure them idempotently.
 
 ## Regression
 

@@ -44,6 +44,9 @@ for(const label of patchLabels){
 assert(boot.includes('replaceAllChecked(\n    participantMap,'),'participant patch is no longer checked as a group');
 assert(boot.includes("    2,\n    'participant presence response'"),'participant presence patch count is no longer exactly two');
 assert.equal((server.match(/const participants = q\.listParticipantsByRoom\.all\(room\.id\)\.map\(\(item\) => \(\{/g)||[]).length,2,'base participant presence markers changed');
+assert.equal((boot.match(/\breplaceOnce\(/g)||[]).length-1,6,'expected exactly six replaceOnce patch calls excluding helper definition');
+assert.equal((boot.match(/\breplaceAllChecked\(/g)||[]).length-1,1,'expected exactly one replaceAllChecked patch call excluding helper definition');
+assert.equal((boot.match(/source = source\.replace\(/g)||[]).length,2,'expected helper replace plus final startup insertion source.replace');
 assert(boot.includes("const marker = '\\ncleanupExpiredSoloRooms();\\nsetInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);"),'startup marker changed');
 
 const installs=[
@@ -96,6 +99,9 @@ assert.equal(routes(storage).length,1,'storage route count changed');
 assert.equal(routes(blocks).length,4,'user-block route count changed');
 assert.equal(routes(blockEvents).length,1,'user-block pair route count changed');
 assert.equal(routes(requests).length,8,'chat-request route registration count changed');
+assert(requests.includes("for (const action of ['reject', 'block'])"),'chat request reject/block dynamic pair changed');
+const requestActualEndpointCount=routes(requests).length+1;
+assert.equal(requestActualEndpointCount,9,'chat-request actual endpoint count changed');
 assert.equal(routes(voice).length,2,'voice route count changed');
 
 assert(actions.includes("type: 'message:edited'"),'message edit WS effect missing');
@@ -110,6 +116,8 @@ for(const [name,source] of [['username',username],['system-events',system],['sto
 
 assert(actions.includes('CREATE TABLE IF NOT EXISTS message_hidden'),'message-actions schema dependency changed');
 assert(pins.includes('FROM message_hidden'),'pins no longer depends on message-hidden semantics');
+assert(pins.includes('AFTER UPDATE OF deleted_for_all ON messages'),'pins no longer depends on deleted_for_all schema from message-actions');
+assert(storage.includes("const hasDeletedForAll = messageColumns.some((column) => column.name === 'deleted_for_all');"),'storage deleted_for_all capability probe changed');
 assert(typing.includes('userBlocks && !userBlocks.roomSendGuard(room.id, ws.deviceId).ok'),'typing block guard changed');
 assert(blockEvents.includes('userBlocks.relationship(viewer, target).blockedByMe'),'pair-status no longer uses shared block store');
 assert(requests.includes("for (const action of ['reject', 'block'])"),'chat request reject/block route pair changed');
