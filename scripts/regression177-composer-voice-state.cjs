@@ -11,7 +11,7 @@ const voiceSource = fs.readFileSync(path.join(root, 'public/voice.js'), 'utf8');
 const typingSource = fs.readFileSync(path.join(root, 'public/typing.js'), 'utf8');
 
 const syncStart=voiceSource.indexOf('  function syncComposer(form) {');
-const syncEnd=voiceSource.indexOf('\n\n  function ensureComposer()',syncStart);
+const syncEnd=voiceSource.indexOf('\n\n  function mountComposerVoiceUi177(form) {',syncStart);
 assert(syncStart>=0&&syncEnd>syncStart,'FPVoice syncComposer missing');
 const syncBlock=voiceSource.slice(syncStart,syncEnd);
 assert(syncBlock.includes('Boolean(recordingState || uploadInFlight || previewState)'),
