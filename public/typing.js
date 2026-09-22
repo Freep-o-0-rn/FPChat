@@ -264,7 +264,13 @@
     const line = document.getElementById('presenceLine');
     if (!line) return false;
     const label = activityLabel(entry.activity);
-    if (line.dataset.fpTypingDevice === entry.deviceId && line.dataset.fpActivity === entry.activity && line.classList.contains('fp-typing-active')) return true;
+    const renderedLabel = line.querySelector('.fp-typing-label');
+    if (
+      line.dataset.fpTypingDevice === entry.deviceId &&
+      line.dataset.fpActivity === entry.activity &&
+      line.classList.contains('fp-typing-active') &&
+      renderedLabel?.textContent === label
+    ) return true;
     line.dataset.fpTypingDevice = entry.deviceId;
     line.dataset.fpActivity = entry.activity;
     line.classList.add('fp-typing-active');
