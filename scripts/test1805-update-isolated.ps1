@@ -71,7 +71,16 @@ try {
   if ((Get-FileHash -Algorithm SHA256 (Join-Path $backup.FullName 'data\chat.sqlite')).Hash -ne $beforeDb) { throw 'backup SQLite differs from pre-update data' }
   if ((Get-FileHash -Algorithm SHA256 (Join-Path $backup.FullName 'data\upload-sentinel.bin')).Hash -ne $beforeUpload) { throw 'backup upload differs from pre-update data' }
   if ((Get-FileHash -Algorithm SHA256 (Join-Path $backup.FullName '.env')).Hash -ne $beforeEnv) { throw 'backup .env differs from pre-update config' }
-  if (Test-Path (Join-Path $backup.FullName 'node_modules')) { throw 'node_modules unexpectedly included in backup root' }
+  if (-not (Test-Path (Join-Path $backup.FullName 'node_modules'))) { throw 'rollback dependency snapshot missing from backup' }
+  Push-Location (Join-Path $backup.FullName 'node_modules\..')
+  try {
+    $env:NODE_PATH = Join-Path $backup.FullName 'node_modules'
+    & node.exe -e "require('express'); require('better-sqlite3'); require('ws');"
+    if ($LASTEXITCODE -ne 0) { throw "backup dependency snapshot is not loadable: $LASTEXITCODE" }
+  } finally {
+    Remove-Item Env:NODE_PATH -ErrorAction SilentlyContinue
+    Pop-Location
+  }
 
   $stageLeftovers = @(Get-ChildItem -LiteralPath $backups -Directory -Filter '_stage_*' -ErrorAction SilentlyContinue)
   if ($stageLeftovers.Count -ne 0) { throw 'staging directory was not cleaned' }
@@ -81,7 +90,7 @@ try {
 
   Write-Host 'PASS 180.5 isolated Windows update applied application files'
   Write-Host 'PASS 180.5 live data and .env hashes are unchanged; backup copies match originals'
-  Write-Host 'PASS 180.5 installed runtime dependencies remain present and loadable after staged npm ci mirror'
+  Write-Host 'PASS 180.5 installed runtime dependencies remain present/loadable and rollback dependency snapshot exists'
   Write-Host 'PASS 180.5 updater did not invoke start_chat.bat or open APP_PORT'
 } finally {
   Remove-Item Env:FPCHAT_UPDATE_DST -ErrorAction SilentlyContinue

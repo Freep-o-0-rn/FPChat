@@ -16,6 +16,10 @@ if defined FPCHAT_UPDATE_BACKUP_ROOT (
 )
 set "SERVER_WAS_RUNNING=0"
 set "LIVE_FILES_TOUCHED=0"
+set "BACKUP_READY=0"
+set "HAD_DATA=0"
+set "HAD_ENV=0"
+set "HAD_NODE_MODULES=0"
 set "NODE_MAJOR="
 set "STAGE="
 set "STAMP="
@@ -159,6 +163,9 @@ if errorlevel 1 (
 )
 
 echo [5/7] Backing up current installation...
+if exist "%DST%\data\" set "HAD_DATA=1"
+if exist "%DST%\.env" set "HAD_ENV=1"
+if exist "%DST%\node_modules\" set "HAD_NODE_MODULES=1"
 mkdir "%BACKUP%" >nul 2>&1
 if not exist "%BACKUP%\" (
     echo [ERROR] Cannot create backup folder: %BACKUP%
@@ -185,6 +192,14 @@ if exist "%DST%\.env" (
         goto :fail
     )
 )
+if exist "%DST%\node_modules\" (
+    robocopy "%DST%\node_modules" "%BACKUP%\node_modules" /E /COPY:DAT /DCOPY:DAT /R:2 /W:2
+    if errorlevel 8 (
+        echo [ERROR] Dependency rollback backup failed. Update canceled.
+        goto :fail
+    )
+)
+set "BACKUP_READY=1"
 
 echo [6/7] Applying application files...
 set "LIVE_FILES_TOUCHED=1"
@@ -201,6 +216,10 @@ if errorlevel 8 (
     goto :fail
 )
 if not exist "%DST%\data\" mkdir "%DST%\data" >nul 2>&1
+if /I "%FPCHAT_UPDATE_TEST_FAIL_AFTER_DEPENDENCIES%"=="1" (
+    echo [TEST] Injecting failure after live application and dependency writes.
+    goto :fail
+)
 
 echo [7/7] Cleaning staging folder...
 rmdir /S /Q "%STAGE%" >nul 2>&1
@@ -217,12 +236,59 @@ exit /b 0
 
 :fail
 if defined STAGE if exist "%STAGE%\" rmdir /S /Q "%STAGE%" >nul 2>&1
+if "%LIVE_FILES_TOUCHED%"=="1" if "%BACKUP_READY%"=="1" (
+    call :rollback
+    if errorlevel 1 (
+        echo [ROLLBACK ERROR] Automatic restore failed. Keep the backup at: %BACKUP%
+        echo Do not start FPChat until code, data, config and dependencies are checked.
+    ) else (
+        echo [ROLLBACK] Previous FPChat code, data, config and dependencies were restored.
+    )
+)
 if "%SERVER_WAS_RUNNING%"=="1" (
     echo FPChat was stopped by the updater and was not restarted.
-    echo Start it manually with start_chat.bat after resolving the update error.
+    echo Start it manually with start_chat.bat only after the installation is verified.
 )
 echo.
-echo Update was canceled. Existing data and .env were not intentionally removed.
-if "%LIVE_FILES_TOUCHED%"=="1" echo Live files may be incomplete; use the backup shown above before restarting.
+echo Update was canceled.
+if "%LIVE_FILES_TOUCHED%"=="1" if not "%BACKUP_READY%"=="1" echo Live files may be incomplete; no complete rollback snapshot was available.
 if /I not "%FPCHAT_UPDATE_NONINTERACTIVE%"=="1" pause
 exit /b 1
+
+:rollback
+echo [ROLLBACK] Restoring previous FPChat installation from: %BACKUP%
+if not exist "%BACKUP%\app\" (
+    echo [ROLLBACK ERROR] Application backup is missing.
+    exit /b 1
+)
+robocopy "%BACKUP%\app" "%DST%" /MIR /XD data node_modules .git /XF .env /COPY:DAT /DCOPY:DAT /R:2 /W:2
+if errorlevel 8 exit /b 1
+
+if "%HAD_DATA%"=="1" (
+    if not exist "%BACKUP%\data\" exit /b 1
+    if not exist "%DST%\data\" mkdir "%DST%\data" >nul 2>&1
+    robocopy "%BACKUP%\data" "%DST%\data" /MIR /COPY:DAT /DCOPY:DAT /R:2 /W:2
+    if errorlevel 8 exit /b 1
+) else (
+    if exist "%DST%\data\" rmdir /S /Q "%DST%\data"
+)
+
+if "%HAD_ENV%"=="1" (
+    if not exist "%BACKUP%\.env" exit /b 1
+    copy /Y "%BACKUP%\.env" "%DST%\.env" >nul
+    if errorlevel 1 exit /b 1
+) else (
+    if exist "%DST%\.env" del /F /Q "%DST%\.env"
+)
+
+if "%HAD_NODE_MODULES%"=="1" (
+    if not exist "%BACKUP%\node_modules\" exit /b 1
+    if not exist "%DST%\node_modules\" mkdir "%DST%\node_modules" >nul 2>&1
+    robocopy "%BACKUP%\node_modules" "%DST%\node_modules" /MIR /COPY:DAT /DCOPY:DAT /R:2 /W:2
+    if errorlevel 8 exit /b 1
+) else (
+    if exist "%DST%\node_modules\" rmdir /S /Q "%DST%\node_modules"
+)
+
+echo [ROLLBACK] Restore completed successfully.
+exit /b 0

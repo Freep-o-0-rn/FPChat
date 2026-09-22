@@ -14,6 +14,8 @@ on:
       - 'scripts/start-fpchat180.ps1'
       - 'scripts/regression180-launcher-contract.cjs'
       - 'scripts/test1806-launcher-isolated.ps1'
+      - 'scripts/regression180-updater-rollback-contract.cjs'
+      - 'scripts/test1807-rollback-isolated.ps1'
       - '.github/workflows/build180-windows-update.yml'
   workflow_dispatch:
 
@@ -37,3 +39,8 @@ jobs:
       - name: Isolated Windows launcher
         shell: powershell
         run: npm run test:180:launcher-isolated-windows
+      - name: Static rollback contract
+        run: npm run test:180:rollback-contract
+      - name: Isolated Windows failed-update rollback
+        shell: powershell
+        run: npm run test:180:rollback-isolated-windows

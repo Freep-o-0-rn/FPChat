@@ -30,6 +30,12 @@ assert(!update.includes('Restarting FPChat server'),'old successful restart path
 assert(!update.includes('Attempting to restart the previous FPChat server'),'old failure restart path remains');
 assert(update.includes('FPChat was stopped for the update and remains stopped.'),'manual-success restart message missing');
 assert(update.includes('FPChat was stopped by the updater and was not restarted.'),'manual-failure restart message missing');
+assert(update.includes('call :rollback'),'post-touch automatic rollback missing');
+assert(update.includes('robocopy "%BACKUP%\\app" "%DST%" /MIR /XD data node_modules .git /XF .env'),'application rollback mirror changed');
+assert(update.includes('robocopy "%BACKUP%\\data" "%DST%\\data" /MIR'),'data rollback mirror changed');
+assert(update.includes('copy /Y "%BACKUP%\\.env" "%DST%\\.env"'),'env rollback changed');
+assert(update.includes('robocopy "%BACKUP%\\node_modules" "%DST%\\node_modules" /MIR'),'dependency rollback mirror changed');
+assert(!update.includes('start "FPChat Server"'),'rollback/updater must not launch server');
 
 assert((update.match(/FPCHAT_UPDATE_NONINTERACTIVE/g)||[]).length>=2,'noninteractive test gate missing');
 
@@ -46,3 +52,4 @@ console.log('PASS 180.5 updater has no server-launch command on success or failu
 console.log('PASS 180.5 production path defaults remain while isolated Windows test roots are supported');
 console.log('PASS 180.5 180.4 baseline remains available as historical documentation');
 console.log('PASS 180.6 accumulated updater regression accepts the new dedicated launcher contract');
+console.log('PASS 180.7 current updater contract includes complete rollback snapshot and automatic post-touch restore');
