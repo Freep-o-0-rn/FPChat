@@ -87,7 +87,8 @@
     "test:179:explicit-message-actions": "node ./scripts/regression179-explicit-message-actions.cjs",
     "test:179:explicit-message-pins": "node ./scripts/regression179-explicit-message-pins.cjs",
     "test:179:1794": "npm run test:179:explicit-message-pins && npm run test:179:pins-contract",
-    "test:179:loader-readiness": "node ./scripts/regression179-loader-readiness.cjs"
+    "test:179:loader-readiness": "node ./scripts/regression179-loader-readiness.cjs",
+    "test:179:explicit-block-stores": "node ./scripts/regression179-explicit-block-stores.cjs"
   },
   "license": "MIT",
   "dependencies": {

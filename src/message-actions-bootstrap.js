@@ -24,12 +24,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
     source = source.split(marker).join(replacement);
   }
 
-  replaceOnce(
-    "const db = createDb(DATABASE_PATH);",
-    "const db = createDb(DATABASE_PATH);\nconst fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);\nconst fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db);",
-    'database user-block initialization'
-  );
-
   const participantMap = `const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({\n    deviceId: item.device_id,\n    displayName: item.display_name,\n    online: Boolean(item.online),\n    lastSeenAt: toIsoUtc(item.last_seen_at)\n  }));`;
   replaceAllChecked(
     participantMap,
