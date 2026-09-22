@@ -94,8 +94,8 @@ const awaitReady=app.indexOf('if(window.FPStartup174?.ready&&!(await FPStartup17
 const serviceWorker=app.indexOf('await registerServiceWorker();');
 const parseInvite=app.indexOf('const inv=parseInvite();');
 const parseChat=app.indexOf('const chat=parseChat();');
-const joinInvite=app.indexOf('await joinByInviteText(');
-const openDirectChat=app.indexOf('await openChat(chat);');
+const joinInvite=app.indexOf('await joinByInviteText(',parseInvite);
+const openDirectChat=app.indexOf('await openChat(chat);',parseChat);
 
 assert(awaitReady>=0,'app no longer awaits FPStartup174.ready');
 assert(serviceWorker>awaitReady,'service-worker/update entry moved before owner readiness');
