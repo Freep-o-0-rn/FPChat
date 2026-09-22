@@ -8,6 +8,7 @@ const vm = require('node:vm');
 const root = process.env.FPCHAT_TEST_ROOT || path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8').replace(/\r\n/g, '\n');
 const storeSource = fs.readFileSync(path.join(root, 'public/message-store172.js'), 'utf8').replace(/\r\n/g, '\n');
+const indexHtml = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8').replace(/\r\n/g, '\n');
 
 function functionSource(source, name) {
   const wrapped = '\n' + source;
@@ -30,6 +31,10 @@ assert(roomUpsert.includes('window.FPMessageStore172?.upsert?.(roomId,message'),
 assert(roomUpsert.includes("source:'ws'"), 'incoming writer no longer preserves WS source priority/merge rules');
 assert(app.includes("const messageCache=window.FPMessageStore172?.legacyCacheAdapter?.(()=>String(state?.roomId||''))||new Map();"),
   'messageCache is no longer the Store compatibility adapter');
+assert(indexHtml.includes("'app.js':['room-context170.js','lifecycle170.js','network171.js','message-store172.js'"),
+  'startup dependency no longer guarantees MessageStore before app.js');
+assert(indexHtml.includes("const preload174 = ['room-context170.js','lifecycle170.js','network171.js','message-store172.js'"),
+  'MessageStore is no longer preloaded before app.js');
 
 // Run the actual Store in an isolated browser-like context.
 const events = [];
@@ -113,4 +118,5 @@ assert.strictEqual(store.get(roomId, 101), canonical, 'legacy delete destroyed c
 console.log('PASS 178.1 incoming WS path reaches FPMessageStore172 through upsertRoomMessage');
 console.log('PASS one incoming identity maps to one canonical Store record');
 console.log('PASS messageCache is a projection/compatibility adapter, not an independent message truth');
+console.log('PASS startup guarantees FPMessageStore172 before app.js, so the fallback Map is not the normal owner');
 console.log('PASS legacy clear/delete cannot destroy canonical Store state');

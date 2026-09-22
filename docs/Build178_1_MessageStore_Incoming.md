@@ -28,6 +28,8 @@ The adapter:
 
 Therefore, for the audited incoming source there is no second legacy message truth to migrate in 178.1.
 
+The source still contains a defensive `|| new Map()` fallback, but Build 174 startup explicitly lists `message-store172.js` as an `app.js` dependency and preloads it before `app.js`. The regression locks this ordering so the fallback cannot silently become the normal runtime owner.
+
 ## Regression
 
 `npm run test:178:message-store-incoming`
