@@ -8,7 +8,11 @@ const root = process.env.FPCHAT_TEST_ROOT || path.resolve(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const app = read('public/app.js');
+const history = read('public/history174.js');
+const actions = read('public/message-actions.js');
 const viewport = read('public/viewport-fix.js');
+const lifecycle = read('public/room-lifecycle.js');
+const blocks = read('public/user-blocks165.js');
 
 const ownerStart = app.indexOf('const scrollCoordinator=');
 const ownerExport = app.indexOf('window.FPScroll173=scrollCoordinator;', ownerStart);
@@ -50,20 +54,41 @@ assert(focus.includes('this.isOpening())return false;'), 'focus can now override
 const prepend = owner.slice(prependStart);
 assert(prepend.includes("if(!isCurrentMessagesBox(box)||this.phase==='opening')return;"), 'prepend can now override opening');
 
-assert(app.includes("function restoreMessagesViewState(box,viewState){const target=getViewStateMessageElement(box,viewState);if(!target||!isCurrentMessagesBox(box)||scrollCoordinator.isOpening())return false;"), 'saved restore no longer respects opening/current box');
-assert(app.includes("return scrollCoordinator.write(box,box.scrollTop+targetTop-boxTop-offset,'auto');"), 'saved restore bypasses FPScroll173');
+assert(app.includes("function restoreMessagesViewState(box,viewState){const target=getViewStateMessageElement(box,viewState);if(!target||!isCurrentMessagesBox(box)||scrollCoordinator.isOpening())return false;"), 'saved/runtime restore no longer respects opening/current box');
+assert(app.includes("return scrollCoordinator.write(box,box.scrollTop+targetTop-boxTop-offset,'auto');"), 'saved/runtime restore bypasses FPScroll173');
+
+assert(history.includes("if(!history||!isCurrentMessagesBox(box)||history.loading||scrollCoordinator.isOpening())return false;"), 'history load can now override opening');
+assert(history.includes("const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;"), 'history window no longer captures the current visible anchor at mount');
+assert(history.includes("finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);"), 'history window no longer restores its captured anchor before/through trim');
+assert(history.includes("const anchor=getFirstVisibleMessageAnchor(box);"), 'bounded-DOM trim no longer captures a visible anchor');
+assert(history.includes("rebuildDateSeparators(box);syncUnreadDivider(box);restoreAnchor(box,anchor);"), 'bounded-DOM trim no longer restores the visible anchor');
+assert(history.includes("if(target)scrollCoordinator.focus(target,'auto',8);"), 'history jump target no longer delegates to focus');
+assert(history.includes("else scrollCoordinator.write(box,box.scrollHeight,'auto');"), 'history tail jump no longer delegates to bottom write');
+
+assert(actions.includes("if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.requestBottom(box);\n      else box.scrollTop = box.scrollHeight;"), 'message removal bottom behavior/fallback changed');
+assert(actions.includes("if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.write(box, beforeTop - removedHeight, 'auto');\n      else box.scrollTop = Math.max(0, beforeTop - removedHeight);"), 'message removal remove-above behavior/fallback changed');
+
+assert(app.includes("if(autoScroll){scrollCoordinator.requestBottom(box);window.FPHistory174?.trim('newer');}"), 'normal append auto-bottom no longer uses coordinator');
+assert(lifecycle.includes("if (autoScroll) scrollCoordinator.requestBottom(box);"), 'room lifecycle event auto-bottom no longer uses coordinator');
+assert(blocks.includes("scrollCoordinator.requestBottom(box)"), 'block event auto-bottom no longer uses coordinator');
 
 const scrollListener = app.match(/box\.addEventListener\('scroll',\(\)=>\{([^}]*)\}\);/);
 assert(scrollListener, 'messages native scroll observer missing');
 assert(scrollListener[1].includes('scheduleViewStateSave();'), 'native scroll no longer saves view state');
 assert(scrollListener[1].includes('recomputePendingUnread();'), 'native scroll no longer refreshes unread state');
 assert(!scrollListener[1].includes('scrollCoordinator.') && !scrollListener[1].includes('FPScroll173'), 'native user scroll gained a programmatic scroll writer');
+assert(history.includes("box.addEventListener('scroll',()=>{\n      if(scrollCoordinator.isOpening())return;"), 'history edge observer no longer respects opening');
+assert(history.includes("if(box.scrollTop<=CHAT_HISTORY_LOAD_THRESHOLD_PX)void load('older');"), 'older edge history trigger changed');
+assert(history.includes("else if(box.scrollHeight-box.clientHeight-box.scrollTop<=CHAT_HISTORY_LOAD_THRESHOLD_PX)void load('newer');"), 'newer edge history trigger changed');
 
 assert(viewport.includes('pinBottom = Boolean(chatIsOpen() && box && messagesAtBottom(box));'), 'keyboard bottom pin no longer requires the user to already be at bottom');
 assert(viewport.includes('window.FPScroll173.requestBottom(box);'), 'keyboard bottom pin bypasses FPScroll173 normal path');
 assert(viewport.includes("if (event.target?.closest?.('#messages')) stopBottomPin();"), 'deliberate history interaction no longer cancels keyboard bottom pin');
+assert(viewport.includes('box.scrollTop = box.scrollHeight;'), 'known viewport compatibility fallback disappeared without its dedicated migration step');
 
 console.log('PASS 178.22 FPScroll173 remains the existing message-scroll owner');
-console.log('PASS 178.22 initial unread/bottom/restore conflict order is unchanged');
-console.log('PASS 178.22 focus/prepend cannot override opening and native user scroll stays observational');
-console.log('PASS 178.22 keyboard bottom pin remains conditional and delegates through FPScroll173');
+console.log('PASS 178.22 opening/unread/restore/bottom conflict order is unchanged');
+console.log('PASS 178.22 history load/trim/jump preserve the existing anchor/focus/bottom rules');
+console.log('PASS 178.22 deletion compensation keeps the existing target/offset/auto behavior');
+console.log('PASS 178.22 user scroll stays native/observational and keyboard pin remains conditional');
+console.log('PASS 178.22 known direct fallbacks remain explicit for one-at-a-time migration');
