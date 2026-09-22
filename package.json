@@ -68,7 +68,8 @@
     "test:178:unread-presentation": "node ./scripts/regression178-unread-presentation.cjs",
     "test:178:layer-contract": "node ./scripts/regression178-layer-contract.cjs",
     "test:178:overlay-claim": "node ./scripts/regression178-overlay-claim.cjs",
-    "test:178:overlay-release": "node ./scripts/regression178-overlay-release.cjs"
+    "test:178:overlay-release": "node ./scripts/regression178-overlay-release.cjs",
+    "test:178:drawer-room-gesture": "node ./scripts/regression178-drawer-room-gesture.cjs && node ./scripts/regression175-drawer.cjs"
   },
   "license": "MIT",
   "dependencies": {
