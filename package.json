@@ -79,7 +79,8 @@
     "test:178:unread-restore-bottom": "node ./scripts/regression178-unread-restore-bottom.cjs && node ./scripts/regression178-unread-restore-bottom-browser.cjs",
     "test:178:geometry-writer-map": "node ./scripts/regression178-geometry-writer-map.cjs",
     "test:178:geometry-owner": "node ./scripts/regression178-geometry-owner.cjs",
-    "test:178:keyboard-orientation": "node ./scripts/regression178-keyboard-orientation.cjs && node ./scripts/regression178-keyboard-orientation-browser.cjs"
+    "test:178:keyboard-orientation": "node ./scripts/regression178-keyboard-orientation.cjs && node ./scripts/regression178-keyboard-orientation-browser.cjs",
+    "test:178:release": "node ./scripts/regression178-release.cjs"
   },
   "license": "MIT",
   "dependencies": {

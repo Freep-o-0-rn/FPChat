@@ -12,6 +12,8 @@ set "NODE_MAJOR="
 set "STAGE="
 set "STAMP="
 set "APP_PORT=3010"
+set "EXPECTED_BUILD=178.28"
+set "SOURCE_BUILD="
 
 rem Prefer the folder that contains this updater. This keeps working when
 rem Windows assigns the flash drive a letter other than D:.
@@ -29,7 +31,7 @@ set "STAGE=%BACKUP_ROOT%\_stage_%STAMP%"
 
 echo.
 echo ========================================
-echo        FPChat safe update, build 174
+echo        FPChat safe update, build %EXPECTED_BUILD%
 echo ========================================
 echo.
 
@@ -56,6 +58,22 @@ if not exist "%SRC%\server.js" (
     echo [ERROR] server.js not found in source folder.
     goto :fail
 )
+if not exist "%SRC%\public\version.json" (
+    echo [ERROR] public\version.json not found in source folder.
+    goto :fail
+)
+for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "$p=Join-Path $env:SRC 'public\version.json'; $v=(Get-Content -LiteralPath $p -Raw | ConvertFrom-Json).build; [Console]::Write([Convert]::ToString($v,[Globalization.CultureInfo]::InvariantCulture))"`) do set "SOURCE_BUILD=%%V"
+if not defined SOURCE_BUILD (
+    echo [ERROR] Cannot read build number from public\version.json.
+    goto :fail
+)
+if not "%SOURCE_BUILD%"=="%EXPECTED_BUILD%" (
+    echo [ERROR] Wrong FPChat source build: %SOURCE_BUILD%.
+    echo Expected build: %EXPECTED_BUILD%.
+    echo Download or copy the correct build before updating the server.
+    goto :fail
+)
+echo Source build verified: %SOURCE_BUILD%
 if /I "%SRC%"=="%DST%" (
     echo [ERROR] Source and destination must be different.
     goto :fail
