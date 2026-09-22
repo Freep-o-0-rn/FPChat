@@ -68,3 +68,11 @@ Activity is deliberately not centralized:
 - Text keeps its existing `clientMessageId`/ACK/reconnect semantics.
 - Media and voice must not be assigned a synthetic text-style `clientMessageId` merely to fit a dispatcher.
 - Operation contexts remain type-specific: `text-send`, `media-send`, `voice-send`.
+
+## Build 177.17 dispatcher boundary
+
+`FPSendManager177.dispatch(executor)` is intentionally stateless. It accepts one already-selected executor and returns that executor's exact synchronous value or promise. A false/null return, thrown error, or rejected promise is not converted into a fallback, retry, or second executor call.
+
+The dispatcher owns no DOM listener, submit binding, queue, pending collection, operation context, transport, retry state, clientMessageId, media uploadId, voice state, or activity lifecycle.
+
+At 177.17 none of the text/media/voice entry points call the dispatcher yet. The startup chain only guarantees that `FPSendManager177` is available before `FPTextSend170` is installed. Ownership transfer begins separately in 177.18.

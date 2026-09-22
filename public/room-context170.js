@@ -246,6 +246,24 @@
     document.body.appendChild(script);
   }
 
+  function loadSendManager177() {
+    if (window.FPSendManager177) {
+      loadTextSendOwner();
+      return;
+    }
+    const existing = document.querySelector('script[data-fp-send-manager177]');
+    if (existing) {
+      existing.addEventListener('load', loadSendManager177, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = `/send-manager177.js${suffix}`;
+    script.dataset.fpSendManager177 = '1';
+    script.onload = loadSendManager177;
+    script.onerror = () => window.FPStartup174?.fail();
+    document.body.appendChild(script);
+  }
+
   function loadSyncCoordinator176() {
     if (window.FPSyncCoordinator176) {
       loadRoomOpenOwner();
@@ -266,7 +284,7 @@
 
   function loadRoomOpenOwner() {
     if (window.__fpRoomOpen170Installed) {
-      loadTextSendOwner();
+      loadSendManager177();
       return;
     }
     const existing = document.querySelector('script[data-fp-room-open170]');
