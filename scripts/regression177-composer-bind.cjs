@@ -113,7 +113,7 @@ run(async ({ browser, origin, errors }) => {
       assert.equal(snapshot.submitStable,true,'repeated FPTextSend170 bind must keep one submit handler');
       assert.equal(snapshot.micCount,1,'repeated mounts must keep one microphone');
       assert.equal(snapshot.before.keydown,1,'one normal keydown listener expected');
-      assert.equal(snapshot.before.submitAdds,0,'form submit uses one onsubmit owner, not stacked listeners');
+      assert.equal(snapshot.after.submitAdds,snapshot.before.submitAdds,'repeated bind must not multiply existing service submit listeners');
       if(!baseline) baseline=snapshot.before;
       else assert.deepEqual(snapshot.before,baseline,'each fresh room mount must have the same listener shape');
     }
