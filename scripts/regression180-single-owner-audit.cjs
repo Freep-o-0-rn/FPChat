@@ -195,7 +195,7 @@ assert(!keyboard.includes("setProperty('--fpchat-viewport-correction-y'"),'keybo
 
 // History read owner.
 assert.equal(occurrences(server,'const fpHistoryRead179 = createHistoryRead179({'),1,'history read owner instance duplicated');
-assert.equal(occurrences(historyOwner,'const readTransaction = db.transaction('),1,'history read transaction owner duplicated');
+assert.equal(occurrences(historyOwner,'const readPageTx = db.transaction('),1,'history read transaction owner duplicated');
 assert(!/new\s+Database\s*\(/.test(historyOwner),'history owner opened a second SQLite connection');
 
 // Explicit server composition.
