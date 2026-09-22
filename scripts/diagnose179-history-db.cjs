@@ -32,27 +32,38 @@ try{
   db.pragma('query_only = ON');
   const pageSql=before===null?SQL_LATEST:SQL_BEFORE;
   const pageParams=before===null?[roomId,safeLimit+1]:[roomId,before,safeLimit+1];
+  const pageStmt=db.prepare(pageSql);
+  const mediaStmt=db.prepare(SQL_MEDIA);
   const pagePlan=db.prepare('EXPLAIN QUERY PLAN '+pageSql).all(...pageParams);
   const txBefore=db.inTransaction;
-  const t0=performance.now();
-  const rows=db.prepare(pageSql).all(...pageParams);
-  const pageMs=performance.now()-t0;
-  const txAfterPage=db.inTransaction;
-  const pageRows=rows.slice(0,safeLimit).reverse();
-  const mediaStmt=db.prepare(SQL_MEDIA);
-  const media=[];
-  let mediaMs=0;
-  for(const row of pageRows){
-    if(row.type!=='media')continue;
-    const start=performance.now();
-    const items=mediaStmt.all(row.id);
-    mediaMs+=performance.now()-start;
-    media.push({messageId:row.id,count:items.length});
-  }
-  const txAfterHydration=db.inTransaction;
-  const mediaPlan=pageRows.find(row=>row.type==='media')
-    ? db.prepare('EXPLAIN QUERY PLAN '+SQL_MEDIA).all(pageRows.find(row=>row.type==='media').id)
-    : [];
+
+  let txInsideStart=false;
+  let txAfterPage=false;
+  let txAfterHydration=false;
+  const readTx=db.transaction(()=>{
+    txInsideStart=db.inTransaction;
+    const t0=performance.now();
+    const rows=pageStmt.all(...pageParams);
+    const pageMs=performance.now()-t0;
+    txAfterPage=db.inTransaction;
+    const pageRows=rows.slice(0,safeLimit).reverse();
+    const media=[];
+    let mediaMs=0;
+    for(const row of pageRows){
+      if(row.type!=='media')continue;
+      const start=performance.now();
+      const items=mediaStmt.all(row.id);
+      mediaMs+=performance.now()-start;
+      media.push({messageId:row.id,count:items.length});
+    }
+    txAfterHydration=db.inTransaction;
+    return {rows,pageRows,media,pageMs,mediaMs};
+  });
+
+  const sample=readTx();
+  const txAfter=db.inTransaction;
+  const firstMedia=sample.pageRows.find(row=>row.type==='media');
+  const mediaPlan=firstMedia?db.prepare('EXPLAIN QUERY PLAN '+SQL_MEDIA).all(firstMedia.id):[];
 
   console.log(JSON.stringify({
     readonly:true,
@@ -61,9 +72,9 @@ try{
     mode:before===null?'latest':'before',
     sql:{page:pageSql,media:SQL_MEDIA},
     params:{page:pageParams,media:'[messageId] once per media message in returned page'},
-    order:['page SELECT','slice(0, safeLimit)','reverse()','hydrate media SELECT once per type=media'],
-    transaction:{explicit:false,before:txBefore,afterPage:txAfterPage,afterHydration:txAfterHydration},
-    sample:{rawRows:rows.length,pageRows:pageRows.length,hasMore:rows.length>safeLimit,mediaMessages:media.length,pageMs:Number(pageMs.toFixed(3)),mediaMs:Number(mediaMs.toFixed(3))},
+    order:['BEGIN read transaction','page SELECT','slice(0, safeLimit)','reverse()','hydrate media SELECT once per type=media','COMMIT read transaction'],
+    transaction:{explicit:true,before:txBefore,insideStart:txInsideStart,afterPage:txAfterPage,afterHydration:txAfterHydration,after:txAfter},
+    sample:{rawRows:sample.rows.length,pageRows:sample.pageRows.length,hasMore:sample.rows.length>safeLimit,mediaMessages:sample.media.length,pageMs:Number(sample.pageMs.toFixed(3)),mediaMs:Number(sample.mediaMs.toFixed(3))},
     queryPlan:{page:pagePlan,media:mediaPlan}
   },null,2));
 }finally{db.close();}

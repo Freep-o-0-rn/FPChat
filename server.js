@@ -19,6 +19,7 @@ const { installUserBlockEventActions165 } = require('./src/user-block-event-acti
 const { installChatRequestsServer } = require('./src/chat-requests-server147');
 const { installVoiceServer } = require('./src/voice-server');
 const { createEncryptedUpload179 } = require('./src/encrypted-upload179');
+const { createHistoryRead179 } = require('./src/history-read179');
 
 dotenv.config();
 
@@ -142,6 +143,12 @@ const q = {
   deleteRoomById: db.prepare('DELETE FROM rooms WHERE id=?')
 };
 
+const fpHistoryRead179 = createHistoryRead179({
+  db,
+  listMessagesLatest: q.listMessagesLatest,
+  listMessagesBefore: q.listMessagesBefore
+});
+
 function randomToken(length) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let out = '';
@@ -198,13 +205,7 @@ function serializeMessages(messages) {
 }
 function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE) {
   const safeLimit = normalizeHistoryLimit(limit);
-  const rows = beforeCursor === null
-    ? q.listMessagesLatest.all(roomId, safeLimit + 1)
-    : q.listMessagesBefore.all(roomId, beforeCursor, safeLimit + 1);
-  const hasMore = rows.length > safeLimit;
-  const pageRows = rows.slice(0, safeLimit).reverse();
-  const messages = serializeMessages(pageRows);
-  return { messages, hasMore, nextCursor: messages.length ? Number(messages[0].id) : null };
+  return fpHistoryRead179.readPage({ roomId, beforeCursor, safeLimit, serializeMessages });
 }
 function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE) {
   const safeLimit = normalizeHistoryLimit(limit);

@@ -18,15 +18,8 @@ assert(server.includes("listMediaByMessageId: db.prepare(`SELECT id, public_id, 
 const historyStart=server.indexOf('function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE) {');
 const historyEnd=server.indexOf('\n}',historyStart)+2;
 const history=server.slice(historyStart,historyEnd);
-for(const token of [
- 'const safeLimit = normalizeHistoryLimit(limit);',
- '? q.listMessagesLatest.all(roomId, safeLimit + 1)',
- ': q.listMessagesBefore.all(roomId, beforeCursor, safeLimit + 1);',
- 'const hasMore = rows.length > safeLimit;',
- 'const pageRows = rows.slice(0, safeLimit).reverse();',
- 'const messages = serializeMessages(pageRows);'
-]){assert(history.includes(token),'history order/parameter contract changed: '+token);}
-assert(!history.includes('db.transaction'),'history page unexpectedly gained explicit transaction');
+assert(history.includes('const safeLimit = normalizeHistoryLimit(limit);'),'history limit normalization changed');
+assert(history.includes('return fpHistoryRead179.readPage({ roomId, beforeCursor, safeLimit, serializeMessages });'),'179.9 history owner delegation missing');
 
 const hydrateStart=server.indexOf('function hydrateMessages(messages) {');
 const hydrateEnd=server.indexOf('\n}',hydrateStart)+2;
@@ -43,8 +36,10 @@ assert(server.includes('const HISTORY_PAGE_SIZE = 100;'),'history page max/defau
 assert(diag.includes("new Database(resolved,{readonly:true,fileMustExist:true})"),'diagnostic DB is not readonly');
 assert(diag.includes("db.pragma('query_only = ON')"),'diagnostic query_only guard missing');
 assert(diag.includes("const txBefore=db.inTransaction;"),'transaction boundary diagnostic missing');
-assert(diag.includes("const txAfterPage=db.inTransaction;"),'page transaction boundary diagnostic missing');
-assert(diag.includes("const txAfterHydration=db.inTransaction;"),'hydration transaction boundary diagnostic missing');
+assert(diag.includes("const readTx=db.transaction(()=>{"),'179.9 diagnostic transaction missing');
+assert(diag.includes("txAfterPage=db.inTransaction;"),'page transaction boundary diagnostic missing');
+assert(diag.includes("txAfterHydration=db.inTransaction;"),'hydration transaction boundary diagnostic missing');
+assert(diag.includes("explicit:true"),'diagnostic does not report explicit read transaction');
 assert(diag.includes("EXPLAIN QUERY PLAN"),'query plan diagnostic missing');
 
 for(const forbidden of ['INSERT INTO','UPDATE messages','DELETE FROM','CREATE TABLE','CREATE INDEX','ALTER TABLE','DROP TABLE']){
@@ -57,5 +52,5 @@ assert(!dbSource.includes('CREATE INDEX IF NOT EXISTS idx_messages_room_id'),'17
 assert(!dbSource.includes('CREATE INDEX IF NOT EXISTS idx_media_message'),'179.8 unexpectedly added dedicated media hydration index');
 
 console.log('PASS 179.8 history latest/before SQL, parameters and execution order are frozen');
-console.log('PASS 179.8 media hydration N+1 and explicit transaction boundary are documented');
+console.log('PASS 179.8 media hydration N+1 remains documented; 179.9 now wraps it in one read transaction');
 console.log('PASS 179.8 diagnostic is readonly/query_only and schema is unchanged');
