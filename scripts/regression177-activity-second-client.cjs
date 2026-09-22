@@ -186,44 +186,6 @@ run(async({browser,origin,errors})=>{
   };
 
   try{
-    // TEXT success
-    await clearEvents();
-    await a.locator('#msgInput').focus();
-    await a.keyboard.type('text success');
-    await waitRemote('typing');
-    assert.equal((await remote()).label,'печатает…');
-    await a.locator('#sendBtn').click();
-    const textSuccessStop=await waitClear();
-    assert(textSuccessStop<2500,'text success activity waited for safety timeout');
-    console.log('PASS second client: text start and success clear use existing immediate submit/server stop');
-
-    // TEXT cancel: clearing the real input immediately sends typing:stop.
-    await clearEvents();
-    await a.locator('#msgInput').fill('');
-    await a.locator('#msgInput').focus();
-    await a.keyboard.type('text cancel');
-    await waitRemote('typing');
-    await a.locator('#msgInput').fill('');
-    const textCancelStop=await waitClear();
-    assert(textCancelStop<2500,'text cancel activity waited for safety timeout');
-    console.log('PASS second client: text cancel clears existing typing state');
-
-    // TEXT error/disconnect: unexpected socket close is cleared by the server socket owner.
-    await clearEvents();
-    await a.locator('#msgInput').focus();
-    await a.keyboard.type('text disconnect');
-    await waitRemote('typing');
-    await a.evaluate(()=>{
-      const ws=state.ws;
-      window.__fp17721Reconnect=window.FPConnection170?.ensureConnected;
-      try{ws?.close?.(4001,'17721-test-error');}catch{}
-    });
-    const textErrorStop=await waitClear();
-    assert(textErrorStop<2500,'text socket error activity waited for safety timeout');
-    await reopenA();
-    await a.locator('#msgInput').fill('');
-    console.log('PASS second client: text socket error clears server activity without safety timeout');
-
     // MEDIA success
     await clearEvents();
     await createMediaPreview('image');
@@ -338,6 +300,44 @@ run(async({browser,origin,errors})=>{
     await a.unroute('**/voice/upload');
     await a.evaluate(()=>window.FPVoice.clearPreview());
     console.log('PASS second client: voice upload error clears audio through existing finally');
+
+    // TEXT success
+    await clearEvents();
+    await a.locator('#msgInput').focus();
+    await a.keyboard.type('text success');
+    await waitRemote('typing');
+    assert.equal((await remote()).label,'печатает…');
+    await a.locator('#sendBtn').click();
+    const textSuccessStop=await waitClear();
+    assert(textSuccessStop<2500,'text success activity waited for safety timeout');
+    console.log('PASS second client: text start and success clear use existing immediate submit/server stop');
+
+    // TEXT cancel: clearing the real input immediately sends typing:stop.
+    await clearEvents();
+    await a.locator('#msgInput').fill('');
+    await a.locator('#msgInput').focus();
+    await a.keyboard.type('text cancel');
+    await waitRemote('typing');
+    await a.locator('#msgInput').fill('');
+    const textCancelStop=await waitClear();
+    assert(textCancelStop<2500,'text cancel activity waited for safety timeout');
+    console.log('PASS second client: text cancel clears existing typing state');
+
+    // TEXT error/disconnect: unexpected socket close is cleared by the server socket owner.
+    await clearEvents();
+    await a.locator('#msgInput').focus();
+    await a.keyboard.type('text disconnect');
+    await waitRemote('typing');
+    await a.evaluate(()=>{
+      const ws=state.ws;
+      window.__fp17721Reconnect=window.FPConnection170?.ensureConnected;
+      try{ws?.close?.(4001,'17721-test-error');}catch{}
+    });
+    const textErrorStop=await waitClear();
+    assert(textErrorStop<2500,'text socket error activity waited for safety timeout');
+    await reopenA();
+    await a.locator('#msgInput').fill('');
+    console.log('PASS second client: text socket error clears server activity without safety timeout');
 
     const events=await b.evaluate(()=>window.__fp17721Events||[]);
     assert(events.some(event=>event.activity==='typing'&&event.typing===true),'second client never received typing start');
