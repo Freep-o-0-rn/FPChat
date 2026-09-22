@@ -237,6 +237,19 @@
     cleanupViewerReturn();
   }
 
+  function cancelContextTouch178({ closeTriggered = false } = {}) {
+    const session = touchSession;
+    if (!session) return;
+    clearTimeout(session.timer);
+    touchSession = null;
+    if (closeTriggered && session.triggered && contextState) closeContext();
+  }
+
+  function closeContextBoundary178() {
+    cancelContextTouch178();
+    if (contextState) closeContext({ restoreScroll: false });
+  }
+
   function cleanupViewerReturn() {
     viewerGestureCleanup?.();
     viewerGestureCleanup = null;
@@ -749,15 +762,11 @@
   }, { capture: true, passive: false });
 
   document.addEventListener('touchend', () => {
-    if (!touchSession) return;
-    clearTimeout(touchSession.timer);
-    touchSession = null;
+    cancelContextTouch178();
   }, { capture: true, passive: true });
 
   document.addEventListener('touchcancel', () => {
-    if (!touchSession) return;
-    clearTimeout(touchSession.timer);
-    touchSession = null;
+    cancelContextTouch178({ closeTriggered: true });
   }, { capture: true, passive: true });
 
   document.addEventListener('click', (event) => {
@@ -777,5 +786,13 @@
 
   window.addEventListener('resize', () => {
     if (contextState) closeContext();
+  });
+
+  window.FPDOM173?.on?.('chat', 'unmounted', () => {
+    closeContextBoundary178();
+  });
+
+  window.FPLifecycle170?.subscribe?.((event) => {
+    if (['background', 'pagehide', 'beforeunload'].includes(event?.lastType)) closeContextBoundary178();
   });
 })();
