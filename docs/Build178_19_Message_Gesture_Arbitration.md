@@ -44,4 +44,6 @@ If reply crosses 52px and then returns below 52px before release, the final old 
 
 Regression: `npm run test:178:message-gesture-arbitration`.
 
-Physical touch behavior still requires device acceptance.
+Команда сначала выполняет статический contract guard, затем browser-harness со сценариями: long press wins, reply swipe wins, reply crossed threshold then returned below threshold without reviving long press.
+
+Browser-harness использует synthetic Chromium touch. Physical touch/native browser gesture behavior still requires device acceptance.

@@ -70,7 +70,7 @@
     "test:178:overlay-claim": "node ./scripts/regression178-overlay-claim.cjs",
     "test:178:overlay-release": "node ./scripts/regression178-overlay-release.cjs",
     "test:178:drawer-room-gesture": "node ./scripts/regression178-drawer-room-gesture.cjs && node ./scripts/regression175-drawer.cjs",
-    "test:178:message-gesture-arbitration": "node ./scripts/regression178-message-gesture-arbitration.cjs"
+    "test:178:message-gesture-arbitration": "node ./scripts/regression178-message-gesture-arbitration.cjs && node ./scripts/regression178-message-gesture-browser.cjs"
   },
   "license": "MIT",
   "dependencies": {
