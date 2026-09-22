@@ -31,14 +31,15 @@ try {
 
   Push-Location $live
   try {
-    $previousErrorActionPreference=$ErrorActionPreference
-    $ErrorActionPreference='Continue'
-    & npm.cmd ci --omit=dev --no-audit --no-fund
+    $npmLog=Join-Path $root 'fixture-npm-ci.log'
+    $npmCommand='npm ci --omit=dev --no-audit --no-fund > "' + $npmLog + '" 2>&1'
+    & cmd.exe /d /s /c $npmCommand
     $npmExit=$LASTEXITCODE
-    $ErrorActionPreference=$previousErrorActionPreference
-    if ($npmExit -ne 0) { throw "fixture npm ci failed: $npmExit" }
+    if ($npmExit -ne 0) {
+      $npmText=Get-Content -LiteralPath $npmLog -Raw -ErrorAction SilentlyContinue
+      throw "fixture npm ci failed: $npmExit`n$npmText"
+    }
   } finally {
-    $ErrorActionPreference='Stop'
     Pop-Location
   }
   Set-Content -LiteralPath (Join-Path $live 'node_modules\.fpchat-1807-old-deps') -Value 'OLD_DEPS_1807' -NoNewline
