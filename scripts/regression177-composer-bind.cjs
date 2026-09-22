@@ -23,7 +23,7 @@ const renderStart = appSource.indexOf("const mediaFileInput=document.getElementB
 const renderEnd = appSource.indexOf('function buildMediaFallbackText', renderStart);
 assert(renderStart >= 0 && renderEnd > renderStart, 'render composer segment missing');
 const renderBlock = appSource.slice(renderStart, renderEnd);
-assert(renderBlock.includes('window.FPComposer177?.bind?.(form);'), 'render must delegate normal bind to FPComposer177');
+assert(renderBlock.includes('window.FPComposer177?.bind?.(form,view.roomId);'), 'render must delegate normal bind to FPComposer177 with captured roomId');
 assert(!renderBlock.includes("input.addEventListener('input'"), 'render must not own a second normal input listener');
 assert(!renderBlock.includes("input.addEventListener('keydown'"), 'render must not own a second normal keydown listener');
 assert(renderBlock.includes('window.FPTextSend170?.bindCurrentForm?.();'), 'text submit owner handoff must remain');
