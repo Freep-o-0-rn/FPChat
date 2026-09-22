@@ -241,6 +241,8 @@
     const session = touchSession;
     if (!session) return;
     clearTimeout(session.timer);
+    session.actionLease?.release?.();
+    session.actionLease = null;
     touchSession = null;
     if (closeTriggered && session.triggered && contextState) closeContext();
   }
@@ -730,11 +732,20 @@
       startX: touch.clientX,
       startY: touch.clientY,
       triggered: false,
-      timer: null
+      timer: null,
+      actionLease: null
     };
+    session.actionLease = window.FPGesture135?.watchAction?.('message-long-press', event, (reason) => {
+      clearTimeout(session.timer);
+      session.timer = null;
+      if (reason === 'end') return;
+      if (session.triggered && reason === 'layer') return;
+      if (touchSession === session) touchSession = null;
+    }) || null;
     session.timer = setTimeout(() => {
       if (touchSession !== session || !messageEl.isConnected) return;
       if(window.FPGesture135&&FPGesture135.currentLayer(null,session.target)!=='chat')return;
+      if(session.actionLease&&!session.actionLease.claim()){cancelContextTouch178();return;}
       session.triggered = true;
       suppressUnderlyingClickUntil = Date.now() + 700;
       openContext(messageEl, session.target, { x: session.startX, y: session.startY, source: 'touch' });
@@ -746,7 +757,7 @@
   document.addEventListener('touchmove', (event) => {
     const session = touchSession;
     if (!session || event.touches?.length !== 1) return;
-    if(!session.triggered&&window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat'){clearTimeout(session.timer);touchSession=null;return;}
+    if(!session.triggered&&window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat'){cancelContextTouch178();return;}
     if (session.triggered && contextState && getMessageElement(event.target) === session.messageEl) {
       if (event.cancelable) event.preventDefault();
       event.stopPropagation();
@@ -756,8 +767,7 @@
     const dx = touch.clientX - session.startX;
     const dy = touch.clientY - session.startY;
     if (Math.hypot(dx, dy) > MOVE_CANCEL_PX) {
-      clearTimeout(session.timer);
-      touchSession = null;
+      cancelContextTouch178();
     }
   }, { capture: true, passive: false });
 

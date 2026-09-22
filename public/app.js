@@ -1078,23 +1078,34 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   swipeIcon.className='swipe-reply-icon';
   swipeIcon.textContent='↩';
   w.appendChild(swipeIcon);
-  let touchStartX=0,touchStartY=0,currentDx=0,tracking=false;
+  let touchStartX=0,touchStartY=0,currentDx=0,tracking=false,replyActionLease=null,replyClaimed=false;
   w.addEventListener('touchstart',(e)=>{
     if(e.touches.length!==1||!bubble)return;
     if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat')return;
     const t=e.touches[0];
+    replyActionLease?.release?.();replyActionLease=null;replyClaimed=false;
     touchStartX=t.clientX;touchStartY=t.clientY;currentDx=0;tracking=true;
+    replyActionLease=window.FPGesture135?.watchAction?.('message-reply-swipe',e,(reason)=>{
+      if(reason==='end')return;
+      tracking=false;currentDx=0;replyClaimed=false;replyActionLease=null;
+      bubble.style.transform='';swipeIcon.style.opacity='';swipeIcon.style.transform='';w.classList.remove('swiping');
+    })||null;
     w.classList.remove('swipe-reset');w.classList.add('swiping');bubble.style.transform='';
   },{passive:true});
   w.addEventListener('touchmove',(e)=>{
     if(!tracking||e.touches.length!==1||!bubble)return;
-    if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat'){tracking=false;currentDx=0;bubble.style.transform='';w.classList.remove('swiping');return;}
+    if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat'){tracking=false;currentDx=0;replyClaimed=false;replyActionLease?.release?.();replyActionLease=null;bubble.style.transform='';swipeIcon.style.opacity='';swipeIcon.style.transform='';w.classList.remove('swiping');return;}
     const t=e.touches[0];
     const dx=t.clientX-touchStartX;
     const dy=t.clientY-touchStartY;
     if(Math.abs(dy)>Math.abs(dx)){tracking=false;bubble.style.transform='';w.classList.remove('swiping');return;}
     if(dx>=0){currentDx=0;bubble.style.transform='';return;}
     currentDx=Math.max(-110,dx);
+    if(!replyClaimed&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD){
+      const claimed=replyActionLease?replyActionLease.claim():true;
+      if(!claimed){tracking=false;currentDx=0;replyActionLease=null;bubble.style.transform='';swipeIcon.style.opacity='';swipeIcon.style.transform='';w.classList.remove('swiping');return;}
+      replyClaimed=true;
+    }
     bubble.style.transform=`translateX(${currentDx}px)`;
     const progress=Math.min(1,Math.abs(currentDx)/SWIPE_REPLY_THRESHOLD);
     swipeIcon.style.opacity=String(Math.max(0.12,progress));
@@ -1103,10 +1114,10 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   const finishSwipe=(event)=>{
     if(!bubble)return;
     const allowed=event.type!=='touchcancel'&&(!window.FPGesture135||FPGesture135.currentLayer(event,event.target)==='chat');
-    const shouldReply=allowed&&tracking&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD;
+    const shouldReply=allowed&&tracking&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD&&(!window.FPGesture135||replyClaimed);
     w.classList.remove('swiping');w.classList.add('swipe-reset');
     bubble.style.transform='';swipeIcon.style.opacity='';swipeIcon.style.transform='';
-    tracking=false;currentDx=0;
+    tracking=false;currentDx=0;replyClaimed=false;replyActionLease?.release?.();replyActionLease=null;
     setTimeout(()=>w.classList.remove('swipe-reset'),180);
     if(shouldReply){setSelectedReply(state.roomId,getMessageReplyMeta(m.id));navigator.vibrate?.(10);}
   };
