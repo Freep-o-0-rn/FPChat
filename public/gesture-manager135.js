@@ -145,7 +145,9 @@
     if (session.action && session.action !== owner) { cancel('claimed'); return null; }
     session.actions.set(owner, cancel);
     return {
-      claim: () => currentSession(event) === session && claimAction(owner, event),
+      claim: () => currentSession(event) === session
+        && session.actions.get(owner) === cancel
+        && claimAction(owner, event),
       release: () => { if (session.actions.get(owner) === cancel) session.actions.delete(owner); }
     };
   }
