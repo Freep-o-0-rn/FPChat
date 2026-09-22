@@ -163,8 +163,8 @@ run(async({browser,origin,errors})=>{
       width:1,height:1,durationSeconds:kind==='video'?1:0,
       uploadedMedia:null,uploadError:null
     };
-    mediaPreviewState={roomId:state.roomId,items:[item],caption:'',sending:false,failedIndex:null};
-    renderMediaPreviewModal();
+    const preview={roomId:state.roomId,items:[item],caption:'',sending:false,failedIndex:null};
+    window.FPMediaManager177.open(preview,next=>{mediaPreviewState=next;renderMediaPreviewModal();});
   },kind);
 
   await a.evaluate(()=>{
