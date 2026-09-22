@@ -25,12 +25,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
   }
 
   replaceOnce(
-    `      if (!isRoomOpen(room)) {\n        sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');\n        return;\n      }\n      const ciphertext = String(payload.ciphertext || '');`,
-    `      if (!isRoomOpen(room)) {\n        sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');\n        return;\n      }\n      const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);\n      if (!blockGuard165.ok) {\n        sendMessageRejected(ws, room, null, 'blocked', blockGuard165.code);\n        return;\n      }\n      const ciphertext = String(payload.ciphertext || '');`,
-    'legacy/media message block guard'
-  );
-
-  replaceOnce(
     `  const deviceId = String(req.body?.deviceId || '').slice(0, 64);\n  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });\n  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });\n  const mimeType = String(req.body?.mimeType || '');`,
     `  const deviceId = String(req.body?.deviceId || '').slice(0, 64);\n  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });\n  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });\n  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, deviceId);\n  if (!blockGuard165.ok) return res.status(403).json({ ok: false, error: 'blocked', code: blockGuard165.code });\n  const mimeType = String(req.body?.mimeType || '');`,
     'media upload block guard'

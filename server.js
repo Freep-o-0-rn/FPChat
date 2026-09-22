@@ -1123,6 +1123,11 @@ wss.on('connection', (ws, req) => {
         sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');
         return;
       }
+      const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);
+      if (!blockGuard165.ok) {
+        sendMessageRejected(ws, room, null, 'blocked', blockGuard165.code);
+        return;
+      }
       const ciphertext = String(payload.ciphertext || '');
       const iv = String(payload.iv || '');
       if (!ciphertext || !iv) return;

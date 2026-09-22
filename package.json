@@ -91,7 +91,8 @@
     "test:179:explicit-block-stores": "node ./scripts/regression179-explicit-block-stores.cjs",
     "test:179:explicit-participant-presence": "node ./scripts/regression179-explicit-participant-presence.cjs",
     "test:179:explicit-presence-broadcaster": "node ./scripts/regression179-explicit-presence-broadcaster.cjs",
-    "test:179:explicit-text-block-guard": "node ./scripts/regression179-explicit-text-block-guard.cjs"
+    "test:179:explicit-text-block-guard": "node ./scripts/regression179-explicit-text-block-guard.cjs",
+    "test:179:explicit-legacy-media-block-guard": "node ./scripts/regression179-explicit-legacy-media-block-guard.cjs"
   },
   "license": "MIT",
   "dependencies": {
