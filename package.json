@@ -129,7 +129,9 @@
     "test:180:startup-graph": "node ./scripts/regression180-startup-graph.cjs",
     "test:180:1808": "npm run test:180:1807 && npm run test:180:startup-graph",
     "test:180:app-coordinator-decision": "node ./scripts/regression180-app-coordinator-decision.cjs",
-    "test:180:1809": "npm run test:180:1808 && npm run test:180:app-coordinator-decision"
+    "test:180:1809": "npm run test:180:1808 && npm run test:180:app-coordinator-decision",
+    "test:180:init-coordination": "node ./scripts/regression180-init-coordination.cjs",
+    "test:180:1810": "npm run test:180:1809 && npm run test:180:init-coordination"
   },
   "license": "MIT",
   "dependencies": {
