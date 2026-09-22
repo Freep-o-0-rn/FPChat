@@ -50,11 +50,13 @@ assert.equal((boot.match(/source = source\.replace\(/g)||[]).length,2,'expected 
 assert(boot.includes("const marker = '\\ncleanupExpiredSoloRooms();\\nsetInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);"),'startup marker changed');
 
 assert(server.includes("const { installMessageActionsServer } = require('./src/message-actions-server');"),'I1 explicit import missing from server');
+assert(server.includes("const { installMessagePinsServer } = require('./src/message-pins-server');"),'I2 explicit import missing from server');
 assert(server.includes('installMessageActionsServer({'),'I1 explicit install missing from server');
+assert(server.includes('installMessagePinsServer({'),'I2 explicit install missing from server');
 assert(!boot.includes("require('./src/message-actions-server').installMessageActionsServer({"),'I1 is still injected by bootstrap');
+assert(!boot.includes("require('./src/message-pins-server').installMessagePinsServer({"),'I2 is still injected by bootstrap');
 
 const installs=[
-  'installMessagePinsServer',
   'installTypingServer',
   'installUsernameServer',
   'installSystemEventsServer',
@@ -127,6 +129,6 @@ assert(requests.includes("for (const action of ['reject', 'block'])"),'chat requ
 assert(voice.includes('const blockGuard = userBlocks?.roomSendGuard(room.id, deviceId);'),'voice upload block guard changed');
 
 console.log('PASS 179.1 production preload/loader interception and patch order are inventoried');
-console.log('PASS 179.1 I1 is explicit and the remaining nine bootstrap installers preserve their recorded order');
+console.log('PASS 179.1 I1/I2 are explicit and the remaining eight bootstrap installers preserve their recorded order');
 console.log('PASS 179.1 dependency, guard, route and WS-effect signatures match inventory');
 console.log('PASS 179.1 message-actions and pins still have no installer-local idempotency flag');

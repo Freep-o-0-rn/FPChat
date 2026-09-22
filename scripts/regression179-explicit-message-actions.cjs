@@ -35,10 +35,9 @@ const cleanupAt=server.lastIndexOf('\ncleanupExpiredSoloRooms();');
 const callAt=server.lastIndexOf('installMessageActionsServer({');
 assert(callAt>=0&&callAt<cleanupAt,'explicit I1 must execute before cleanup/listen marker');
 
-const firstRemaining=boot.indexOf("require('./src/message-pins-server').installMessagePinsServer({");
-assert(firstRemaining>=0,'I2 bootstrap install missing');
-const installStart=boot.indexOf('const install = `');
-assert(installStart>=0&&firstRemaining>installStart,'I2 is no longer first remaining injected installer');
+assert(server.includes("const { installMessagePinsServer } = require('./src/message-pins-server');"),'I2 explicit import missing after 179.4');
+assert.equal((server.match(/installMessagePinsServer\(\{/g)||[]).length,1,'I2 explicit install count changed after 179.4');
+assert.equal((boot.match(/installMessagePinsServer\(\{/g)||[]).length,0,'I2 returned to bootstrap after 179.4');
 
 const marker='\ncleanupExpiredSoloRooms();\nsetInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);\nserver.listen(APP_PORT, APP_HOST';
 assert(server.includes(marker),'server startup marker changed');
@@ -60,8 +59,8 @@ assert.equal((boot.match(/fpUserBlocks165\.roomSendGuard/g)||[]).length,3,'unrel
 assert(boot.includes('const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);'),'invite guard changed');
 
 const remaining=[
- 'installMessagePinsServer','installTypingServer','installUsernameServer','installSystemEventsServer',
- 'installStorageStats168','installUserBlocks165Server','installUserBlockEventActions165','installChatRequestsServer','installVoiceServer'
+ 'installTypingServer','installUsernameServer','installSystemEventsServer','installStorageStats168',
+ 'installUserBlocks165Server','installUserBlockEventActions165','installChatRequestsServer','installVoiceServer'
 ];
 let previous=-1;
 for(const name of remaining){
@@ -69,9 +68,9 @@ for(const name of remaining){
   assert(at>previous,'remaining installer order changed at '+name);
   previous=at;
 }
-assert.equal((boot.match(/\.install[A-Za-z0-9_]+\(\{/g)||[]).length,9,'bootstrap must contain exactly nine remaining installers');
+assert.equal((boot.match(/\.install[A-Za-z0-9_]+\(\{/g)||[]).length,8,'bootstrap must contain exactly eight remaining installers');
 
 console.log('PASS 179.3 I1 message-actions install is explicit exactly once');
 console.log('PASS 179.3 old bootstrap I1 insertion is removed in the same state');
-console.log('PASS 179.3 explicit I1 remains before injected I2 and startup cleanup/listen');
-console.log('PASS 179.3 I1 dependency guard and unrelated textual guards/installers are preserved');
+console.log('PASS 179.3 explicit I1 remains before explicit I2 and startup cleanup/listen');
+console.log('PASS 179.3 I1 dependency guard and unrelated textual guards/installers remain preserved after 179.4');

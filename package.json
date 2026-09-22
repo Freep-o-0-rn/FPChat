@@ -84,7 +84,9 @@
     "test:178:header-keyboard": "node ./scripts/regression178-header-keyboard.cjs && node ./scripts/regression178-header-keyboard-browser.cjs",
     "test:179:bootstrap-inventory": "node ./scripts/regression179-bootstrap-inventory.cjs",
     "test:179:pins-contract": "node ./scripts/regression179-message-pins-contract.cjs",
-    "test:179:explicit-message-actions": "node ./scripts/regression179-explicit-message-actions.cjs"
+    "test:179:explicit-message-actions": "node ./scripts/regression179-explicit-message-actions.cjs",
+    "test:179:explicit-message-pins": "node ./scripts/regression179-explicit-message-pins.cjs",
+    "test:179:1794": "npm run test:179:explicit-message-pins && npm run test:179:pins-contract"
   },
   "license": "MIT",
   "dependencies": {

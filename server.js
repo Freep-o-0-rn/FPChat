@@ -9,6 +9,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { createDb } = require('./src/db');
 const { installMessageActionsServer } = require('./src/message-actions-server');
+const { installMessagePinsServer } = require('./src/message-pins-server');
 
 dotenv.config();
 
@@ -1211,6 +1212,17 @@ installMessageActionsServer({
   broadcastUnreadState,
   toIsoUtc,
   safeUnlink,
+  isRoomOpen,
+  roomStatePayload
+});
+installMessagePinsServer({
+  app,
+  db,
+  q,
+  socketsByDevice,
+  sendWsJson,
+  sendToRoomParticipants,
+  toIsoUtc,
   isRoomOpen,
   roomStatePayload
 });
