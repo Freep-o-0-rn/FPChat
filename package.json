@@ -55,7 +55,8 @@
     "test:178:message-store-incoming": "node ./scripts/regression178-message-store-incoming.cjs",
     "test:178:message-store-ack": "node ./scripts/regression178-message-store-ack.cjs",
     "test:178:reply-dependencies": "node ./scripts/regression178-reply-dependencies.cjs",
-    "test:178:history-page-owner": "node ./scripts/regression178-history-page-owner.cjs"
+    "test:178:history-page-owner": "node ./scripts/regression178-history-page-owner.cjs",
+    "test:178:history-saved-anchor": "node ./scripts/regression178-history-saved-anchor.cjs"
   },
   "license": "MIT",
   "dependencies": {
