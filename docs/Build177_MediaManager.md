@@ -75,3 +75,31 @@ The source-file `item.objectUrl`, fallback alias `thumbnailObjectUrl === objectU
 - source ObjectURL cleanup stays on the old path.
 
 This step does not touch codecs, thumbnail generation, File/Blob ownership, upload, viewer loading/saving, voice media, or the source preview ObjectURL.
+
+
+## Build 177.25 — voice UI mount/unmount delegation
+
+Only the composer voice UI lifetime is wrapped. `voice.js` remains the implementation owner.
+
+`ensureComposer(form) -> FPMediaManager177.mountVoiceUI(form, mountComposerVoiceUi177)`.
+
+`FPDOM173 composer:unmounted -> FPMediaManager177.unmountVoiceUI(form, unmountComposerVoiceUi177)`.
+
+MediaManager stores only a WeakMap from the exact composer form to the mount record. A stale unmount for form A cannot affect the independently mounted voice UI in form B.
+
+The existing `voice.js` mount worker still creates the microphone, recording bar and preview bar and binds the same handlers:
+
+- microphone `pointerdown -> beginPressRecording()`;
+- recording delete `-> stopRecording('cancel')`;
+- recording stop `-> stopRecording('preview')`;
+- recording send `-> stopRecording('send')`;
+- preview play `-> togglePreviewPlayback()`;
+- preview delete `-> clearPreview(true)`;
+- preview send `-> sendPreview()`;
+- preview speed and waveform seek stay in `voice.js`.
+
+Unmount removes only those mounted voice UI nodes and the existing composer-input sync listener. It does not cancel a recording, clear a preview, stop upload, touch activity, construct MediaRecorder, touch chunks/codecs, or change room transition semantics. Existing `handleRoomChange173()` remains the owner that cancels recording/preview when room identity changes.
+
+The Build 173 DOM lifecycle owner is used for exact composer mount/unmount events. The old MutationObserver remains only as its existing compatibility fallback; no second observer is introduced.
+
+Acceptance executes one real recording session through press -> lock -> stop -> preview -> cancel and asserts exactly one MediaRecorder construction for that session, then unmounts room A, mounts room B and verifies exactly one mic/recording/preview UI set and stale-A isolation.

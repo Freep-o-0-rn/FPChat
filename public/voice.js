@@ -13,7 +13,6 @@
   const voiceMessages = new Map();
   const voiceBlobCache = new Map();
   const voiceMetaCache = new Map();
-  const boundComposers = new WeakSet();
 
   let pendingPress = null;
   let recordingState = null;
@@ -815,14 +814,11 @@
     mic.disabled = editing || closed || currentBusy || !empty;
   }
 
-  function ensureComposer() {
-    const form = document.getElementById('sendForm');
-    if (!form || boundComposers.has(form)) return;
-    boundComposers.add(form);
-
+  function mountComposerVoiceUi177(form) {
+    if (!form) return false;
     const send = form.querySelector('#sendBtn');
     const input = form.querySelector('#msgInput');
-    if (!send || !input) return;
+    if (!send || !input) return false;
 
     const mic = document.createElement('button');
     mic.type = 'button';
@@ -855,7 +851,8 @@
       <button type="button" class="fp-voice-preview-send" aria-label="Отправить запись">${SEND_SVG}</button>`;
     form.insertBefore(previewBar, form.firstChild);
 
-    input.addEventListener('input', () => syncComposer(form), true);
+    const onInput = () => syncComposer(form);
+    input.addEventListener('input', onInput, true);
     mic.addEventListener('pointerdown', (event) => {
       if (event.button != null && event.button !== 0) return;
       event.preventDefault();
@@ -894,6 +891,38 @@
       renderPreviewProgress(target);
     });
     syncComposer(form);
+    return { form, input, mic, recordingBar, previewBar, onInput };
+  }
+
+  function unmountComposerVoiceUi177(form, mounted) {
+    if (!form || !mounted) return false;
+    try { mounted.input?.removeEventListener('input', mounted.onInput, true); } catch {}
+    for (const node of [mounted.mic, mounted.recordingBar, mounted.previewBar]) {
+      try { node?.remove?.(); } catch {}
+    }
+    form.classList.remove(
+      'fp-voice-mic-mode',
+      'fp-voice-recording',
+      'fp-voice-locked',
+      'fp-voice-processing',
+      'fp-voice-previewing',
+      'fp-voice-preview-sending'
+    );
+    return true;
+  }
+
+  function ensureComposer(form = document.getElementById('sendForm')) {
+    if (!form) return false;
+    const manager = window.FPMediaManager177;
+    if (!manager?.mountVoiceUI) return false;
+    return manager.mountVoiceUI(form, mountComposerVoiceUi177);
+  }
+
+  function unmountComposer(form) {
+    if (!form) return false;
+    const manager = window.FPMediaManager177;
+    if (!manager?.unmountVoiceUI) return false;
+    return manager.unmountVoiceUI(form, unmountComposerVoiceUi177);
   }
 
   async function beginPressRecording(event, form, mic) {
@@ -1377,7 +1406,8 @@
   }
 
   if (window.FPDOM173?.on) {
-    window.FPDOM173.on('composer', 'mounted', () => ensureComposer());
+    window.FPDOM173.on('composer', 'mounted', ({ node }) => ensureComposer(node));
+    window.FPDOM173.on('composer', 'unmounted', ({ node }) => unmountComposer(node));
     window.FPDOM173.on('message', 'mounted', ({ node }) => {
       const messageId = String(node?.dataset?.messageId || node?.dataset?.id || '');
       if (messageId) decorateVoiceMessage(messageId);
@@ -1395,6 +1425,11 @@
       let composerChanged = false;
       let messagesChanged = false;
       for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.id === 'sendForm') unmountComposer(node);
+          node.querySelectorAll?.('#sendForm').forEach((form) => unmountComposer(form));
+        }
         for (const node of record.addedNodes) {
           if (node.nodeType !== 1) continue;
           if (node.id === 'sendForm' || node.querySelector?.('#sendForm')) composerChanged = true;
