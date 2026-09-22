@@ -36,11 +36,13 @@ assert((update.match(/FPCHAT_UPDATE_NONINTERACTIVE/g)||[]).length>=2,'noninterac
 assert(historical.includes('current updater **starts `start_chat.bat` itself**'),'180.4 historical successful-restart baseline was lost');
 assert(historical.includes('does **not** automatically restore'),'180.4 historical rollback baseline was lost');
 
-assert(launcher.includes('call npm install'),'launcher dependency behavior changed before 180.6');
-assert(launcher.includes('call npm start'),'launcher start behavior changed before 180.6');
+assert(launcher.includes('scripts\\start-fpchat180.ps1'),'180.6 launcher helper wiring missing');
+assert(!launcher.includes('call npm install'),'old launcher full npm install path returned');
+assert(!launcher.includes('call npm start'),'old launcher npm start wrapper returned');
 assert.equal(pkg.scripts.start,'node server.js');
 
 console.log('PASS 180.5 protected-data/staging/backup contract remains intact');
 console.log('PASS 180.5 updater has no server-launch command on success or failure');
 console.log('PASS 180.5 production path defaults remain while isolated Windows test roots are supported');
 console.log('PASS 180.5 180.4 baseline remains available as historical documentation');
+console.log('PASS 180.6 accumulated updater regression accepts the new dedicated launcher contract');
