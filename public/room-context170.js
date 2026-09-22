@@ -332,6 +332,7 @@
     script.src = `/lifecycle170.js${suffix}`;
     script.dataset.fpLifecycle170 = '1';
     script.onload = loadConnectionOwner;
+    script.onerror = () => window.FPStartup174?.fail();
     document.body.appendChild(script);
   }
 
