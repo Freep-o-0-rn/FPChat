@@ -56,7 +56,7 @@
       preview.cancelled = true;
       if (preview.operation) contexts.cancelOperation(preview.operation, 'user-cancelled');
     }
-    if (mediaPreviewState === preview) closeMediaPreviewModal();
+    if (mediaPreviewState === preview) closeMediaPreviewModal(preview);
     await preview.task?.catch(() => {});
     if (!preview.committed) await deleteUploadedPendingMedia(preview.items, preview.roomId);
   }
@@ -128,7 +128,7 @@
       if (draft.text === draftText && draft.replyTo === draftReply) {
         try { await clearDraftOnServer(roomId); } catch {}
       }
-      if (mediaPreviewState === preview) closeMediaPreviewModal();
+      if (mediaPreviewState === preview) closeMediaPreviewModal(preview);
       else releasePreview(preview);
     } catch (error) {
       status = error.name === 'AbortError' ? 'cancelled' : 'failed';
