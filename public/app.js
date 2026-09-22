@@ -1129,6 +1129,20 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   if(autoScroll){if(mine&&isCurrentMessagesBox(box))dismissUnreadDivider(box);scrollCoordinator.requestBottom(box);window.FPHistory174?.trim('newer');}
   return w;
 }
+function canonicalizeIncomingMessageForMount178(roomId,message,text){
+  let canonicalText=String(text??'');
+  const media=Array.isArray(message?.media)?message.media:[];
+  const kind=message?.type==='media'?(media.length===1&&media[0]?.media_kind==='audio'?'voice':'media'):(message?.type||'text');
+  const preview=kind==='media'||kind==='voice'?buildMediaFallbackText(media,canonicalText):makeReplyPreview(canonicalText);
+  try{return window.FPMessageStore172?.upsert?.(roomId,message,{text:canonicalText,preview,kind,source:'ws'})?.record||null;}catch{return null;}
+}
+const FPMessageRender178=Object.freeze({
+  mountIncoming(box,roomId,message,text,autoScroll=true){
+    canonicalizeIncomingMessageForMount178(roomId,message,text);
+    return appendMessage(box,message,text,false,autoScroll);
+  }
+});
+window.FPMessageRender178=FPMessageRender178;
 const renderChatViewWithoutLazyHistory=renderChatView;
 renderChatView=async function renderChatViewWithLazyHistory(messages,deviceId,viewState=null){
   const view=captureRoomView170();
@@ -1210,7 +1224,7 @@ async function processStableIncomingMessage(roomId,incomingMessage,deviceId,{not
     upsertResult={isDuplicate:Boolean(result.isDuplicate||hasMessageInDom)};
     if(inActiveChat&&!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,text,true,true);scrollMessagesToBottom(box);}
   }else if(inActiveChat){
-    if(!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);appendMessage(box,message,text,false,nearBottom);}
+    if(!hasMessageInDom){appendDateSeparatorIfNeeded(box,message.created_at);FPMessageRender178.mountIncoming(box,roomId,message,text,nearBottom);}
     if(nearBottom){
       markMessageRead(messageId);
       const unloadedCount=activeChatHistory?.roomId===roomId?Math.max(0,Number(activeChatHistory.unloadedUnreadCount)||0):0;
