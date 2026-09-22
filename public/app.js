@@ -777,17 +777,16 @@ async function loadHistoryUntilMessage(messageId){if(window.FPHistory174)return 
 
 function autoResizeMessageInput(input){if(!input)return;const lineHeight=parseFloat(getComputedStyle(input).lineHeight)||22;const maxHeight=lineHeight*4;input.style.height=`${lineHeight}px`;const nextHeight=Math.min(input.scrollHeight,maxHeight);input.style.height=`${Math.max(lineHeight,nextHeight)}px`;input.style.overflowY=input.scrollHeight>maxHeight?'auto':'hidden';}
 const boundComposerForms177=new WeakSet();
-function bindComposerForm177(form=document.getElementById('sendForm')){
+function bindComposerForm177(form=document.getElementById('sendForm'),roomId=state.roomId){
   if(!form||boundComposerForms177.has(form))return Boolean(form);
   const input=form.querySelector('#msgInput');
-  if(!input)return false;
+  const boundRoomId=String(roomId||'');
+  if(!input||!boundRoomId)return false;
   boundComposerForms177.add(form);
   input.addEventListener('input',()=>{
     FPComposer177.syncUI(form);
     autoResizeMessageInput(input);
-    const draft=ensureDraftState(state.roomId);
-    draft.text=input.value;
-    scheduleDraftSave(state.roomId);
+    FPComposer177.queueDraftInput({roomId:boundRoomId,input});
     renderChats();
   });
   input.addEventListener('keydown',(e)=>{
@@ -802,8 +801,15 @@ const FPComposer177=Object.freeze({
   syncUI(form=document.getElementById('sendForm')){
     return window.FPVoice?.syncComposer?.(form);
   },
-  bind(form=document.getElementById('sendForm')){
-    return bindComposerForm177(form);
+  bind(form=document.getElementById('sendForm'),roomId=state.roomId){
+    return bindComposerForm177(form,roomId);
+  },
+  queueDraftInput({roomId,input}={}){
+    if(!roomId||!input)return false;
+    const draft=ensureDraftState(roomId);
+    draft.text=input.value;
+    scheduleDraftSave(roomId);
+    return true;
   },
   applyRestoredDraft({input,draft,text='',replyTo=null}={}){
     if(!input||!draft||!input.isConnected)return false;
@@ -821,7 +827,7 @@ async function renderChatView(messages,deviceId,viewState=null){const view=captu
 box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();});
 document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
 renderPresenceStatus();
-const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form); window.FPComposer177?.bind?.(form); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);await loadDraftForCurrentRoom();if(!isRoomViewCurrent170(view))return;syncSendBtn();}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
+const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form); window.FPComposer177?.bind?.(form,view.roomId); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);await loadDraftForCurrentRoom();if(!isRoomViewCurrent170(view))return;syncSendBtn();}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
  async function fetchMediaThumbUrl(media){const view=captureRoomView170();const persisted=STORAGE.get(STORAGE.roomState(view.roomId));if(!persisted?.deviceId||!media?.public_id)return'';try{const dec=await readEncryptedMedia174(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`,'image/webp',view.key,{signal:view.context?.signal});if(!isRoomViewCurrent170(view))return'';return URL.createObjectURL(dec);}catch{return'';}}
 const fetchMediaThumbUrlWithoutTracking=fetchMediaThumbUrl;
 fetchMediaThumbUrl=async function(...args){pendingMediaThumbLoads+=1;try{return await fetchMediaThumbUrlWithoutTracking(...args);}finally{pendingMediaThumbLoads=Math.max(0,pendingMediaThumbLoads-1);}};
