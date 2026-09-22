@@ -8,6 +8,7 @@ const webpush = require('web-push');
 const fs = require('fs');
 const multer = require('multer');
 const { createDb } = require('./src/db');
+const { installMessageActionsServer } = require('./src/message-actions-server');
 
 dotenv.config();
 
@@ -1198,6 +1199,20 @@ wss.on('connection', (ws, req) => {
     unregisterWsFromAllDevices(ws);
     syncDevicePresence(ws.deviceId);
   });
+});
+
+installMessageActionsServer({
+  app,
+  db,
+  q,
+  socketsByDevice,
+  sendWsJson,
+  sendToRoomParticipants,
+  broadcastUnreadState,
+  toIsoUtc,
+  safeUnlink,
+  isRoomOpen,
+  roomStatePayload
 });
 
 cleanupExpiredSoloRooms();

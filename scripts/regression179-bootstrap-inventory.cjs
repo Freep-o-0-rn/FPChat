@@ -49,8 +49,11 @@ assert.equal((boot.match(/\breplaceAllChecked\(/g)||[]).length-1,1,'expected exa
 assert.equal((boot.match(/source = source\.replace\(/g)||[]).length,2,'expected helper replace plus final startup insertion source.replace');
 assert(boot.includes("const marker = '\\ncleanupExpiredSoloRooms();\\nsetInterval(cleanupExpiredSoloRooms, 10 * 60 * 1000);"),'startup marker changed');
 
+assert(server.includes("const { installMessageActionsServer } = require('./src/message-actions-server');"),'I1 explicit import missing from server');
+assert(server.includes('installMessageActionsServer({'),'I1 explicit install missing from server');
+assert(!boot.includes("require('./src/message-actions-server').installMessageActionsServer({"),'I1 is still injected by bootstrap');
+
 const installs=[
-  'installMessageActionsServer',
   'installMessagePinsServer',
   'installTypingServer',
   'installUsernameServer',
@@ -64,7 +67,7 @@ const installs=[
 last=-1;
 for(const name of installs){
   const at=boot.indexOf('.'+name+'({');
-  assert(at>last,'installer order changed at '+name);
+  assert(at>last,'remaining bootstrap installer order changed at '+name);
   last=at;
 }
 assert(boot.includes('source = source.replace(marker,'),'installer block insertion missing');
@@ -124,6 +127,6 @@ assert(requests.includes("for (const action of ['reject', 'block'])"),'chat requ
 assert(voice.includes('const blockGuard = userBlocks?.roomSendGuard(room.id, deviceId);'),'voice upload block guard changed');
 
 console.log('PASS 179.1 production preload/loader interception and patch order are inventoried');
-console.log('PASS 179.1 ten installers remain in recorded order before cleanup/listen');
+console.log('PASS 179.1 I1 is explicit and the remaining nine bootstrap installers preserve their recorded order');
 console.log('PASS 179.1 dependency, guard, route and WS-effect signatures match inventory');
 console.log('PASS 179.1 message-actions and pins still have no installer-local idempotency flag');
