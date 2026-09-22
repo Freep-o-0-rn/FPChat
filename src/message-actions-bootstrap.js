@@ -25,12 +25,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
   }
 
   replaceOnce(
-    `  const sender = q.findParticipant.get(room.id, ws.deviceId);\n  if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');\n  if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');`,
-    `  const sender = q.findParticipant.get(room.id, ws.deviceId);\n  if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');\n  if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');\n  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);\n  if (!blockGuard165.ok) return sendMessageRejected(ws, room, clientMessageId, 'blocked', blockGuard165.code);`,
-    'text message block guard'
-  );
-
-  replaceOnce(
     `      if (!isRoomOpen(room)) {\n        sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');\n        return;\n      }\n      const ciphertext = String(payload.ciphertext || '');`,
     `      if (!isRoomOpen(room)) {\n        sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');\n        return;\n      }\n      const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);\n      if (!blockGuard165.ok) {\n        sendMessageRejected(ws, room, null, 'blocked', blockGuard165.code);\n        return;\n      }\n      const ciphertext = String(payload.ciphertext || '');`,
     'legacy/media message block guard'

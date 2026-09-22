@@ -1029,6 +1029,8 @@ async function handleTextMessage(ws, payload) {
   const sender = q.findParticipant.get(room.id, ws.deviceId);
   if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');
   if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');
+  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);
+  if (!blockGuard165.ok) return sendMessageRejected(ws, room, clientMessageId, 'blocked', blockGuard165.code);
   if (!clientMessageId || clientMessageId.length > 128) return sendMessageRejected(ws, room, clientMessageId, 'invalid client message id');
   const ciphertext = String(payload.ciphertext || '');
   const iv = String(payload.iv || '');
