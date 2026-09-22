@@ -19,6 +19,7 @@ on:
       - 'scripts/regression180-startup-graph.cjs'
       - 'scripts/regression180-app-coordinator-decision.cjs'
       - 'scripts/regression180-init-coordination.cjs'
+      - 'scripts/regression180-single-owner-audit.cjs'
       - '.github/workflows/build180-windows-update.yml'
   workflow_dispatch:
 
@@ -53,3 +54,5 @@ jobs:
         run: npm run test:180:app-coordinator-decision
       - name: Static init coordination
         run: npm run test:180:init-coordination
+      - name: Static single-owner audit
+        run: npm run test:180:single-owner-audit
