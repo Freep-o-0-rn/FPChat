@@ -195,9 +195,11 @@ run(async({browser,origin,errors})=>{
       activeRoom:state.roomId
     }));
     const actual=transport.actual.filter(item=>item.clientMessageId===clientMessageId);
-    assert.equal(actual.length,1,'ACK must clear pending retry after reconnect');
-    assert(actual.every(item=>item.roomId===roomA),'reconnect resend must remain in source room A');
-    assert.equal(transport.activeRoom,roomB,'reconnect/echo must not navigate away from room B');
+    assert(actual.length>=2,'existing sent-status retry must reuse the same clientMessageId after reconnect');
+    assert.equal(new Set(transport.actual.map(item=>item.clientMessageId)).size,1,
+      'all reconnect/retry sends must retain one clientMessageId');
+    assert(actual.every(item=>item.roomId===roomA),'reconnect/retry must remain in source room A');
+    assert.equal(transport.activeRoom,roomB,'ACK/echo must not navigate away from room B');
 
     await open(roomA);
     await page.waitForFunction(text=>[...document.querySelectorAll('#messages .message-text')].some(el=>el.textContent===text),unique);
@@ -212,7 +214,7 @@ run(async({browser,origin,errors})=>{
     console.log('PASS double submit creates one clientMessageId and one logical pending text');
     console.log('PASS transport-offline pending text resends after reconnect');
     console.log('PASS A -> B reconnect send remains bound to source room A');
-    console.log('PASS ACK clears retry and echo updates room A without duplicate bubble');
+    console.log('PASS ACK/echo preserves one logical message while existing retry reuses clientMessageId');
     console.log('PASS exactly one text message is saved on the server');
   } finally {
     await page.evaluate(()=>{
