@@ -63,7 +63,7 @@ run(async ({browser,origin,errors})=>{
   page.on('pageerror',error=>errors.push(error.message));
   page.on('dialog',dialog=>dialog.dismiss());
   await page.goto(origin);
-  await page.waitForFunction(()=>window.FPComposer177?.syncReplyMode&&typeof openChat==='function');
+  await page.waitForFunction(()=>window.FPComposer177?.syncReplyMode&&window.FPVoice&&typeof openChat==='function'&&!document.getElementById('bootHold152'));
 
   const room=await page.evaluate(async()=>{
     const deviceId=getOrCreateDeviceId();
@@ -81,7 +81,7 @@ run(async ({browser,origin,errors})=>{
     return data.publicId;
   });
 
-  await page.evaluate(roomId=>openChat(roomId),room);
+  await page.evaluate(async roomId=>{showChatsList();await openChat(roomId);},room);
   await page.waitForSelector('#msgInput');
 
   await page.locator('#msgInput').fill('177.13 reply source message');
