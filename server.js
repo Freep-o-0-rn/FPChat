@@ -14,6 +14,7 @@ const { installTypingServer } = require('./src/typing-server');
 const { installUsernameServer } = require('./src/username-server');
 const { installSystemEventsServer } = require('./src/system-events-server');
 const { installStorageStats168 } = require('./src/storage-stats168');
+const { installUserBlocks165Server } = require('./src/user-blocks165');
 
 dotenv.config();
 
@@ -1273,6 +1274,15 @@ installSystemEventsServer({
 installStorageStats168({
   app,
   db
+});
+installUserBlocks165Server({
+  app,
+  db,
+  q,
+  socketsByDevice,
+  sendWsJson,
+  toIsoUtc,
+  userBlocks: fpUserBlocks165
 });
 
 cleanupExpiredSoloRooms();
