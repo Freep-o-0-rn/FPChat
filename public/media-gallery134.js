@@ -46,7 +46,7 @@
       const roomId = String(state?.roomId || '');
       const generation = ++galleryGeneration;
 
-      mediaViewerState = {
+      const nextViewer = {
         messageMedia: initialItems,
         index: initialIndex,
         loaded: new Map(),
@@ -54,7 +54,9 @@
         fpRoomId: roomId,
         fpGeneration: generation,
       };
-      renderMediaViewer();
+      const manager = window.FPMediaManager177;
+      if (manager?.openViewer) manager.openViewer(nextViewer, openViewerWorker177);
+      else openViewerWorker177(nextViewer);
       void hydrateWholeRoomGallery(roomId, sourcePublicId, generation, initialItems);
     };
 
@@ -63,6 +65,12 @@
     installTouchGuard();
     installKeyboardNavigation();
   };
+
+  function openViewerWorker177(viewer) {
+    mediaViewerState = viewer;
+    renderMediaViewer();
+    return viewer;
+  }
 
   function isGalleryMedia(item) {
     const kind = String(item?.media_kind || '');
@@ -352,11 +360,20 @@
     }
   }
 
-  function closeGallery() {
+  function closeGalleryWorker177(viewer) {
+    if (!viewer || mediaViewerState !== viewer) return false;
     pointerGesture = null;
     touchGuard = null;
     mediaViewerState = null;
     renderMediaViewer134();
+    return true;
+  }
+
+  function closeGallery(viewer = currentGalleryState()) {
+    if (!viewer) return false;
+    const manager = window.FPMediaManager177;
+    if (manager?.closeViewer) return manager.closeViewer(viewer, closeGalleryWorker177);
+    return closeGalleryWorker177(viewer);
   }
 
   async function navigateGallery(direction, animate) {

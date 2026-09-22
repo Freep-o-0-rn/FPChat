@@ -51,6 +51,7 @@ class FPMediaManager177Class {
   #activePreview = null;
   #previewThumbnailObjectUrls = new Set();
   #voiceUiByForm = new WeakMap();
+  #activeViewer = null;
 
   ownPreviewThumbnailObjectUrl(item) {
     const url = item?.thumbnailObjectUrl;
@@ -114,6 +115,34 @@ class FPMediaManager177Class {
     return Boolean(form && this.#voiceUiByForm.has(form));
   }
 
+  openViewer(viewer, openWorker) {
+    if (!viewer || typeof openWorker !== 'function') return false;
+    this.#activeViewer = viewer;
+    const result = openWorker(viewer);
+    if (result === false) {
+      if (this.#activeViewer === viewer) this.#activeViewer = null;
+      return false;
+    }
+    return result || viewer;
+  }
+
+  closeViewer(viewer, closeWorker) {
+    const target = viewer || this.#activeViewer;
+    if (!target || target !== this.#activeViewer || typeof closeWorker !== 'function') return false;
+    const result = closeWorker(target);
+    if (result === false) return false;
+    if (this.#activeViewer === target) this.#activeViewer = null;
+    return true;
+  }
+
+  currentViewer() {
+    return this.#activeViewer;
+  }
+
+  isViewerActive(viewer) {
+    return Boolean(viewer && viewer === this.#activeViewer);
+  }
+
   current() {
     return this.#activePreview;
   }
@@ -129,7 +158,7 @@ try {
   window.FPRuntime?.registerOwner?.('media-manager177', {
     role: 'media-preview-lifecycle',
     mode: 'active-owner',
-    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup + voice UI mount/unmount delegation'
+    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup + voice UI mount/unmount delegation + media viewer open/close delegation'
   });
 } catch {}
 let mediaViewerState=null;

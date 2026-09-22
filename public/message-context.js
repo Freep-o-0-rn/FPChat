@@ -250,10 +250,25 @@
     cleanupViewerReturn();
   }
 
+  function closeViewerBackToContextWorker177(viewer) {
+    if (!viewer || typeof mediaViewerState === 'undefined' || mediaViewerState !== viewer) return false;
+    mediaViewerState = null;
+    if (typeof renderMediaViewer === 'function') renderMediaViewer();
+    return true;
+  }
+
   function closeViewerBackToContext() {
     try {
-      if (typeof mediaViewerState !== 'undefined') mediaViewerState = null;
-      if (typeof renderMediaViewer === 'function') renderMediaViewer();
+      const viewer = typeof mediaViewerState !== 'undefined' ? mediaViewerState : null;
+      const manager = window.FPMediaManager177;
+      if (viewer && manager?.closeViewer) {
+        const tracked = manager.currentViewer?.();
+        if (tracked === viewer) manager.closeViewer(viewer, closeViewerBackToContextWorker177);
+        else if (!tracked) closeViewerBackToContextWorker177(viewer);
+      } else {
+        if (typeof mediaViewerState !== 'undefined') mediaViewerState = null;
+        if (typeof renderMediaViewer === 'function') renderMediaViewer();
+      }
     } catch {}
     restoreContextAfterViewer();
   }

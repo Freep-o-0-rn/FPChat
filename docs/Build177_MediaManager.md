@@ -127,3 +127,25 @@ The guard covers:
 - `handleVisibilityLoss`.
 
 Every later Build 177 step that runs `test:177:voice-ui-lifecycle` runs this guard first. Updating the recorded fingerprints merely to make a later refactor pass is not allowed; changing these functions requires a separate explicitly approved voice-recording task. MediaManager may delegate lifecycle ownership around voice UI, but it must not reimplement MediaRecorder creation, press/lock gestures, recording state, preview behavior, or cancel semantics.
+
+
+## Build 177.26 — existing media viewer lifecycle boundary
+
+The existing viewer was inspected before changing ownership. The active image/video viewer is still implemented by `media-gallery134.js`, which replaces the older `app.js` viewer entry after startup. The gallery continues to own room-media hydration, decryption/loading, ObjectURL cache, rendering, previous/next navigation, pointer/touch gestures and keyboard navigation.
+
+177.26 moves only viewer identity plus open/close delegation to `FPMediaManager177`:
+
+`openMediaViewer134 -> FPMediaManager177.openViewer(nextViewer, openViewerWorker177) -> existing renderMediaViewer()`.
+
+`closeGallery -> FPMediaManager177.closeViewer(viewer, closeGalleryWorker177) -> existing gallery close worker`.
+
+A second close lifecycle entry was confirmed in `message-context.js`: `closeViewerBackToContext()` previously wrote `mediaViewerState = null` directly. That command now delegates the exact current viewer through MediaManager before executing the same existing clear/render operation. A stale context close cannot close a different viewer already registered as active.
+
+No media save mechanism is added or replaced. The existing paths remain unchanged:
+
+- photo save still uses `fetchOriginalMediaBlob()`, the existing progress UI, mobile `navigator.share({files})` when available, and the same `downloadBlob()` fallback;
+- video save in `message-context-fix.js` still uses its existing Blob/ObjectURL + temporary `<a download>` path;
+- viewer media still uses the existing `readEncryptedMedia174()` / gallery asset cache and the same ObjectURL lifetime;
+- the old `app.js` viewer implementation is left byte-for-byte unchanged as a compatibility path.
+
+`npm run test:177:media-viewer-lifecycle` freezes the non-lifecycle viewer functions and both save/download paths so later Build 177 work cannot silently replace them.
