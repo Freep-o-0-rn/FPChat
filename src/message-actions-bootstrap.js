@@ -25,12 +25,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
   }
 
   replaceOnce(
-    `  const deviceId = String(req.body?.deviceId || '').slice(0, 64);\n  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });\n  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });\n  const mimeType = String(req.body?.mimeType || '');`,
-    `  const deviceId = String(req.body?.deviceId || '').slice(0, 64);\n  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });\n  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });\n  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, deviceId);\n  if (!blockGuard165.ok) return res.status(403).json({ ok: false, error: 'blocked', code: blockGuard165.code });\n  const mimeType = String(req.body?.mimeType || '');`,
-    'media upload block guard'
-  );
-
-  replaceOnce(
     `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
     `  const safeDeviceId = String(deviceId).slice(0, 64);\n  const safeName = String(displayName).slice(0, 48);\n  if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });\n  const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);\n  if (!inviteBlock165.ok) {\n    if (inviteBlock165.code === 'INVITE_BLOCKED_BY_CREATOR') {\n      try {\n        fpBlockedInviteEvents165.note({ roomId: room.id, joinerId: safeDeviceId, fallbackName: safeName });\n      } catch (error) {\n        console.error('Blocked invite system event failed', error);\n      }\n      return res.status(403).json({ ok: false, error: 'Вход недоступен: пользователь вас заблокировал.', code: inviteBlock165.code });\n    }\n    return res.status(403).json({ ok: false, error: 'Сначала разблокируйте пользователя.', code: inviteBlock165.code });\n  }\n  if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });`,
     'invite block guard'

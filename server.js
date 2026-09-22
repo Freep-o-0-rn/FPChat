@@ -807,6 +807,8 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
   const deviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
   if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });
+  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, deviceId);
+  if (!blockGuard165.ok) return res.status(403).json({ ok: false, error: 'blocked', code: blockGuard165.code });
   const mimeType = String(req.body?.mimeType || '');
   const mediaKind = String(req.body?.mediaKind || '');
   const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']);
