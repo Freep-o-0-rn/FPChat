@@ -28,8 +28,26 @@ for(const forbidden of [
 assert(!/retry|fallback/i.test(manager.replace(/\/\*[\s\S]*?\*\//g,'')),
   'dispatcher implementation must not contain retry/fallback logic');
 
-assert(context.includes("script.src = `/send-manager177.js${suffix}`;"),'SendManager startup loader missing');
-assert(context.includes("script.onload = loadTextSendOwner;"),'text owner must load after SendManager');
+const managerLoaderStart=context.indexOf('  function loadSendManager177() {');
+const managerLoaderEnd=context.indexOf('\n  function loadSyncCoordinator176()',managerLoaderStart);
+assert(managerLoaderStart>=0&&managerLoaderEnd>managerLoaderStart,'SendManager startup loader missing');
+const managerLoader=context.slice(managerLoaderStart,managerLoaderEnd);
+assert(managerLoader.includes("script.src = `/send-manager177.js${suffix}`;"),'SendManager script source missing');
+assert(managerLoader.includes("existing.addEventListener('load', loadTextSendOwner, { once: true });"),
+  'existing SendManager script must continue to text owner');
+assert(managerLoader.includes('script.onload = loadTextSendOwner;'),
+  'new SendManager script must continue to text owner');
+
+const roomLoaderStart=context.indexOf('  function loadRoomOpenOwner() {');
+const roomLoaderEnd=context.indexOf('\n  function loadConnectionOwner()',roomLoaderStart);
+assert(roomLoaderStart>=0&&roomLoaderEnd>roomLoaderStart,'room-open startup loader missing');
+const roomLoader=context.slice(roomLoaderStart,roomLoaderEnd);
+assert(roomLoader.includes('loadSendManager177();'),'already-loaded room-open must continue to SendManager');
+assert(roomLoader.includes("existing.addEventListener('load', loadSendManager177, { once: true });"),
+  'existing room-open script must continue to SendManager');
+assert(roomLoader.includes('script.onload = loadSendManager177;'),
+  'new room-open script must continue to SendManager');
+
 assert(index.includes("'send-manager177.js':['room-open170.js']"),'startup dependency for SendManager missing');
 assert(index.includes("'text-send170.js':['send-manager177.js']"),'text owner dependency on SendManager missing');
 
