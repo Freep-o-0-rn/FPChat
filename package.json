@@ -58,7 +58,8 @@
     "test:178:history-page-owner": "node ./scripts/regression178-history-page-owner.cjs",
     "test:178:history-saved-anchor": "node ./scripts/regression178-history-saved-anchor.cjs",
     "test:178:history-reply-pin-jump": "node ./scripts/regression178-history-reply-pin-jump.cjs",
-    "test:178:bounded-dom": "node ./scripts/regression178-bounded-dom.cjs"
+    "test:178:bounded-dom": "node ./scripts/regression178-bounded-dom.cjs",
+    "test:178:chat-list-render-owner": "node ./scripts/regression178-chat-list-render-owner.cjs"
   },
   "license": "MIT",
   "dependencies": {

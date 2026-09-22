@@ -479,7 +479,7 @@ function createChatRow174(c){
   };
   return row;
 }
-function renderChats(){
+function renderChatList174(){
   chatListRevision174++;
   if(!chatListRunning174){
     chatListRunning174=new Promise(resolve=>requestAnimationFrame(resolve)).then(flushChatList174).finally(()=>{chatListRunning174=null;});
@@ -511,7 +511,8 @@ async function flushChatList174(){
     },{current:()=>revision===chatListRevision174});
   }while(revision!==chatListRevision174);
 }
-window.FPChatList174=Object.freeze({idle:()=>chatListRunning174||Promise.resolve(),snapshot:()=>({rows:chatRows174.size,revision:chatListRevision174})});
+window.FPChatList174=Object.freeze({render:renderChatList174,idle:()=>chatListRunning174||Promise.resolve(),snapshot:()=>({rows:chatRows174.size,revision:chatListRevision174})});
+function renderChats(){return window.FPChatList174.render();}
 function renderMainChatsPlaceholder(){els.content?.classList.remove('chat-content');els.content.innerHTML='';}
 function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16,64})$/i);if(!m)return null; if(location.hash){return {error:'legacy'};} return {inviteCode:m[1]};}
 function getKnownDeviceIds(){const ids=new Set();const stableDeviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(stableDeviceId)ids.add(stableDeviceId);for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key||!key.startsWith('fpchat:room:'))continue;const val=STORAGE.get(key);if(val?.deviceId)ids.add(String(val.deviceId));}return [...ids];}
