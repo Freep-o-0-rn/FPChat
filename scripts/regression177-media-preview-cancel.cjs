@@ -168,8 +168,8 @@ run(async({browser,origin,errors})=>{
   const duringReady=new Promise(resolve=>{duringStarted=resolve;});
   await page.route('**/media/upload',async route=>{
     duringStarted();
-    await new Promise(resolve=>setTimeout(resolve,5000));
-    try{await route.continue();}catch{}
+    await new Promise(resolve=>setTimeout(resolve,250));
+    try{await route.abort('aborted');}catch{}
   });
   await page.locator('#mediaPreviewRoot .media-send-btn').click();
   await Promise.race([
@@ -184,7 +184,11 @@ run(async({browser,origin,errors})=>{
   assert(duringIdentity.uploadId,'stable uploadId missing during upload');
   assert.equal(duringIdentity.operation,true);
   assert.equal(duringIdentity.sending,true);
-  await page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
+  const duringCancel=page.evaluate(()=>window.FPMediaSend170.cancelPreview(mediaPreviewState));
+  await Promise.race([
+    duringCancel,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('cancel during upload did not settle')),5000))
+  ]);
   await waitPreviewGone();
   await page.unroute('**/media/upload');
   assert(cleanupRequests.some(body=>Array.isArray(body.uploadIds)&&body.uploadIds.includes(duringIdentity.uploadId)),
