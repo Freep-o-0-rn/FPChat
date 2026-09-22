@@ -56,3 +56,22 @@ Acceptance covers three distinct moments with one photo preview:
 - cancel after the server has committed the pending media row but before the browser receives the upload response: the client still only knows `uploadId`, and the existing `DELETE /media/pending` cleanup removes that committed pending row.
 
 No codec, encryption, upload, retry, SendManager, caption, reply, item ordering, ObjectURL ownership, or voice recording logic is changed in 177.23.
+
+
+## Build 177.24 — one resource type: generated preview thumbnail ObjectURL
+
+Only one resource type moves to the active lifecycle owner: a generated preview thumbnail ObjectURL where `item.thumbnailObjectUrl !== item.objectUrl`.
+
+The source-file `item.objectUrl`, fallback alias `thumbnailObjectUrl === objectUrl`, media viewer ObjectURLs, voice preview/cache ObjectURLs, temporary decode ObjectURLs and Blob ownership remain unchanged.
+
+`FPMediaManager177` now tracks generated preview thumbnail URLs and is the only code that revokes that resource type. Lifetime rule:
+
+- creation remains in the existing preview worker;
+- the item is registered with MediaManager after the existing thumbnail worker creates its URL;
+- while the preview DOM still contains an `<img>` using that URL, it is not revoked;
+- full preview close first runs the existing unmount worker and clears the DOM, then MediaManager revokes generated thumbnail URLs;
+- removing one item first rerenders/unmounts that item, then MediaManager revokes only that removed item's generated thumbnail URL;
+- stale room preparation and stale-send release also delegate this same generated-thumbnail cleanup to MediaManager;
+- source ObjectURL cleanup stays on the old path.
+
+This step does not touch codecs, thumbnail generation, File/Blob ownership, upload, viewer loading/saving, voice media, or the source preview ObjectURL.

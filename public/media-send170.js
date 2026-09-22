@@ -46,7 +46,11 @@
   function releasePreview(preview) {
     for (const item of preview.items) {
       try { URL.revokeObjectURL(item.objectUrl); } catch {}
-      try { URL.revokeObjectURL(item.thumbnailObjectUrl); } catch {}
+      if (item.thumbnailObjectUrl === item.objectUrl) {
+        try { URL.revokeObjectURL(item.thumbnailObjectUrl); } catch {}
+      } else {
+        window.FPMediaManager177?.releasePreviewThumbnailObjectUrl?.(item);
+      }
     }
   }
 

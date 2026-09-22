@@ -55,7 +55,7 @@ assert(app.includes('const draft=ensureDraftState(state.roomId)'),'existing repl
 assert(media.includes('closeMediaPreviewModal(preview);'),
   'media executor must close the exact preview identity after send/cancel');
 
-console.log('PASS MediaManager177 owns preview identity and open/close/cancel delegation only');
+console.log('PASS MediaManager177 owns preview lifecycle plus generated thumbnail ObjectURL cleanup only');
 console.log('PASS existing validation/thumb/caption/reply/ObjectURL workers remain outside MediaManager');
 console.log('PASS close is scoped to the exact preview identity');
 

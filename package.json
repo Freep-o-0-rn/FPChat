@@ -45,7 +45,8 @@
     "test:177:voice-dispatch": "node ./scripts/regression177-voice-dispatch.cjs",
     "test:177:activity-second-client": "node ./scripts/regression177-activity-second-client.cjs",
     "test:177:media-preview-lifecycle": "node ./scripts/regression177-media-preview-lifecycle.cjs",
-    "test:177:media-preview-cancel": "node ./scripts/regression177-media-preview-cancel.cjs"
+    "test:177:media-preview-cancel": "node ./scripts/regression177-media-preview-cancel.cjs",
+    "test:177:media-thumbnail-lifetime": "node ./scripts/regression177-media-thumbnail-lifetime.cjs"
   },
   "license": "MIT",
   "dependencies": {

@@ -49,6 +49,22 @@ let mediaPreviewState=null;
 
 class FPMediaManager177Class {
   #activePreview = null;
+  #previewThumbnailObjectUrls = new Set();
+
+  ownPreviewThumbnailObjectUrl(item) {
+    const url = item?.thumbnailObjectUrl;
+    if (!url || url === item?.objectUrl) return false;
+    this.#previewThumbnailObjectUrls.add(url);
+    return true;
+  }
+
+  releasePreviewThumbnailObjectUrl(item) {
+    const url = item?.thumbnailObjectUrl;
+    if (!url || url === item?.objectUrl || !this.#previewThumbnailObjectUrls.has(url)) return false;
+    this.#previewThumbnailObjectUrls.delete(url);
+    try { URL.revokeObjectURL(url); } catch {}
+    return true;
+  }
 
   open(preview, mount) {
     if (!preview || typeof mount !== 'function') return false;
@@ -62,6 +78,7 @@ class FPMediaManager177Class {
     if (!target || target !== this.#activePreview || typeof unmount !== 'function') return false;
     const result = unmount(target);
     if (result === false) return false;
+    for (const item of target.items || []) this.releasePreviewThumbnailObjectUrl(item);
     if (this.#activePreview === target) this.#activePreview = null;
     return true;
   }
@@ -87,7 +104,7 @@ try {
   window.FPRuntime?.registerOwner?.('media-manager177', {
     role: 'media-preview-lifecycle',
     mode: 'active-owner',
-    owns: 'preview identity + open/close/cancel delegation only'
+    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup'
   });
 } catch {}
 let mediaViewerState=null;
@@ -1841,9 +1858,9 @@ async function deleteUploadedPendingMedia(items,roomId=state.roomId,deviceId=STO
   if(!mediaIds.length&&!uploadIds.length)return;
   await fetch(`/api/rooms/${roomId}/media/pending`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,mediaIds,uploadIds})}).catch(()=>{});
 }
-async function openMediaPreviewFromFiles(rawFiles){const view=captureRoomView170();let files=[...rawFiles];if(files.length>MEDIA_LIMITS.maxFiles){alert('Можно отправить максимум 10 файлов за раз.');files=files.slice(0,MEDIA_LIMITS.maxFiles);}const items=[];let total=0;for(const originalFile of files){let f=originalFile;const type=f.type||'';const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');const isVid=ALLOWED_VIDEO_TYPES.has(type)||type.startsWith('video/');if(!isImg&&!isVid)continue;if(isVid&&f.size>MEDIA_LIMITS.maxVideoSize){alert('Видео больше 100 МБ. Сожмите его перед отправкой.');continue;}if(isImg&&f.size>MEDIA_LIMITS.maxImageSize){const shouldCompress=confirm('Фото больше 10 МБ. Сжать перед отправкой?');if(!shouldCompress)continue;const compressed=await compressImageFile(f);if(!compressed)continue;f=compressed;}if(total+f.size>MEDIA_LIMITS.maxTotalSize)break;const objectUrl=URL.createObjectURL(f);let thumb;let meta={width:null,height:null,durationSeconds:null};if(isImg){const t=await createImageThumbBlob(f);thumb=t.thumbnailBlob;meta=t;}else{const t=await createVideoThumbBlob(f).catch(()=>null);if(t){thumb=t.thumbnailBlob;meta=t;}else{thumb=new Blob([],{type:'image/webp'});}}const thumbUrl=thumb.size?URL.createObjectURL(thumb):objectUrl;items.push({id:crypto.randomUUID(),file:f,kind:isVid?'video':'image',objectUrl,thumbnailBlob:thumb,thumbnailObjectUrl:thumbUrl,width:meta.width,height:meta.height,durationSeconds:meta.durationSeconds,uploadedMedia:null,uploadError:null});total+=f.size;}
-if(!isRoomViewCurrent170(view)){for(const item of items){URL.revokeObjectURL(item.objectUrl);URL.revokeObjectURL(item.thumbnailObjectUrl);}return;}if(!items.length)return;const preview={roomId:view.roomId,items,caption:'',sending:false,failedIndex:null};return FPMediaManager177.open(preview,(next)=>{mediaPreviewState=next;renderMediaPreviewModal();});}
-function closeMediaPreviewModalWorker177(preview){if(!preview||mediaPreviewState!==preview)return false;preview.items.forEach((i)=>{try{URL.revokeObjectURL(i.objectUrl);}catch{}try{URL.revokeObjectURL(i.thumbnailObjectUrl);}catch{}});mediaPreviewState=null;const root=document.getElementById('mediaPreviewRoot');if(root)root.innerHTML='';return true;}
+async function openMediaPreviewFromFiles(rawFiles){const view=captureRoomView170();let files=[...rawFiles];if(files.length>MEDIA_LIMITS.maxFiles){alert('Можно отправить максимум 10 файлов за раз.');files=files.slice(0,MEDIA_LIMITS.maxFiles);}const items=[];let total=0;for(const originalFile of files){let f=originalFile;const type=f.type||'';const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');const isVid=ALLOWED_VIDEO_TYPES.has(type)||type.startsWith('video/');if(!isImg&&!isVid)continue;if(isVid&&f.size>MEDIA_LIMITS.maxVideoSize){alert('Видео больше 100 МБ. Сожмите его перед отправкой.');continue;}if(isImg&&f.size>MEDIA_LIMITS.maxImageSize){const shouldCompress=confirm('Фото больше 10 МБ. Сжать перед отправкой?');if(!shouldCompress)continue;const compressed=await compressImageFile(f);if(!compressed)continue;f=compressed;}if(total+f.size>MEDIA_LIMITS.maxTotalSize)break;const objectUrl=URL.createObjectURL(f);let thumb;let meta={width:null,height:null,durationSeconds:null};if(isImg){const t=await createImageThumbBlob(f);thumb=t.thumbnailBlob;meta=t;}else{const t=await createVideoThumbBlob(f).catch(()=>null);if(t){thumb=t.thumbnailBlob;meta=t;}else{thumb=new Blob([],{type:'image/webp'});}}const thumbUrl=thumb.size?URL.createObjectURL(thumb):objectUrl;const item={id:crypto.randomUUID(),file:f,kind:isVid?'video':'image',objectUrl,thumbnailBlob:thumb,thumbnailObjectUrl:thumbUrl,width:meta.width,height:meta.height,durationSeconds:meta.durationSeconds,uploadedMedia:null,uploadError:null};FPMediaManager177.ownPreviewThumbnailObjectUrl(item);items.push(item);total+=f.size;}
+if(!isRoomViewCurrent170(view)){for(const item of items){URL.revokeObjectURL(item.objectUrl);if(item.thumbnailObjectUrl===item.objectUrl)URL.revokeObjectURL(item.thumbnailObjectUrl);else FPMediaManager177.releasePreviewThumbnailObjectUrl(item);}return;}if(!items.length)return;const preview={roomId:view.roomId,items,caption:'',sending:false,failedIndex:null};return FPMediaManager177.open(preview,(next)=>{mediaPreviewState=next;renderMediaPreviewModal();});}
+function closeMediaPreviewModalWorker177(preview){if(!preview||mediaPreviewState!==preview)return false;preview.items.forEach((i)=>{try{URL.revokeObjectURL(i.objectUrl);}catch{}if(i.thumbnailObjectUrl===i.objectUrl){try{URL.revokeObjectURL(i.thumbnailObjectUrl);}catch{}}});mediaPreviewState=null;const root=document.getElementById('mediaPreviewRoot');if(root)root.innerHTML='';return true;}
 function closeMediaPreviewModal(preview=mediaPreviewState){return FPMediaManager177.close(preview,closeMediaPreviewModalWorker177);}
 function renderMediaPreviewModal(){const root=document.getElementById('mediaPreviewRoot');if(!root||!mediaPreviewState)return;const items=mediaPreviewState.items;const gridClass=items.length===1?'one':(items.length<=4?'few':'many');root.innerHTML=`<div class="media-preview-overlay"><div class="media-preview-sheet"><div class="media-preview-header"><button class="media-preview-remove" type="button">×</button><div class="media-preview-count">${items.length>1?`✓ ${items.length}`:''}</div><strong>Выбрано ${items.length}</strong></div><div class="media-preview-grid ${gridClass}">${items.map((item,idx)=>`<div class="media-preview-item" data-idx="${idx}"><img src="${item.thumbnailObjectUrl||item.objectUrl}"><span class="media-preview-order">${idx+1}</span><button class="media-preview-remove media-item-remove" type="button" data-remove="${idx}">×</button>${item.kind==='video'?'<span class="media-video-play">▶</span>':''}</div>`).join('')}</div><div class="media-preview-footer"><textarea class="media-caption-input" placeholder="Добавить подпись...">${safeText(mediaPreviewState.caption||'')}</textarea><button class="media-send-btn" type="button">➤</button><div class="media-upload-progress"></div></div></div></div>`;
 const preview=mediaPreviewState;
@@ -1853,8 +1870,9 @@ root.querySelector('.media-preview-header .media-preview-remove').onclick=cancel
 root.querySelectorAll('[data-remove]').forEach(btn=>{btn.disabled=preview.sending;btn.onclick=async()=>{
   if(preview.sending||mediaPreviewState!==preview)return;
   const [item]=preview.items.splice(Number(btn.dataset.remove),1);
-  if(item){URL.revokeObjectURL(item.objectUrl);URL.revokeObjectURL(item.thumbnailObjectUrl);void deleteUploadedPendingMedia([item],preview.roomId);}
+  if(item){URL.revokeObjectURL(item.objectUrl);if(item.thumbnailObjectUrl===item.objectUrl)URL.revokeObjectURL(item.thumbnailObjectUrl);}
   if(!preview.items.length)closeMediaPreviewModal(preview);else renderMediaPreviewModal();
+  if(item){FPMediaManager177.releasePreviewThumbnailObjectUrl(item);void deleteUploadedPendingMedia([item],preview.roomId);}
 };});
 root.querySelector('.media-caption-input').oninput=e=>{preview.caption=e.target.value;};
 root.querySelector('.media-send-btn').onclick=()=>sendMediaFromPreview(root);
