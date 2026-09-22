@@ -1138,7 +1138,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     if(!autoScroll)pendingIncomingReadIds.push(Number(m.id));
     observeUnreadMessage(w);
   }
-  if(autoScroll){if(mine&&isCurrentMessagesBox(box))dismissUnreadDivider(box);scrollCoordinator.requestBottom(box);window.FPHistory174?.trim('newer');}
+  if(autoScroll){scrollCoordinator.requestBottom(box);window.FPHistory174?.trim('newer');}
   return w;
 }
 function canonicalizeIncomingMessageForMount178(roomId,message,text){
