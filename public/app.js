@@ -113,7 +113,7 @@ function makeReplyPreview(text){const safe=String(text||'').replace(/\s+/g,' ').
 function ensureDraftState(roomId){if(!state.drafts[roomId])state.drafts[roomId]={text:'',replyTo:null,loaded:false,saveTimer:null};return state.drafts[roomId];}
 function setSelectedReply(roomId,replyTo){if(!roomId)return;const draft=ensureDraftState(roomId);draft.replyTo=replyTo;markReplyTargetRead(replyTo?.messageId);updateReplyComposerBar();void saveDraftNow(roomId);document.getElementById('msgInput')?.focus();}
 function clearSelectedReply(roomId){if(!roomId)return;const draft=ensureDraftState(roomId);draft.replyTo=null;updateReplyComposerBar();void saveDraftNow(roomId);}
-function updateReplyComposerBar(){const bar=document.getElementById('replyComposerBar');if(!bar||!state.roomId)return;const draft=ensureDraftState(state.roomId);let reply=draft.replyTo;if(!reply){bar.classList.add('hidden');bar.innerHTML='';return;}if(reply?.messageId){const canonical=getMessageReplyMeta(reply.messageId);if(canonical){draft.replyTo=canonical;reply=canonical;}}bar.classList.remove('hidden');bar.innerHTML=`<div class="reply-composer-content"><div class="reply-composer-author"></div><div class="reply-composer-preview"></div></div><button class="reply-composer-close" type="button" aria-label="Отменить ответ">×</button>`;bar.querySelector('.reply-composer-author').textContent=reply.author||'Неизвестно';bar.querySelector('.reply-composer-preview').textContent=reply.preview||'Сообщение недоступно';bar.querySelector('.reply-composer-close').onclick=()=>clearSelectedReply(state.roomId);}
+function updateReplyComposerBar(){const bar=document.getElementById('replyComposerBar');if(!bar||!state.roomId)return;const draft=ensureDraftState(state.roomId);let reply=draft.replyTo;if(reply?.messageId){const canonical=getMessageReplyMeta(reply.messageId);if(canonical){draft.replyTo=canonical;reply=canonical;}}window.FPComposer177?.syncReplyMode?.({bar,reply,onCancel:()=>clearSelectedReply(state.roomId)});}
 function scheduleDraftSave(roomId){if(!roomId)return;const draft=ensureDraftState(roomId);clearTimeout(draft.saveTimer);draft.saveTimer=setTimeout(()=>{void saveDraftNow(roomId);},DRAFT_SAVE_DEBOUNCE_MS);}
 async function saveDraftNow(roomId){if(!roomId)return;const draft=ensureDraftState(roomId);clearTimeout(draft.saveTimer);draft.saveTimer=null;const persisted=STORAGE.get(STORAGE.roomState(roomId));if(!persisted?.deviceId)return;const text=draft.text||'';const replyToMessageId=draft.replyTo?.messageId||null;if(!text.trim()&&!replyToMessageId){await clearDraftOnServer(roomId);renderChats();return;}const body={deviceId:persisted.deviceId,replyToMessageId};if(text.trim()){const key=await getRoomKey(roomId,persisted.secret);if(!key)return;const enc=await encryptText(text,key);body.ciphertext=enc.ciphertext;body.iv=enc.iv;}else{body.ciphertext=null;body.iv=null;}await fetch(`/api/rooms/${roomId}/draft`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).catch(()=>{});renderChats();}
 async function clearDraftOnServer(roomId){if(!roomId)return;const persisted=STORAGE.get(STORAGE.roomState(roomId));if(!persisted?.deviceId)return;const draft=ensureDraftState(roomId);clearTimeout(draft.saveTimer);draft.saveTimer=null;draft.text='';draft.replyTo=null;await fetch(`/api/rooms/${roomId}/draft`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId})}).catch(()=>{});renderChats();}
@@ -809,6 +809,21 @@ const FPComposer177=Object.freeze({
     const draft=ensureDraftState(roomId);
     draft.text=input.value;
     scheduleDraftSave(roomId);
+    return true;
+  },
+  syncReplyMode({bar=document.getElementById('replyComposerBar'),reply=null,onCancel=null}={}){
+    if(!bar)return false;
+    if(!reply){
+      bar.classList.add('hidden');
+      bar.innerHTML='';
+      return true;
+    }
+    bar.classList.remove('hidden');
+    bar.innerHTML=`<div class="reply-composer-content"><div class="reply-composer-author"></div><div class="reply-composer-preview"></div></div><button class="reply-composer-close" type="button" aria-label="Отменить ответ">×</button>`;
+    bar.querySelector('.reply-composer-author').textContent=reply.author||'Неизвестно';
+    bar.querySelector('.reply-composer-preview').textContent=reply.preview||'Сообщение недоступно';
+    const close=bar.querySelector('.reply-composer-close');
+    if(close)close.onclick=typeof onCancel==='function'?onCancel:null;
     return true;
   },
   applyRestoredDraft({input,draft,text='',replyTo=null}={}){

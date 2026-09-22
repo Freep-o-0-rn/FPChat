@@ -34,7 +34,8 @@
     "test:177:composer-sync": "node ./scripts/regression177-composer-sync.cjs",
     "test:177:composer-bind": "node ./scripts/regression177-composer-bind.cjs",
     "test:177:composer-draft-restore": "node ./scripts/regression177-composer-draft-restore.cjs",
-    "test:177:composer-draft-save": "node ./scripts/regression177-composer-draft-save.cjs"
+    "test:177:composer-draft-save": "node ./scripts/regression177-composer-draft-save.cjs",
+    "test:177:composer-reply": "node ./scripts/regression177-composer-reply.cjs"
   },
   "license": "MIT",
   "dependencies": {
