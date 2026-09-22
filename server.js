@@ -566,12 +566,9 @@ app.post('/api/invites/:inviteCode/join', async (req, res) => {
   console.log(`[ROOM] invite accepted room=${room.public_id}`);
   console.log(`[ROOM] participant joined room=${room.public_id} participant=${participantId}`);
   const participant = q.findParticipant.get(room.id, safeDeviceId);
-  const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
-    deviceId: item.device_id,
-    displayName: item.display_name,
-    online: Boolean(item.online),
-    lastSeenAt: toIsoUtc(item.last_seen_at)
-  }));
+  const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
+    fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
+  );
   const history = getMessageHistoryPage(room.id);
   const systemEvents = history.messages.filter((message) => message.type === 'system');
   const responseHistory = { ...history, messages: history.messages.filter((message) => message.type !== 'system') };
@@ -620,12 +617,9 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   if (!participant) return res.status(403).json({ error: 'forbidden', code: 'ACCESS_REVOKED' });
   q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId);
   const updated = q.findParticipant.get(room.id, safeDeviceId);
-  const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
-    deviceId: item.device_id,
-    displayName: item.display_name,
-    online: Boolean(item.online),
-    lastSeenAt: toIsoUtc(item.last_seen_at)
-  }));
+  const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
+    fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
+  );
   const history = getMessageHistoryPage(room.id);
   const unread = getUnreadState(room.id, updated.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));

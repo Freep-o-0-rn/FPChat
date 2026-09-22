@@ -24,14 +24,6 @@ Module._extensions['.js'] = function fpchatBuild165Loader(module, filename) {
     source = source.split(marker).join(replacement);
   }
 
-  const participantMap = `const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({\n    deviceId: item.device_id,\n    displayName: item.display_name,\n    online: Boolean(item.online),\n    lastSeenAt: toIsoUtc(item.last_seen_at)\n  }));`;
-  replaceAllChecked(
-    participantMap,
-    `const participants = q.listParticipantsByRoom.all(room.id).map((item) =>\n    fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)\n  );`,
-    2,
-    'participant presence response'
-  );
-
   replaceOnce(
     `function broadcastPresenceUpdate(roomPublicId, payload) {\n  sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload });\n}`,
     `function broadcastPresenceUpdate(roomPublicId, payload) {\n  const room = q.findRoomByPublicId.get(roomPublicId);\n  if (!room || !payload?.deviceId) return;\n  const event = { type: 'presence:update', roomId: roomPublicId, ...payload };\n  for (const participant of q.listParticipantsByRoom.all(room.id)) {\n    if (!fpUserBlocks165.canViewerSeePresence(participant.device_id, payload.deviceId)) continue;\n    const sockets = socketsByDevice.get(participant.device_id);\n    if (!sockets) continue;\n    for (const client of sockets) sendWsJson(client, event);\n  }\n}`,
