@@ -14,7 +14,8 @@ const app=read('public/app.js');
 const typing=read('public/typing.js');
 const doc=read('docs/Build177_SendEntryPoints.md');
 
-assert(textSend.includes("form.onsubmit = submit;"),'text active submit entry changed');
+assert(textSend.includes("form.onsubmit = dispatchSubmit;"),'text assigned submit entry must be the 177.18 dispatcher wrapper');
+assert(textSend.includes("return manager.dispatch(() => submit(event));"),'text dispatcher must invoke the existing submit executor');
 assert(textSend.includes("const sendingForms = new WeakSet();"),'text duplicate guard changed');
 assert(textSend.includes("contexts.beginOperation(roomId, 'text-send')"),'text operation context changed');
 assert(textSend.includes("const clientMessageId = crypto.randomUUID();"),'text clientMessageId generation changed');
@@ -64,8 +65,10 @@ assert(voice.includes("stopLocalActivity('audio');"),'voice send activity stop c
 assert(app.includes("accept='image/*,video/*'"),'current media input scope changed');
 assert(app.includes("if(!isImg&&!isVid)continue"),'current image/video media filter changed');
 
+for(const [name,source] of Object.entries({mediaSend,voice,app,typing})){
+  assert(!source.includes('FPSendManager177'),name+' unexpectedly transferred to SendManager before its dedicated step');
+}
 for(const [name,source] of Object.entries({textSend,mediaSend,voice,app,typing})){
-  assert(!source.includes('FPSendManager177'),name+' unexpectedly contains SendManager before 177.17');
   assert(!source.includes('pendingSends'),name+' unexpectedly contains a common pendingSends store');
   assert(!source.includes('sendQueue'),name+' unexpectedly contains a common sendQueue');
 }

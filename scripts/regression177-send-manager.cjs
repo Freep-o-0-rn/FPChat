@@ -55,13 +55,15 @@ assert(roomLoader.includes('script.onload = loadSendManager177;'),
 assert(index.includes("'send-manager177.js':['room-open170.js']"),'startup dependency for SendManager missing');
 assert(index.includes("'text-send170.js':['send-manager177.js']"),'text owner dependency on SendManager missing');
 
-for(const [name,source] of Object.entries({textSend,mediaSend,voice})){
+assert(textSend.includes("return manager.dispatch(() => submit(event));"),
+  '177.18 text entry must use the existing dispatcher');
+for(const [name,source] of Object.entries({mediaSend,voice})){
   assert(!source.includes('FPSendManager177'),name+' must not transfer to dispatcher before its dedicated step');
 }
 
 console.log('PASS FPSendManager177 is a stateless one-executor dispatcher');
 console.log('PASS dispatcher owns no listener, queue, pending store, retry, transport, operation or activity');
-console.log('PASS dispatcher loads before FPTextSend170 without transferring text/media/voice entry points');
+console.log('PASS dispatcher loads before FPTextSend170; only the dedicated text entry is transferred');
 
 run(async({browser,origin,errors})=>{
   const page=await browser.newPage({viewport:{width:390,height:844}});

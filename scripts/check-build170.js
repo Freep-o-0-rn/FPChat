@@ -52,7 +52,8 @@ assert(sources['public/room-open170.js'].includes("source: 'adopted'"), 'room-op
 assert(sources['public/room-context170.js'].includes('/text-send170.js'), 'room-context170 must load the guarded text-send owner');
 assert(sources['public/text-send170.js'].includes("beginOperation(roomId, 'text-send')"), 'text-send170 must use an independent operation context');
 assert(sources['public/text-send170.js'].includes('encryptForKey(context.key, text)'), 'text-send170 must encrypt with the captured room key');
-assert(sources['public/text-send170.js'].includes('form.onsubmit = submit'), 'text-send170 must become the assigned text-submit owner');
+assert(sources['public/text-send170.js'].includes('form.onsubmit = dispatchSubmit'), 'text-send170 must remain the assigned text-submit owner through the 177 dispatcher');
+assert(sources['public/text-send170.js'].includes('manager.dispatch(() => submit(event))'), 'text-send170 existing executor must be dispatched exactly once');
 assert(sources['public/text-send170.js'].includes('/media-send170.js'), 'text-send170 must chain the guarded media owner');
 assert(/beginOperation\(context\.roomId,\s*'media-send'\)/.test(sources['public/media-send170.js']), 'media-send170 must use an independent operation context');
 assert(sources['public/media-send170.js'].includes('encryptBlobForKey(context.key'), 'media-send170 must encrypt blobs with the captured room key');

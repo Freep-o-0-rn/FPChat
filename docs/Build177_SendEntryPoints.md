@@ -76,3 +76,13 @@ Activity is deliberately not centralized:
 The dispatcher owns no DOM listener, submit binding, queue, pending collection, operation context, transport, retry state, clientMessageId, media uploadId, voice state, or activity lifecycle.
 
 At 177.17 none of the text/media/voice entry points call the dispatcher yet. The startup chain only guarantees that `FPSendManager177` is available before `FPTextSend170` is installed. Ownership transfer begins separately in 177.18.
+
+## Build 177.18 text entry transfer
+
+The single assigned text form entry is now:
+
+`#sendForm.onsubmit -> FPTextSend170.dispatchSubmit(event) -> FPSendManager177.dispatch(() => submit(event))`.
+
+`submit(event)` remains the existing `FPTextSend170` executor. Its `sendingForms` duplicate guard, captured RoomContext, encryption, one generated `clientMessageId`, optimistic message, `queuePendingTextSend`, reconnect resend, ACK/status handling and draft cleanup are unchanged.
+
+There is no fallback call to `submit(event)` if `FPSendManager177` is unavailable or refuses the executor. Media and voice do not use SendManager at this step.

@@ -140,11 +140,17 @@
     }
   }
 
+  function dispatchSubmit(event) {
+    const manager = window.FPSendManager177;
+    if (!manager?.dispatch) return false;
+    return manager.dispatch(() => submit(event));
+  }
+
   function bindCurrentForm() {
     const form = document.getElementById('sendForm');
     const context = contexts.current();
     if (!form || !context || !contexts.isCurrent(context)) return false;
-    if (boundForms.get(form) === context && form.onsubmit === submit) return true;
+    if (boundForms.get(form) === context && form.onsubmit === dispatchSubmit) return true;
 
     // Keep the previous handler only for diagnostics/rollback inspection. It is
     // no longer independently assigned to the form after ownership transfer.
@@ -157,7 +163,7 @@
 
     boundForms.set(form, context);
     form.dataset.fpTextSend170 = String(context.generation);
-    form.onsubmit = submit;
+    form.onsubmit = dispatchSubmit;
     return true;
   }
 
@@ -178,7 +184,8 @@
     window.FPRuntime?.registerOwner?.('text-send170', {
       role: 'text-submit',
       mode: 'active-owner',
-      retryOwner: 'pendingTextSends/app.js'
+      retryOwner: 'pendingTextSends/app.js',
+      dispatcher: 'FPSendManager177'
     });
   } catch {}
 
