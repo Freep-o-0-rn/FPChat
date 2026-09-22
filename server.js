@@ -13,6 +13,7 @@ const { installMessagePinsServer } = require('./src/message-pins-server');
 const { installTypingServer } = require('./src/typing-server');
 const { installUsernameServer } = require('./src/username-server');
 const { installSystemEventsServer } = require('./src/system-events-server');
+const { installStorageStats168 } = require('./src/storage-stats168');
 
 dotenv.config();
 
@@ -1266,6 +1267,10 @@ installUsernameServer({
   db
 });
 installSystemEventsServer({
+  app,
+  db
+});
+installStorageStats168({
   app,
   db
 });
