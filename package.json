@@ -49,7 +49,8 @@
     "test:177:media-thumbnail-lifetime": "node ./scripts/regression177-media-thumbnail-lifetime.cjs",
     "test:177:voice-recording-guard": "node ./scripts/regression177-voice-recording-guard.cjs",
     "test:177:voice-ui-lifecycle": "npm run test:177:voice-recording-guard && node ./scripts/regression177-voice-ui-lifecycle.cjs",
-    "test:177:media-viewer-lifecycle": "node ./scripts/regression177-media-viewer-lifecycle.cjs"
+    "test:177:media-viewer-lifecycle": "node ./scripts/regression177-media-viewer-lifecycle.cjs",
+    "test:177:media-prefetch-release": "node ./scripts/regression177-media-prefetch-release.cjs"
   },
   "license": "MIT",
   "dependencies": {

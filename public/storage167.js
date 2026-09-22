@@ -308,12 +308,28 @@
     pumpPrefetch();
   }
 
+  async function drainPrefetchResponse(response) {
+    if (!response?.body || response.bodyUsed) return;
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+      }
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  }
+
   function pumpPrefetch() {
     while (activePrefetch < PREFETCH_CONCURRENCY && prefetchQueue.length) {
       const url = prefetchQueue.shift();
       activePrefetch += 1;
       Promise.resolve()
-        .then(() => window.fetch(url))
+        .then(async () => {
+          const response = await window.fetch(url);
+          await drainPrefetchResponse(response);
+        })
         .catch(() => null)
         .finally(() => {
           activePrefetch = Math.max(0, activePrefetch - 1);
