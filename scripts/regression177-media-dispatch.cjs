@@ -132,8 +132,8 @@ run(async({browser,origin,errors})=>{
         uploadError:null
       };
     });
-    mediaPreviewState={roomId:state.roomId,items,caption:'',sending:false,failedIndex:null};
-    renderMediaPreviewModal();
+    const preview={roomId:state.roomId,items,caption:'',sending:false,failedIndex:null};
+    window.FPMediaManager177.open(preview,next=>{mediaPreviewState=next;renderMediaPreviewModal();});
     return mediaPreviewState.items.length;
   },kinds);
 
