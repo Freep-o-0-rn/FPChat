@@ -1,1 +1,38 @@
-# Build 178.16 — audit одного overlay claim: обход не найден\n\nBase: Build 178.15 on build/178-development.\n\nПравило шага: ручной claim добавляется только при доказанном обходе текущего FPLayer173/FPDOM173.\n\n## Результат\n\nПосле аудита реального overlay-bypass не найдено. Поэтому runtime в 178.16 не меняется и новый `FPLayer173.claim()` не добавляется.\n\n## Уже покрытые overlay\n\nЯвные modal selectors:\n\n- `.media-preview-overlay`;\n- `.fp-pins114-screen`;\n- `.fp-pins114-action-overlay`;\n- `.fp-pins114-delete-overlay`;\n- `.message-delete-overlay`;\n- `.message-selection-delete-overlay`;\n- `.destructive-modal-overlay`;\n- `.message-pin-overlay`.\n\nОтдельные верхние слои:\n\n- `.media-viewer-overlay` → `viewer`;\n- `.message-context-root` → `context`.\n\n## Wrapper overlays с вложенным dialog\n\n`fp-profile144-overlay` и `fp-system145-overlay` не перечислены как отдельные modal selectors, но это не обход.\n\nИх существующие feature controllers создают внутри wrapper элемент с `aria-modal="true"`.\n\n`FPDOM173.collect(root, selector)` проверяет:\n\n1. сам добавленный root через `root.matches(selector)`;\n2. все его descendants через `root.querySelectorAll(selector)`.\n\nПоэтому при добавлении wrapper в DOM вложенный `[aria-modal="true"]` сразу генерирует `modal:mounted`; при удалении того же wrapper — `modal:unmounted`. `FPLayer173` получает/освобождает существующий `dom:modal` claim без ручной интеграции feature-кода.\n\n## Граница владельцев\n\nFeature controller по-прежнему:\n\n- создаёт overlay;\n- назначает свои handlers;\n- закрывает/удаляет overlay.\n\n`FPDOM173` только сообщает mount/unmount.\n\n`FPLayer173` только отражает claim/top-layer.\n\n`FPGesture135` только запрещает нижнему recognizer/navigation действовать, когда сверху `context/modal/viewer/selection/voice`.\n\n## Что не сделано\n\n- не добавлен manual `FPLayer173.claim()`;\n- не добавлен `setClaim()` в overlay controllers;\n- не создан второй layer stack;\n- не перенесены open/close handlers в арбитр;\n- lifecycle release конкретного overlay остаётся отдельной проверкой 178.17.\n\nRegression: `npm run test:178:overlay-claim`.\n
+# Build 178.16 — audit одного overlay claim: обход не найден
+
+Base: Build 178.15 on `build/178-development`.
+
+Правило шага: ручной claim добавляется только при доказанном обходе текущего `FPLayer173/FPDOM173`.
+
+## Результат
+
+После аудита реального overlay-bypass не найдено. Поэтому runtime в 178.16 не меняется и новый `FPLayer173.claim()` не добавляется.
+
+## Уже покрытые overlay
+
+Явные modal selectors:
+
+- `.media-preview-overlay`;
+- `.fp-pins114-screen`;
+- `.fp-pins114-action-overlay`;
+- `.fp-pins114-delete-overlay`;
+- `.message-delete-overlay`;
+- `.message-selection-delete-overlay`;
+- `.destructive-modal-overlay`;
+- `.message-pin-overlay`.
+
+Отдельные верхние слои: `.media-viewer-overlay → viewer` и `.message-context-root → context`.
+
+## Wrapper overlays с вложенным dialog
+
+`fp-profile144-overlay` и `fp-system145-overlay` не перечислены отдельными modal selectors, но обходом не являются: внутри них существующие feature controllers создают элемент с `aria-modal="true"`.
+
+`FPDOM173.collect(root, selector)` проверяет и сам добавленный root через `root.matches(selector)`, и descendants через `root.querySelectorAll(selector)`. Поэтому вложенный `[aria-modal="true"]` на том же mount/unmount цикле создаёт и освобождает существующий `dom:modal` claim.
+
+## Граница владельцев
+
+Feature controller создаёт overlay, назначает handlers и удаляет overlay. `FPDOM173` сообщает mount/unmount. `FPLayer173` отражает claim/top-layer. `FPGesture135` запрещает нижнему recognizer/navigation действовать под верхним слоем.
+
+В 178.16 не добавлены manual `claim/setClaim`, второй layer stack или новые open/close handlers. Lifecycle release конкретного overlay остаётся отдельным шагом 178.17.
+
+Regression: `npm run test:178:overlay-claim`.

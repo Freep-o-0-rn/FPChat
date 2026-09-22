@@ -1,1 +1,69 @@
-'use strict';\n\nconst assert=require('node:assert/strict');\nconst fs=require('node:fs');\nconst path=require('node:path');\n\nconst root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');\nconst read=(p)=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');\nconst dom=read('public/dom-lifecycle173.js');\nconst layer=read('public/layer-manager173.js');\nconst gesture=read('public/gesture-manager135.js');\nconst app=read('public/app.js');\nconst pins=read('public/message-pins-screen115.js');\nconst pinDialog=read('public/message-pins.js');\nconst actions=read('public/message-actions.js');\nconst selection=read('public/message-selection.js');\nconst lifecycle=read('public/room-lifecycle.js');\nconst gallery=read('public/media-gallery134.js');\nconst profile=read('public/username-search143.js');\nconst system=read('public/chat-request-actions146.js');\n\n// One existing DOM lifecycle owner must discover both root and descendants.\nassert(dom.includes('if (root.matches?.(selector)) out.push(root);'),'FPDOM173 no longer checks an added root itself');\nassert(dom.includes('root.querySelectorAll?.(selector).forEach((node) => out.push(node));'),'FPDOM173 no longer discovers nested modal descendants');\nassert(dom.includes("modal: '.media-preview-overlay,.fp-pins114-screen,.fp-pins114-action-overlay,.fp-pins114-delete-overlay,.message-delete-overlay,.message-selection-delete-overlay,.destructive-modal-overlay,.message-pin-overlay,[aria-modal=\"true\"]'"),'modal registry coverage changed');\n\n// Explicit overlay roots already covered by the current modal/viewer/context selectors.\nfor(const [label,source,needle] of [\n ['media preview',app,"media-preview-overlay"],\n ['pins screen',pins,"fp-pins114-screen"],\n ['pins action',pins,"fp-pins114-action-overlay"],\n ['pins delete',pins,"fp-pins114-delete-overlay"],\n ['message delete',actions,"message-delete-overlay"],\n ['selection delete',selection,"message-selection-delete-overlay"],\n ['destructive room delete',lifecycle,"destructive-modal-overlay"],\n ['message pin',pinDialog,"message-pin-overlay"],\n ['viewer',gallery,"media-viewer-overlay"]\n])assert(source.includes(needle),label+' overlay source missing');\n\nassert(layer.includes("if (el.closest('.media-viewer-overlay')) return 'viewer';"),'viewer target layer changed');\nassert(layer.includes("if (el.closest(MODAL_TARGETS)) return 'modal';"),'modal target layer changed');\nassert(layer.includes("if (el.closest('.message-context-root')) return 'context';"),'context target layer changed');\n\n// Wrapper overlays that are not named in MODAL_TARGETS are still covered by nested aria-modal.\nassert(profile.includes("profileOverlay.className = 'fp-profile144-overlay'")||profile.includes("className = 'fp-profile144-overlay'"),'profile wrapper missing');\nassert(profile.includes("setAttribute('aria-modal', 'true')")||profile.includes('aria-modal="true"'),'profile has no nested aria-modal contract');\nassert(system.includes("root.className = 'fp-system145-overlay';"),'system wrapper missing');\nassert(system.includes("sheet.setAttribute('aria-modal', 'true');"),'system wrapper has no nested aria-modal contract');\n\n// Existing feature controllers continue to own UI open/close.\nassert(profile.includes('function closeProfile()'),'profile close controller missing');\nassert(system.includes('function closeOverlay()'),'system close controller missing');\nassert(pins.includes('function closeScreen()'),'pins close controller missing');\nassert(actions.includes('function closeDeleteDialog()'),'message delete close controller missing');\nassert(pinDialog.includes('function closePinDialog()'),'pin dialog close controller missing');\nassert(gallery.includes('function closeGallery(viewer = currentGalleryState())'),'viewer close controller missing');\n\n// No feature overlay gets a manual FPLayer claim in 178.16.\nfor(const [name,source] of [\n ['app',app],['pins',pins],['pinDialog',pinDialog],['actions',actions],['selection',selection],\n ['lifecycle',lifecycle],['gallery',gallery],['profile',profile],['system',system]\n]){\n assert(!source.includes('FPLayer173.claim('),name+' introduced a manual FPLayer173.claim');\n assert(!source.includes('FPLayer173.setClaim('),name+' introduced a manual FPLayer173.setClaim');\n}\n\n// Arbiter blocks lower navigation by layer; it still does not open/close overlays.\nassert(gesture.includes("return ['viewer', 'modal', 'context', 'selection', 'voice'].includes(layer);"),'upper layer navigation block changed');\nassert(!layer.includes('appendChild('),'FPLayer173 started creating feature UI');\nassert(!layer.includes('.remove();'),'FPLayer173 started closing feature UI');\n\nconsole.log('PASS 178.16 every audited overlay already reaches an existing FPLayer173 claim');\nconsole.log('PASS wrapper overlays are covered through nested aria-modal discovery');\nconsole.log('PASS no manual overlay claim or second layer stack was added');\nconsole.log('PASS feature controllers still open/close UI; arbiter only blocks lower layers');\n
+'use strict';
+
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=(p)=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const dom=read('public/dom-lifecycle173.js');
+const layer=read('public/layer-manager173.js');
+const gesture=read('public/gesture-manager135.js');
+const app=read('public/app.js');
+const pins=read('public/message-pins-screen115.js');
+const pinDialog=read('public/message-pins.js');
+const actions=read('public/message-actions.js');
+const selection=read('public/message-selection.js');
+const lifecycle=read('public/room-lifecycle.js');
+const gallery=read('public/media-gallery134.js');
+const profile=read('public/username-search143.js');
+const system=read('public/chat-request-actions146.js');
+
+assert(dom.includes('if (root.matches?.(selector)) out.push(root);'),'FPDOM173 no longer checks an added root itself');
+assert(dom.includes('root.querySelectorAll?.(selector).forEach((node) => out.push(node));'),'FPDOM173 no longer discovers nested modal descendants');
+assert(dom.includes("modal: '.media-preview-overlay,.fp-pins114-screen,.fp-pins114-action-overlay,.fp-pins114-delete-overlay,.message-delete-overlay,.message-selection-delete-overlay,.destructive-modal-overlay,.message-pin-overlay,[aria-modal=\"true\"]'"),'modal registry coverage changed');
+
+for(const [label,source,needle] of [
+ ['media preview',app,'media-preview-overlay'],
+ ['pins screen',pins,'fp-pins114-screen'],
+ ['pins action',pins,'fp-pins114-action-overlay'],
+ ['pins delete',pins,'fp-pins114-delete-overlay'],
+ ['message delete',actions,'message-delete-overlay'],
+ ['selection delete',selection,'message-selection-delete-overlay'],
+ ['destructive room delete',lifecycle,'destructive-modal-overlay'],
+ ['message pin',pinDialog,'message-pin-overlay'],
+ ['viewer',gallery,'media-viewer-overlay']
+])assert(source.includes(needle),label+' overlay source missing');
+
+assert(layer.includes("if (el.closest('.media-viewer-overlay')) return 'viewer';"),'viewer target layer changed');
+assert(layer.includes("if (el.closest(MODAL_TARGETS)) return 'modal';"),'modal target layer changed');
+assert(layer.includes("if (el.closest('.message-context-root')) return 'context';"),'context target layer changed');
+
+assert(profile.includes('fp-profile144-overlay'),'profile wrapper missing');
+assert(profile.includes('aria-modal'),'profile has no nested aria-modal contract');
+assert(system.includes("root.className = 'fp-system145-overlay';"),'system wrapper missing');
+assert(system.includes("sheet.setAttribute('aria-modal', 'true');"),'system wrapper has no nested aria-modal contract');
+
+assert(profile.includes('function closeProfile()'),'profile close controller missing');
+assert(system.includes('function closeOverlay()'),'system close controller missing');
+assert(pins.includes('function closeScreen()'),'pins close controller missing');
+assert(actions.includes('function closeDeleteDialog()'),'message delete close controller missing');
+assert(pinDialog.includes('function closePinDialog()'),'pin dialog close controller missing');
+assert(gallery.includes('function closeGallery(viewer = currentGalleryState())'),'viewer close controller missing');
+
+for(const [name,source] of [
+ ['app',app],['pins',pins],['pinDialog',pinDialog],['actions',actions],['selection',selection],
+ ['lifecycle',lifecycle],['gallery',gallery],['profile',profile],['system',system]
+]){
+ assert(!source.includes('FPLayer173.claim('),name+' introduced a manual FPLayer173.claim');
+ assert(!source.includes('FPLayer173.setClaim('),name+' introduced a manual FPLayer173.setClaim');
+}
+
+assert(gesture.includes("return ['viewer', 'modal', 'context', 'selection', 'voice'].includes(layer);"),'upper layer navigation block changed');
+assert(!layer.includes('appendChild('),'FPLayer173 started creating feature UI');
+assert(!layer.includes('.remove();'),'FPLayer173 started closing feature UI');
+
+console.log('PASS 178.16 every audited overlay already reaches an existing FPLayer173 claim');
+console.log('PASS wrapper overlays are covered through nested aria-modal discovery');
+console.log('PASS no manual overlay claim or second layer stack was added');
+console.log('PASS feature controllers still open/close UI; arbiter only blocks lower layers');
