@@ -31,9 +31,16 @@ try {
 
   Push-Location $live
   try {
+    $previousErrorActionPreference=$ErrorActionPreference
+    $ErrorActionPreference='Continue'
     & npm.cmd ci --omit=dev --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) { throw "fixture npm ci failed: $LASTEXITCODE" }
-  } finally { Pop-Location }
+    $npmExit=$LASTEXITCODE
+    $ErrorActionPreference=$previousErrorActionPreference
+    if ($npmExit -ne 0) { throw "fixture npm ci failed: $npmExit" }
+  } finally {
+    $ErrorActionPreference='Stop'
+    Pop-Location
+  }
   Set-Content -LiteralPath (Join-Path $live 'node_modules\.fpchat-1807-old-deps') -Value 'OLD_DEPS_1807' -NoNewline
 
   $oldServerHash=(Get-FileHash -Algorithm SHA256 (Join-Path $live 'server.js')).Hash
