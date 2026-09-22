@@ -244,9 +244,9 @@
         const res = await fetch('/version.json', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
-          const buildNumber = Number(data?.build);
-          if (Number.isFinite(buildNumber)) {
-            buildSuffix = `?v=${buildNumber}`;
+          const buildId = String(data?.build ?? '').trim();
+          if (/^\d+(?:\.\d+)*$/.test(buildId)) {
+            buildSuffix = `?v=${encodeURIComponent(buildId)}`;
           }
         }
       } catch {}

@@ -13,12 +13,12 @@ const updater=read('update.bat');
 const start=read('start_chat.bat');
 
 assert.equal(version.version,'1.0.0');
-assert.equal(version.build,178.28,'server/client version metadata is not Build 178.28');
-assert(settings.includes('const BUILD = 178.28;'),'settings fallback build is stale');
-assert(bridge.includes("const BUILD_LABEL = 'Build 178.28';"),'presentation bridge build label is stale');
-assert(bridge.includes("'?v=178.28'"),'presentation bridge fallback cache suffix is stale');
-assert(bridge.includes('/^Build\\s+\\d+(?:\\.\\d+)?$/i'),'build label matcher does not support dotted build numbers');
-assert(bridge.includes('/Build\\s+\\d+(?:\\.\\d+)?/i'),'about label matcher does not support dotted build numbers');
+assert.equal(version.build,'178.28.1','server/client version metadata is not Build 178.28.1');
+assert(settings.includes("const BUILD = '178.28.1';"),'settings fallback build is stale');
+assert(bridge.includes("const BUILD_LABEL = 'Build 178.28.1';"),'presentation bridge build label is stale');
+assert(bridge.includes("'?v=178.28.1'"),'presentation bridge fallback cache suffix is stale');
+assert(bridge.includes('/^Build\\s+\\d+(?:\\.\\d+)*$/i'),'build label matcher does not support multi-part dotted build numbers');
+assert(bridge.includes('/Build\\s+\\d+(?:\\.\\d+)*/i'),'about label matcher does not support multi-part dotted build numbers');
 
 assert(updater.includes('set "EXPECTED_BUILD=178.28"'),'updater expected build is stale');
 assert(updater.includes('Source build verified: %SOURCE_BUILD%'),'updater does not verify source version');
@@ -40,7 +40,7 @@ assert(updater.includes('if "%SERVER_WAS_RUNNING%"=="1" ('),'updater restart con
 assert(start.includes('if not exist node_modules ('),'launcher dependency fallback missing');
 assert(start.includes('call npm start'),'launcher no longer starts through package script');
 
-console.log('PASS Build 178.28 metadata is consistent across version/settings/presentation bridge');
+console.log('PASS Build 178.28.1 metadata is consistent across version/settings/presentation bridge');
 console.log('PASS updater rejects a wrong source build before stopping or changing the live server');
 console.log('PASS updater still stages npm ci and preserves data/.env with backup-before-apply');
 console.log('PASS existing launcher/restart behavior remains intact');

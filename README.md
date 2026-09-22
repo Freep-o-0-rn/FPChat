@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Build" src="https://img.shields.io/badge/development-Build%20178.28-7b2cff?style=flat-square">
+  <img alt="Build" src="https://img.shields.io/badge/development-Build%20178.28.1-7b2cff?style=flat-square">
   <img alt="Stable" src="https://img.shields.io/badge/main-Build%20168-2ea44f?style=flat-square">
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-22.x-339933?style=flat-square&logo=nodedotjs&logoColor=white">
   <img alt="PWA" src="https://img.shields.io/badge/PWA-ready-5A0FC8?style=flat-square">
@@ -41,7 +41,7 @@ FPChat активно развивается. Проект уже прошёл �
 
 > [!NOTE]
 > **Стабильная ветка `main` сейчас соответствует Build 168.**  
-> Актуальная ветка разработки — **`build/178-development`**, текущая контрольная сборка — **Build 178.28**. Серия 178 закрепляет владельцев store/history/render/read/layers/gestures/scroll/viewport без искусственной смены прежней функциональной механики. Физическая iOS/Android, push и реальный микрофон остаются отдельной ручной приёмкой.
+> Актуальная ветка разработки — **`build/178-development`**, текущая контрольная сборка — **Build 178.28.1**. Серия 178 закрепляет владельцев store/history/render/read/layers/gestures/scroll/viewport без искусственной смены прежней функциональной механики. Физическая iOS/Android, push и реальный микрофон остаются отдельной ручной приёмкой.
 
 ---
 

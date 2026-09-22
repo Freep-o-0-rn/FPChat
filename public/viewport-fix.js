@@ -208,6 +208,21 @@
     settleTimers = [];
   }
 
+  function syncViewportCorrectionNow() {
+    const nextCorrection = Math.min(
+      Math.max(0, Number(window.innerHeight) || 1200),
+      requestedViewportCorrection(),
+    );
+
+    if (Math.abs(nextCorrection - correctionY) > 0.5) {
+      correctionY = nextCorrection;
+      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
+    } else if (!app.style.getPropertyValue('--fpchat-viewport-correction-y')) {
+      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
+    }
+    return correctionY;
+  }
+
   function syncViewportNow() {
     rafId = 0;
     if (!chatIsOpen()) {
@@ -222,17 +237,7 @@
     app.classList.add(MANAGED_CLASS);
     app.style.setProperty('--fpchat-visible-height', `${Math.ceil(currentVisibleHeight())}px`);
 
-    const nextCorrection = Math.min(
-      Math.max(0, Number(window.innerHeight) || 1200),
-      requestedViewportCorrection(),
-    );
-
-    if (Math.abs(nextCorrection - correctionY) > 0.5) {
-      correctionY = nextCorrection;
-      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
-    } else if (!app.style.getPropertyValue('--fpchat-viewport-correction-y')) {
-      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
-    }
+    syncViewportCorrectionNow();
 
     keepBottomPinned();
   }
@@ -256,9 +261,17 @@
   installStyles();
   closedViewportHeight = rawVisualHeight();
 
+  function handleVisualViewportChange() {
+    // iOS may pan the visual viewport before the next animation frame while
+    // focusing the composer. Apply only the existing Y correction immediately
+    // so the fixed app/header does not flash at WebKit's transient pan offset.
+    if (composerIsFocused() && chatIsOpen()) syncViewportCorrectionNow();
+    requestViewportSync();
+  }
+
   const viewport = window.visualViewport;
-  viewport?.addEventListener('resize', requestViewportSync, { passive: true });
-  viewport?.addEventListener('scroll', requestViewportSync, { passive: true });
+  viewport?.addEventListener('resize', handleVisualViewportChange, { passive: true });
+  viewport?.addEventListener('scroll', handleVisualViewportChange, { passive: true });
   window.addEventListener('resize', settleViewport, { passive: true });
   window.addEventListener('orientationchange', () => {
     closedViewportHeight = 0;

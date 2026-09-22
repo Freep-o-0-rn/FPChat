@@ -1,18 +1,18 @@
-/* Build 178.28: presentation bridge with Build 169-178 owners and Layer/Gesture/Scroll/Viewport ownership. */
+/* Build 178.28.1: presentation bridge with Build 169-178 owners and Layer/Gesture/Scroll/Viewport ownership. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 178.28';
+  const BUILD_LABEL = 'Build 178.28.1';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=178.28'; }
-    catch { return '?v=178.28'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=178.28.1'; }
+    catch { return '?v=178.28.1'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
-  // Build 169 diagnostics remain passive in Build 178.28.
+  // Build 169 diagnostics remain passive in Build 178.28.1.
   if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
     const runtime = document.createElement('script');
     runtime.src = `/runtime169.js${storageSuffix}`;
@@ -21,7 +21,7 @@
     document.body.appendChild(runtime);
   }
 
-  // Build 170 ownership primitives remain active under the Build 171 network owner in Build 178.28.
+  // Build 170 ownership primitives remain active under the Build 171 network owner in Build 178.28.1.
   if (!window.FPRoomContext170 && !document.querySelector('script[data-fp-room-context170]')) {
     const roomContext = document.createElement('script');
     roomContext.src = `/room-context170.js${storageSuffix}`;
@@ -33,13 +33,13 @@
   function patchBuildLabels() {
     document.querySelectorAll('.fp-settings131-value').forEach((node) => {
       const current = String(node.textContent || '').trim();
-      if (/^Build\s+\d+(?:\.\d+)?$/i.test(current) && current !== BUILD_LABEL) {
+      if (/^Build\s+\d+(?:\.\d+)*$/i.test(current) && current !== BUILD_LABEL) {
         node.textContent = BUILD_LABEL;
       }
     });
     const about = document.getElementById('fpVersion131');
-    if (about && /Build\s+\d+(?:\.\d+)?/i.test(about.textContent || '')) {
-      const next = String(about.textContent).replace(/Build\s+\d+/i, BUILD_LABEL);
+    if (about && /Build\s+\d+(?:\.\d+)*/i.test(about.textContent || '')) {
+      const next = String(about.textContent).replace(/Build\s+\d+(?:\.\d+)*/i, BUILD_LABEL);
       if (next !== about.textContent) about.textContent = next;
     }
   }

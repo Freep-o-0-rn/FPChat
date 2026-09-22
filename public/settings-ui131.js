@@ -3,7 +3,7 @@
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = 178.28;
+  const BUILD = '178.28.1';
   let attempts = 0;
 
   const boot = () => {
@@ -325,7 +325,7 @@
       fetch('/version.json', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((data) => {
         if (!data) return;
         const line = root.querySelector('#fpVersion131');
-        if (line) line.textContent = `Версия ${data.version || '1.0.0'} · Build ${Number(data.build) || BUILD}`;
+        if (line) { const build=String(data.build ?? '').trim(); line.textContent = `Версия ${data.version || '1.0.0'} · Build ${/^\d+(?:\.\d+)*$/.test(build) ? build : BUILD}`; }
       }).catch(() => {});
     }
 
