@@ -110,3 +110,18 @@ Only the command that sends already prepared voice data is routed through SendMa
 The dispatcher receives the already prepared `data` object. The executor continues to use `data.roomId` for encryption, `voice/upload`, draft handling and final message send. Therefore navigation to another room while upload is in flight cannot retarget the voice message.
 
 There is no fallback direct call to `uploadAndSendVoice(data)` if SendManager is unavailable or refuses the executor.
+
+## Build 177.21 second-client activity acceptance
+
+Build 177.21 does not move activity into SendManager. The acceptance contract is observed from a second participant in the same room.
+
+Existing timing/ownership remains:
+
+- text: trusted input emits `typing:start`; empty input or form submit emits `typing:stop`; server also clears activity when it receives `message:send/message:new`; unexpected socket close clears server-side activity;
+- media: the existing fetch/XHR wrappers emit photo/video activity only while a real `/media/upload` is active; loadend, abort, error and timeout all feed the existing `finishMediaUpload()`; the local stop grace remains 280 ms; server message commit may clear the remote state earlier;
+- voice recording: `recording_audio` starts only after MediaRecorder starts and is stopped by `finalizeRecording()`, including cancel;
+- ready voice send: `audio` starts inside `uploadAndSendVoice(data)` and stops in its existing `finally`, so success, cancellation/abort and upload failure converge on the same stop path. Server `message:new` can clear the successful remote state before the explicit local stop reaches it.
+
+The second-client regression verifies the visible remote activity plus the received `typing:update` stream. Stop acceptance requires the old state to disappear promptly through the existing explicit/server stop path, not by waiting for the 7–7.5 second safety timeout.
+
+SendManager remains activity-blind.

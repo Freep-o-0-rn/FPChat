@@ -42,7 +42,8 @@
     "test:177:send-manager": "node ./scripts/regression177-send-manager.cjs",
     "test:177:text-dispatch": "node ./scripts/regression177-text-dispatch.cjs",
     "test:177:media-dispatch": "node ./scripts/regression177-media-dispatch.cjs",
-    "test:177:voice-dispatch": "node ./scripts/regression177-voice-dispatch.cjs"
+    "test:177:voice-dispatch": "node ./scripts/regression177-voice-dispatch.cjs",
+    "test:177:activity-second-client": "node ./scripts/regression177-activity-second-client.cjs"
   },
   "license": "MIT",
   "dependencies": {
