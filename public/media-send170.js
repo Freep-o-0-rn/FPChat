@@ -144,7 +144,7 @@
     }
   }
 
-  sendMediaFromPreview = function sendMediaFromPreview170(root) {
+  function executeMediaFromPreview170(root) {
     const preview = mediaPreviewState;
     if (!preview || preview.sending || preview.cancelled || preview.committed) return;
     const context = currentContext();
@@ -155,10 +155,18 @@
     preview.operation = contexts.beginOperation(context.roomId, 'media-send');
     preview.task = send(preview, context, root, preview.operation);
     return preview.task;
-  };
+  }
+
+  function dispatchMediaFromPreview170(root) {
+    const manager = window.FPSendManager177;
+    if (!manager?.dispatch) return false;
+    return manager.dispatch(() => executeMediaFromPreview170(root));
+  }
+
+  sendMediaFromPreview = dispatchMediaFromPreview170;
   sendMediaFromPreview.__fp170 = true;
   sendMediaFromPreview.__fpLegacy = legacySendMediaFromPreview;
   window.FPMediaSend170 = Object.freeze({active:true, cancelPreview});
   window.dispatchEvent(new Event('fpchat:send-owners-ready174'));
-  try { window.FPRuntime?.registerOwner?.('media-send170', {role:'media-submit',mode:'active-owner',transport:'FPNetwork171.upload + stable WS'}); } catch {}
+  try { window.FPRuntime?.registerOwner?.('media-send170', {role:'media-submit',mode:'active-owner',transport:'FPNetwork171.upload + stable WS',dispatcher:'FPSendManager177'}); } catch {}
 })();

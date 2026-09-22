@@ -45,8 +45,9 @@ assert(app.includes('const pendingTextSends=new Map()'),'text retry store moved 
 assert(app.includes('resendPendingTextMessages();'),'reconnect resend changed');
 assert(app.includes('handleWsMessageAck(payload)'),'ACK handling changed');
 assert(app.includes("payload?.type==='message:new'"),'echo handling changed');
-assert(!media.includes('FPSendManager177'),'media must not transfer in 177.18');
-assert(!voice.includes('FPSendManager177'),'voice must not transfer in 177.18');
+assert(media.includes("return manager.dispatch(() => executeMediaFromPreview170(root));"),
+  '177.19 media entry must now use SendManager');
+assert(!voice.includes('FPSendManager177'),'voice must not transfer before 177.20');
 
 assert(server.includes('let row = q.findMessageByClientId.get(room.id, sender.id, clientMessageId);'),
   'server clientMessageId dedupe missing');
@@ -56,7 +57,7 @@ assert(server.includes("if (message.status === 'sent') broadcastTextMessage(room
 
 console.log('PASS one text form entry dispatches exactly one existing FPTextSend170 executor');
 console.log('PASS text retry/clientMessageId/ACK/echo ownership remains unchanged');
-console.log('PASS media and voice are not transferred in 177.18');
+console.log('PASS text contract remains intact after media transfer; voice is still direct');
 
 run(async({browser,origin,errors})=>{
   const page=await browser.newPage({viewport:{width:390,height:844}});

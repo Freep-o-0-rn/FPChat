@@ -86,3 +86,15 @@ The single assigned text form entry is now:
 `submit(event)` remains the existing `FPTextSend170` executor. Its `sendingForms` duplicate guard, captured RoomContext, encryption, one generated `clientMessageId`, optimistic message, `queuePendingTextSend`, reconnect resend, ACK/status handling and draft cleanup are unchanged.
 
 There is no fallback call to `submit(event)` if `FPSendManager177` is unavailable or refuses the executor. Media and voice do not use SendManager at this step.
+
+## Build 177.19 media entry transfer
+
+The single active media preview send entry is now:
+
+`media preview send button -> sendMediaFromPreview(root) -> dispatchMediaFromPreview170(root) -> FPSendManager177.dispatch(() => executeMediaFromPreview170(root))`.
+
+`executeMediaFromPreview170(root)` retains the previous media entry semantics: preview duplicate/cancel/commit guards, current RoomContext validation, source room capture, `media-send` operation creation and one call to the existing private `send(preview, context, root, operation)` worker.
+
+The worker still owns encryption, per-item stable `uploadId`, `FPNetwork171.upload`, progress, retry prompt, AbortSignal, pending-media cleanup, caption/reply handling and final stable WebSocket `message:new`.
+
+Image, album and video share this same executor and therefore use one dispatcher adapter. They are regression-tested as separate scenarios. The current attachment input accepts only `image/*,video/*`, and `openMediaPreviewFromFiles()` skips non-image/non-video MIME types. No generic document/file send path is introduced in 177.19.

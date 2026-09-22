@@ -30,7 +30,8 @@ assert(app.includes("resendPendingTextMessages();"),'reconnect no longer invokes
 assert(app.includes("function handleWsMessageAck(payload)"),'text ACK path missing');
 assert(app.includes("function handleWsMessageStatus(payload)"),'text status path missing');
 
-assert(mediaSend.includes("sendMediaFromPreview = function sendMediaFromPreview170(root)"),'media entry owner changed');
+assert(mediaSend.includes("sendMediaFromPreview = dispatchMediaFromPreview170;"),'media assigned entry must be the 177.19 dispatcher wrapper');
+assert(mediaSend.includes("return manager.dispatch(() => executeMediaFromPreview170(root));"),'media dispatcher must invoke the existing media entry executor');
 assert(mediaSend.includes("contexts.beginOperation(context.roomId, 'media-send')"),'media operation context changed');
 assert(mediaSend.includes("preview.sending || preview.cancelled || preview.committed"),'media duplicate guard changed');
 assert(mediaSend.includes("contexts.cancelOperation(preview.operation, 'user-cancelled')"),'media cancel path changed');
@@ -65,7 +66,7 @@ assert(voice.includes("stopLocalActivity('audio');"),'voice send activity stop c
 assert(app.includes("accept='image/*,video/*'"),'current media input scope changed');
 assert(app.includes("if(!isImg&&!isVid)continue"),'current image/video media filter changed');
 
-for(const [name,source] of Object.entries({mediaSend,voice,app,typing})){
+for(const [name,source] of Object.entries({voice,app,typing})){
   assert(!source.includes('FPSendManager177'),name+' unexpectedly transferred to SendManager before its dedicated step');
 }
 for(const [name,source] of Object.entries({textSend,mediaSend,voice,app,typing})){

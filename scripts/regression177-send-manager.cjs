@@ -57,13 +57,13 @@ assert(index.includes("'text-send170.js':['send-manager177.js']"),'text owner de
 
 assert(textSend.includes("return manager.dispatch(() => submit(event));"),
   '177.18 text entry must use the existing dispatcher');
-for(const [name,source] of Object.entries({mediaSend,voice})){
-  assert(!source.includes('FPSendManager177'),name+' must not transfer to dispatcher before its dedicated step');
-}
+assert(mediaSend.includes("return manager.dispatch(() => executeMediaFromPreview170(root));"),
+  '177.19 media entry must use the existing dispatcher');
+assert(!voice.includes('FPSendManager177'),'voice must not transfer to dispatcher before its dedicated step');
 
 console.log('PASS FPSendManager177 is a stateless one-executor dispatcher');
 console.log('PASS dispatcher owns no listener, queue, pending store, retry, transport, operation or activity');
-console.log('PASS dispatcher loads before FPTextSend170; only the dedicated text entry is transferred');
+console.log('PASS dispatcher loads before send owners; text and media dedicated entries are transferred');
 
 run(async({browser,origin,errors})=>{
   const page=await browser.newPage({viewport:{width:390,height:844}});
