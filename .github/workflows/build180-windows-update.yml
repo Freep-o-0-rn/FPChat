@@ -1,0 +1,58 @@
+name: Build 180 Windows updater acceptance
+
+on:
+  push:
+    branches:
+      - build/180-development
+    paths:
+      - 'update.bat'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/test1805-update-isolated.ps1'
+      - 'scripts/regression180-windows-script-contract.cjs'
+      - 'start_chat.bat'
+      - 'scripts/start-fpchat180.ps1'
+      - 'scripts/regression180-launcher-contract.cjs'
+      - 'scripts/test1806-launcher-isolated.ps1'
+      - 'scripts/regression180-updater-rollback-contract.cjs'
+      - 'scripts/test1807-rollback-isolated.ps1'
+      - 'scripts/regression180-startup-graph.cjs'
+      - 'scripts/regression180-app-coordinator-decision.cjs'
+      - 'scripts/regression180-init-coordination.cjs'
+      - 'scripts/regression180-single-owner-audit.cjs'
+      - '.github/workflows/build180-windows-update.yml'
+  workflow_dispatch:
+
+jobs:
+  update-isolated:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Static updater contract
+        run: npm run test:180:windows-script-contract
+      - name: Isolated Windows update
+        shell: powershell
+        run: npm run test:180:update-isolated-windows
+      - name: Static launcher contract
+        run: npm run test:180:launcher-contract
+      - name: Isolated Windows launcher
+        shell: powershell
+        run: npm run test:180:launcher-isolated-windows
+      - name: Static rollback contract
+        run: npm run test:180:rollback-contract
+      - name: Isolated Windows failed-update rollback
+        shell: powershell
+        run: npm run test:180:rollback-isolated-windows
+      - name: Static startup graph
+        run: npm run test:180:startup-graph
+      - name: Static AppCoordinator decision
+        run: npm run test:180:app-coordinator-decision
+      - name: Static init coordination
+        run: npm run test:180:init-coordination
+      - name: Static single-owner audit
+        run: npm run test:180:single-owner-audit

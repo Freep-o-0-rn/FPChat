@@ -1,0 +1,12 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const pkg=JSON.parse(read('package.json')),boot=read('src/message-actions-bootstrap.js'),server=read('server.js');
+assert.equal(pkg.scripts.start,'node server.js','production entry must be direct after 179.5');
+assert(!boot.includes("Module._extensions['.js']"),'loader interception still present');
+assert(!boot.includes('module._compile'),'legacy compile interception still present');
+assert(!boot.includes('source.replace'),'textual source mutation still present');
+assert.equal((boot.match(/install[A-Za-z0-9_]+\(\{/g)||[]).length,0,'bootstrap installer remains');
+assert.equal((server.match(/server\.listen\(/g)||[]).length,1,'startup listen count changed');
+console.log('PASS 179.5 loader readiness is READY and interception is removed');

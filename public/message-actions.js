@@ -1,4 +1,4 @@
-/* Build 108: isolated edit/delete actions for message context menu.
+/* Build 170: isolated edit/delete actions with event-driven connection attachment.
    Does not replace FPChat send/read/unread/scroll logic. */
 (() => {
   const ROOT = '.message-context-root';
@@ -14,6 +14,8 @@
   let attachedWs = null;
   let syncTimer = null;
   let syncAllInFlight = null;
+  let lastSyncStartedAt = 0;
+  const roomSyncs = new Map();
 
   function numericId(value) {
     const id = Number(value);
@@ -123,8 +125,14 @@
     }
   }
 
-  function tombstoneCache(messageId, author = '') {
-    if (typeof messageCache === 'undefined') return;
+  function tombstoneCache(roomId, messageId, author = '', scope = 'all') {
+    try {
+      if (window.FPMessageStore172) {
+        window.FPMessageStore172.markDeleted(roomId, messageId, { scope, author, source: 'message-actions' });
+        return;
+      }
+    } catch {}
+    if (typeof messageCache === 'undefined' || String(state?.roomId || '') !== String(roomId || '')) return;
     const previous = messageCache.get(Number(messageId));
     messageCache.set(Number(messageId), {
       id: Number(messageId),
@@ -169,11 +177,10 @@
     if (typeof rebuildDateSeparators === 'function') rebuildDateSeparators(box);
 
     if (wasAtBottom) {
-      if (typeof scrollCoordinator !== 'undefined') scrollCoordinator.requestBottom(box);
-      else box.scrollTop = box.scrollHeight;
+      window.FPScroll173?.requestBottom(box);
     } else if (wasAbove) {
       const removedHeight = Math.max(0, beforeHeight - box.scrollHeight);
-      box.scrollTop = Math.max(0, beforeTop - removedHeight);
+      window.FPScroll173?.write(box, beforeTop - removedHeight, 'auto');
     }
   }
 
@@ -200,7 +207,7 @@
     }
 
     if (editState?.roomId === roomId && editState.messageId === id) cancelEdit(true);
-    tombstoneCache(id, author);
+    tombstoneCache(roomId, id, author, scope);
     markReplyBlocksDeleted(id);
     clearReplyDraftIfNeeded(roomId, id);
 
@@ -235,13 +242,18 @@
       return;
     }
     const preview = typeof makeReplyPreview === 'function' ? makeReplyPreview(text) : text.slice(0, 120);
-    if (typeof messageCache !== 'undefined') {
+    try {
+      const merged = window.FPMessageStore172?.applyEdit?.(roomId, message, text, { preview, kind: 'text' });
+      if (merged?.record?.deleted) return;
+      if (merged && merged.contentApplied === false && typeof merged.record?.text === 'string') text = merged.record.text;
+    } catch {}
+    if (typeof messageCache !== 'undefined' && String(state?.roomId || '') === String(roomId)) {
       const previous = messageCache.get(id);
       messageCache.set(id, {
         id,
         author: message.sender_name || previous?.author || 'Неизвестно',
         text,
-        preview,
+        preview: typeof makeReplyPreview === 'function' ? makeReplyPreview(text) : text.slice(0, 120),
         kind: 'text'
       });
     }
@@ -300,13 +312,14 @@
       const id = numericId(message?.id);
       const deviceId = roomDevice(roomId);
       if (id && roomId && ((deviceId && hiddenSet(roomId, deviceId).has(id)) || deletedSet(roomId).has(id) || message?.deleted_for_all)) {
-        tombstoneCache(id, message?.sender_name || '');
+        tombstoneCache(roomId, id, message?.sender_name || '', message?.deleted_for_all ? 'all' : 'self');
         return;
       }
       const result = base.apply(this, arguments);
       if (id) {
-        const el = typeof findMessageElement === 'function' ? findMessageElement(id, message?.client_message_id) : null;
-        if (el && message?.edited_at) applyEditedLabel(el, message.edited_at);
+        const el = result || box?.querySelector(`[data-message-id="${id}"]`);
+        const editedAt=window.FPMessageStore172?.get(roomId,id)?.editedAt || message?.edited_at;
+        if (el && editedAt) applyEditedLabel(el, editedAt);
         const replyId = numericId(message?.reply_to_message_id);
         if (el && replyId && ((deviceId && hiddenSet(roomId, deviceId).has(replyId)) || deletedSet(roomId).has(replyId))) {
           const preview = el.querySelector('.reply-block-preview');
@@ -331,38 +344,23 @@
     updateMessageStatusElement = wrapped;
   }
 
-  function editBar() {
-    return document.getElementById('editComposerBar');
-  }
-
   function renderEditBar() {
-    const form = document.getElementById('sendForm');
-    const view = form?.closest('.chat-view');
-    if (!form || !view || !editState) return;
-    view.classList.add('fp-editing-message');
-    let bar = editBar();
-    if (!bar) {
-      bar = document.createElement('div');
-      bar.id = 'editComposerBar';
-      bar.className = 'edit-composer-bar';
-      bar.innerHTML = '<div class="edit-composer-accent"></div><div class="edit-composer-content"><div class="edit-composer-title">Редактирование сообщения</div><div class="edit-composer-preview"></div></div><button type="button" class="edit-composer-close" aria-label="Отменить редактирование">×</button>';
-      form.parentNode.insertBefore(bar, form);
-      bar.querySelector('.edit-composer-close')?.addEventListener('click', () => cancelEdit(true));
-    }
-    const preview = bar.querySelector('.edit-composer-preview');
-    if (preview) preview.textContent = editState.originalText;
+    if (!editState) return;
+    const input = document.getElementById('msgInput');
+    window.FPComposer177?.enterEditMode?.({
+      input,
+      originalText: editState.originalText,
+      onCancel: () => cancelEdit(true)
+    });
   }
 
   function restoreComposer(snapshot, focus = false) {
-    const input = document.getElementById('msgInput');
-    const view = input?.closest('.chat-view');
-    view?.classList.remove('fp-editing-message');
-    editBar()?.remove();
-    if (!input || !snapshot) return;
-    input.value = snapshot.text || '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    try { autoResizeMessageInput(input); } catch {}
-    if (focus) input.focus({ preventScroll: true });
+    window.FPComposer177?.exitEditMode?.({
+      input: document.getElementById('msgInput'),
+      snapshot,
+      restoreDraft: true,
+      focus
+    });
   }
 
   function cancelEdit(restoreDraft = true) {
@@ -371,8 +369,10 @@
     editState = null;
     if (restoreDraft) restoreComposer(snapshot, false);
     else {
-      document.querySelector('.chat-view')?.classList.remove('fp-editing-message');
-      editBar()?.remove();
+      window.FPComposer177?.exitEditMode?.({
+        input: document.getElementById('msgInput'),
+        restoreDraft: false
+      });
     }
   }
 
@@ -397,10 +397,6 @@
       snapshot: { text: input.value, replyTo: draft?.replyTo || null }
     };
     closeContext();
-    input.value = originalText;
-    try { autoResizeMessageInput(input); } catch {}
-    const send = document.getElementById('sendBtn');
-    if (send) send.disabled = !originalText.trim();
     renderEditBar();
     requestAnimationFrame(() => {
       try { input.focus({ preventScroll: true }); } catch { input.focus(); }
@@ -505,6 +501,10 @@
     deletedByRoom.set(roomId, deleted);
     saveIdSet(HIDDEN_KEY(roomId, deviceId), hidden);
     saveIdSet(DELETED_KEY(roomId), deleted);
+    try {
+      for (const id of hidden) window.FPMessageStore172?.markDeleted?.(roomId, id, { scope: 'self', source: 'message-actions-state' });
+      for (const id of deleted) window.FPMessageStore172?.markDeleted?.(roomId, id, { scope: 'all', source: 'message-actions-state' });
+    } catch {}
 
     if (String(state?.roomId || '') === String(roomId)) {
       const box = document.getElementById('messages');
@@ -512,7 +512,7 @@
         [...box.querySelectorAll('.bubble-wrap.msg')].forEach((el) => {
           const id = numericId(el.dataset.messageId || el.dataset.id);
           if (id && (hidden.has(id) || deleted.has(id))) {
-            tombstoneCache(id, el.querySelector('b')?.textContent || '');
+            tombstoneCache(roomId, id, el.querySelector('b')?.textContent || '', deleted.has(id) ? 'all' : 'self');
             keepViewportWhileRemoving(box, el);
           }
         });
@@ -549,7 +549,18 @@
     }
   }
 
-  async function syncRoom(roomId, deviceId = roomDevice(roomId)) {
+  function syncRoom(roomId, deviceId = roomDevice(roomId)) {
+    if (!roomId || !deviceId) return Promise.resolve();
+    const key = `${roomId}:${deviceId}`;
+    if (roomSyncs.has(key)) return roomSyncs.get(key);
+    const task = runRoomSync(roomId, deviceId).finally(() => {
+      if (roomSyncs.get(key) === task) roomSyncs.delete(key);
+    });
+    roomSyncs.set(key, task);
+    return task;
+  }
+
+  async function runRoomSync(roomId, deviceId) {
     if (!roomId || !deviceId) return;
     try {
       const snapshot = await fetchActionState(roomId, deviceId);
@@ -569,14 +580,20 @@
     } catch {}
   }
 
-  async function syncAllRooms() {
+  async function syncAllRooms({ force = false } = {}) {
     if (syncAllInFlight) return syncAllInFlight;
+    const now = Date.now();
+    if (!force && now - lastSyncStartedAt < 1500) return false;
+    lastSyncStartedAt = now;
     syncAllInFlight = (async () => {
+      const activeRoomId = String(state?.roomId || '');
       const rooms = [...new Set((state?.chats || []).map((chat) => String(chat?.roomId || '')).filter(Boolean))];
+      rooms.sort((a, b) => (a === activeRoomId ? -1 : b === activeRoomId ? 1 : 0));
       for (const roomId of rooms) {
         const deviceId = roomDevice(roomId);
         if (deviceId) await syncRoom(roomId, deviceId);
       }
+      return true;
     })().finally(() => { syncAllInFlight = null; });
     return syncAllInFlight;
   }
@@ -595,24 +612,34 @@
   }
 
   function attachCurrentWs() {
-    const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    const ws = state?.ws || null;
+    if (ws === attachedWs) return;
     if (attachedWs) {
       try { attachedWs.removeEventListener('message', handleWsMessage); } catch {}
     }
     attachedWs = ws;
+    if (!ws) return;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => { void syncAllRooms(); }, { once: true });
     if (ws.readyState === WebSocket.OPEN) void syncAllRooms();
   }
 
+  function handleLifecycle170(event) {
+    const type = String(event?.detail?.lastType || '');
+    if (type === 'foreground' || type === 'pageshow' || type === 'online') void syncAllRooms();
+  }
+
+  function handleRoomReady170(event) {
+    if (event?.detail?.stage !== 'ready') return;
+    const roomId = String(event.detail.roomId || state?.roomId || '');
+    const deviceId = roomDevice(roomId);
+    if (roomId && deviceId) void syncRoom(roomId, deviceId);
+  }
+
   document.addEventListener('input', (event) => {
     if (!editState || event.target?.id !== 'msgInput') return;
     event.stopImmediatePropagation();
-    const input = event.target;
-    const send = document.getElementById('sendBtn');
-    if (send) send.disabled = !input.value.trim();
-    try { autoResizeMessageInput(input); } catch {}
+    window.FPComposer177?.syncEditInput?.(event.target);
   }, true);
 
   document.addEventListener('submit', (event) => {
@@ -632,34 +659,42 @@
   installAppendWrapper();
   installStatusWrapper();
 
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches(ROOT)) decorateContext(node);
-        node.querySelectorAll?.(ROOT).forEach(decorateContext);
-        const root = node.closest?.(ROOT);
-        if (root) decorateContext(root);
-        if (node.id === 'messages' || node.querySelector?.('#messages')) {
-          const roomId = String(state?.roomId || '');
-          const deviceId = roomDevice(roomId);
-          if (roomId && deviceId) void syncRoom(roomId, deviceId);
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('context', 'mounted', ({ node }) => decorateContext(node));
+    window.FPDOM173.on('chat', 'mounted', () => {
+      const roomId = String(state?.roomId || '');
+      const deviceId = roomDevice(roomId);
+      if (roomId && deviceId) void syncRoom(roomId, deviceId);
+    });
+  } else {
+    // Compatibility fallback only if Build 173 DOM lifecycle is unavailable.
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(ROOT)) decorateContext(node);
+          node.querySelectorAll?.(ROOT).forEach(decorateContext);
+          const root = node.closest?.(ROOT);
+          if (root) decorateContext(root);
+          if (node.id === 'messages' || node.querySelector?.('#messages')) {
+            const roomId = String(state?.roomId || '');
+            const deviceId = roomDevice(roomId);
+            if (roomId && deviceId) void syncRoom(roomId, deviceId);
+          }
         }
       }
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
   document.querySelectorAll(ROOT).forEach(decorateContext);
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void syncAllRooms();
-  });
-  window.addEventListener('online', () => { void syncAllRooms(); });
+  window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
+  window.addEventListener('fpchat:lifecycle170', handleLifecycle170, { passive: true });
+  window.addEventListener('fpchat:room-open170', handleRoomReady170, { passive: true });
 
   attachCurrentWs();
-  setInterval(attachCurrentWs, 500);
   syncTimer = setInterval(() => {
     if (document.visibilityState === 'visible') void syncAllRooms();
   }, 30000);
-  void syncAllRooms();
+  void syncAllRooms({ force: true });
 })();

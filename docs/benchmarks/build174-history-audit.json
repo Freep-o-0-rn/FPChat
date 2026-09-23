@@ -1,0 +1,31 @@
+{
+  "environment": "Linux headless Chromium, isolated local SQLite, 1500 own read messages, saved anchor at message 21, 3 profiles; not mobile baseline",
+  "results": [
+    {
+      "openMs": 180.1999999997206,
+      "mounted": 121,
+      "domNodes": 1214,
+      "anchorPresent": true,
+      "historyPages": 3
+    },
+    {
+      "openMs": 174,
+      "mounted": 121,
+      "domNodes": 1214,
+      "anchorPresent": true,
+      "historyPages": 3
+    },
+    {
+      "openMs": 180.5,
+      "mounted": 121,
+      "domNodes": 1214,
+      "anchorPresent": true,
+      "historyPages": 3
+    }
+  ],
+  "summary": {
+    "medianOpenMs": 180.2,
+    "worstOpenMs": 180.5
+  },
+  "errors": []
+}

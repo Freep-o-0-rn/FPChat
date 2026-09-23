@@ -308,12 +308,28 @@
     pumpPrefetch();
   }
 
+  async function drainPrefetchResponse(response) {
+    if (!response?.body || response.bodyUsed) return;
+    const reader = response.body.getReader();
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+      }
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  }
+
   function pumpPrefetch() {
     while (activePrefetch < PREFETCH_CONCURRENCY && prefetchQueue.length) {
       const url = prefetchQueue.shift();
       activePrefetch += 1;
       Promise.resolve()
-        .then(() => window.fetch(url))
+        .then(async () => {
+          const response = await window.fetch(url);
+          await drainPrefetchResponse(response);
+        })
         .catch(() => null)
         .finally(() => {
           activePrefetch = Math.max(0, activePrefetch - 1);
@@ -593,7 +609,11 @@
     update();
     button.onclick = () => {
       const selected = update();
-      if (selected.length) void renderClearProgress(selected);
+      if (!selected.length) return;
+      const startClear = () => { void renderClearProgress(selected); };
+      const guard = window.FPStorage167ClearGuard;
+      if (guard?.runExclusive) void guard.runExclusive(startClear, button);
+      else startClear();
     };
   }
 

@@ -10,7 +10,6 @@
   let warningTimer = 0;
   let wrappedMenuBase = null;
   let wrappedAckBase = null;
-  let wrappedJoinBase = null;
   let wrappedAppendBase = null;
   let wrappedPresenceBase = null;
 
@@ -372,65 +371,7 @@
     handleStableWsPayload = wrapped;
   }
 
-  function installJoinWrapper() {
-    if (typeof joinByInviteText !== 'function' || joinByInviteText.__fpUserBlocks165) return;
-    const base = joinByInviteText;
-    wrappedJoinBase = base;
-    const wrapped = async function joinByInviteTextWithBlockErrors165(text) {
-      const parsed = parseInviteInput(text);
-      if (parsed?.error === 'empty') { alert('Вставьте invite-ссылку'); return false; }
-      if (parsed?.error === 'old_invite') { alert('Старая invite-ссылка больше не поддерживается. Попросите новую ссылку.'); return false; }
-      if (parsed?.error === 'invalid' || !parsed?.inviteCode) { alert('Некорректная invite-ссылка'); return false; }
-      state.nick = localStorage.getItem(STORAGE.nick) || state.nick;
-      const displayName = state.nick;
-      const dev = getOrCreateDeviceId();
-      let res;
-      try {
-        res = await fetch(`/api/invites/${parsed.inviteCode}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName, deviceId: dev }) });
-      } catch {
-        alert('Не удалось подключиться. Проверьте соединение.');
-        return false;
-      }
-      if (res.status === 404) { alert('Invite-ссылка недействительна.'); return false; }
-      if (res.status === 410) { alert('Invite-ссылка устарела или уже использована.'); return false; }
-      if (res.status === 409) {
-        const errorData = await res.json().catch(() => null);
-        alert(errorData?.error === 'device already belongs to room' ? 'Это устройство уже подключено к этому чату.' : 'В этот чат уже присоединился второй участник.');
-        return false;
-      }
-      if (res.status === 403) {
-        const errorData = await res.json().catch(() => null);
-        if (errorData?.code === 'INVITE_BLOCKED_BY_CREATOR' || errorData?.code === 'INVITE_CREATOR_BLOCKED_BY_YOU') alert(errorData.error);
-        else alert('Нет доступа к этому чату.');
-        return false;
-      }
-      if (!res.ok) { alert('Не удалось подключиться. Проверьте соединение.'); return false; }
-      const data = await res.json().catch(() => null);
-      if (!data?.ok || !data.publicId || !data.roomSecret || !Array.isArray(data.messages)) { alert('Не удалось подключиться. Проверьте соединение.'); return false; }
-      let key;
-      try { key = await deriveKey(data.roomSecret); } catch { alert('Не удалось подключиться. Проверьте соединение.'); return false; }
-      if (data.messages.length > 0) {
-        let decryptedAny = false;
-        for (const msg of data.messages) {
-          try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64.decode(msg.iv) }, key, b64.decode(msg.ciphertext)); decryptedAny = true; break; } catch {}
-        }
-        if (!decryptedAny) { alert('Не удалось подключиться. Проверьте соединение.'); return false; }
-      }
-      STORAGE.set(STORAGE.roomState(data.publicId), { secret: data.roomSecret, deviceId: dev });
-      upsertChat(data.publicId, {});
-      state.key = key;
-      let joinedRecoveryCode = null;
-      let recoveryRegistrationFailed = false;
-      try { joinedRecoveryCode = await registerRecoveryForJoinedParticipant(data.publicId, dev, data.roomSecret); } catch { recoveryRegistrationFailed = true; }
-      await openChatWithJoinData(data.publicId, data.roomSecret, dev, data, key);
-      if (joinedRecoveryCode) showRecoveryCodeModal(joinedRecoveryCode);
-      else if (recoveryRegistrationFailed) alert('Чат подключён, но recovery-код не был создан. Перезайдите или создайте новый чат.');
-      return true;
-    };
-    wrapped.__fpUserBlocks165 = true;
-    wrapped.__fpBase = base;
-    joinByInviteText = wrapped;
-  }
+  // Invite navigation and block-error feedback belong to app.js / RoomContext170.
 
   async function profileBlock(username, button, existingUnblock) {
     if (!username || button.disabled) return;
@@ -526,7 +467,6 @@
     installAckWrapper();
     installPresenceWrapper();
     installWsWrapper();
-    installJoinWrapper();
     installAppendWrapper();
   });
   observer.observe(document.body, { childList: true, subtree: true });
@@ -536,7 +476,6 @@
     installAckWrapper();
     installPresenceWrapper();
     installWsWrapper();
-    installJoinWrapper();
     installAppendWrapper();
   }, 700);
 
@@ -549,6 +488,5 @@
   installAckWrapper();
   installPresenceWrapper();
   installWsWrapper();
-  installJoinWrapper();
   installAppendWrapper();
 })();

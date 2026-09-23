@@ -7,6 +7,7 @@
   const MOBILE_QUERY = '(max-width: 900px)';
   const mediaByMessageId = new Map();
   const mediaBlobCache = new Map();
+  const MEDIA_BLOB_CACHE_BYTES = 8 * 1024 * 1024;
   const activeMediaSaves = new Set();
 
   let contextState = null;
@@ -130,7 +131,9 @@
   }
 
   async function fetchOriginalMediaBlob(messageId, mediaIndex, onProgress = null) {
-    const cacheKey = `${messageId}:${mediaIndex}`;
+    const roomId = typeof state !== 'undefined' ? state.roomId : null;
+    const persisted = roomId && typeof STORAGE !== 'undefined' ? STORAGE.get(STORAGE.roomState(roomId)) : null;
+    const cacheKey = `${roomId}:${messageId}:${mediaIndex}`;
 
     const consumeEntry = async (entry) => {
       if (typeof onProgress === 'function') {
@@ -160,14 +163,18 @@
       const media = await ensureMessageMedia(messageId);
       const item = media?.[mediaIndex];
       if (!item?.public_id) throw new Error('media unavailable');
-      const roomId = typeof state !== 'undefined' ? state.roomId : null;
-      const persisted = roomId && typeof STORAGE !== 'undefined' ? STORAGE.get(STORAGE.roomState(roomId)) : null;
       if (!persisted?.deviceId) throw new Error('device unavailable');
-      const response = await fetch(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`);
-      if (!response.ok) throw new Error('media load failed');
-      const encrypted = await readResponseBlobWithProgress(response, entry);
-      const blob = await decryptBlobWithIvPrefix(encrypted, item.mime_type || 'application/octet-stream');
+      const key=await getRoomKey(roomId);
+      const blob=await readEncryptedMedia174(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,item.mime_type || 'application/octet-stream',key,{},response=>readResponseBlobWithProgress(response,entry));
       entry.done = true;
+      entry.bytes = blob.size;
+      // Bound the existing plaintext memo, independently of the encrypted disk
+      // cache. Active save consumers retain their promise even after eviction.
+      let retained = [...mediaBlobCache.values()].reduce((sum,value)=>sum+(value.done?value.bytes||0:0),0);
+      for(const [key,value] of mediaBlobCache){
+        if(retained<=MEDIA_BLOB_CACHE_BYTES)break;
+        if(value.done){mediaBlobCache.delete(key);retained-=value.bytes||0;}
+      }
       emitMediaBlobProgress(entry);
       return { blob, item, media };
     })();
@@ -176,7 +183,7 @@
     try {
       return await consumeEntry(entry);
     } catch (error) {
-      mediaBlobCache.delete(cacheKey);
+      if(mediaBlobCache.get(cacheKey)===entry)mediaBlobCache.delete(cacheKey);
       throw error;
     }
   }
@@ -215,7 +222,9 @@
 
   function restoreBackgroundScroll(snapshot) {
     if (!snapshot?.box?.isConnected) return;
-    if (Math.abs(snapshot.box.scrollTop - snapshot.scrollTop) > 0.5) snapshot.box.scrollTop = snapshot.scrollTop;
+    // The overlay does not own message geometry. History/viewport/user scroll
+    // may have advanced while it was open; never restore an old absolute offset.
+    // If a future context layout needs preservation, it must ask FPScroll173.
   }
 
   function closeContext({ restoreScroll = true } = {}) {
@@ -226,6 +235,21 @@
     document.body.classList.remove('message-context-open');
     if (restoreScroll) restoreBackgroundScroll(current.background);
     cleanupViewerReturn();
+  }
+
+  function cancelContextTouch178({ closeTriggered = false } = {}) {
+    const session = touchSession;
+    if (!session) return;
+    clearTimeout(session.timer);
+    session.actionLease?.release?.();
+    session.actionLease = null;
+    touchSession = null;
+    if (closeTriggered && session.triggered && contextState) closeContext();
+  }
+
+  function closeContextBoundary178() {
+    cancelContextTouch178();
+    if (contextState) closeContext({ restoreScroll: false });
   }
 
   function cleanupViewerReturn() {
@@ -241,10 +265,26 @@
     cleanupViewerReturn();
   }
 
+  function closeViewerBackToContextWorker177(viewer) {
+    if (!viewer || typeof mediaViewerState === 'undefined' || mediaViewerState !== viewer) return false;
+    mediaViewerState = null;
+    if (typeof renderMediaViewer === 'function') renderMediaViewer();
+    return true;
+  }
+
   function closeViewerBackToContext() {
     try {
-      if (typeof mediaViewerState !== 'undefined') mediaViewerState = null;
-      if (typeof renderMediaViewer === 'function') renderMediaViewer();
+      const viewer = typeof mediaViewerState !== 'undefined' ? mediaViewerState : null;
+      const manager = window.FPMediaManager177;
+      if (viewer && manager?.closeViewer) {
+        const tracked = manager.currentViewer?.();
+        if (tracked === viewer) manager.closeViewer(viewer, closeViewerBackToContextWorker177);
+        else if (!tracked) closeViewerBackToContextWorker177(viewer);
+      } else if (viewer) {
+        closeViewerBackToContextWorker177(viewer);
+      } else if (typeof renderMediaViewer === 'function') {
+        renderMediaViewer();
+      }
     } catch {}
     restoreContextAfterViewer();
   }
@@ -253,6 +293,20 @@
     cleanupViewerReturn();
     const viewerRoot = document.getElementById('mediaViewerRoot');
     if (!viewerRoot) return;
+
+    // Build 173: media-gallery134 is the single viewer gesture owner. Context
+    // only waits for the viewer to really close, then restores its hidden layer.
+    if (window.FPLayer173 && window.FPDOM173?.on) {
+      const off = window.FPDOM173.on('viewer', 'unmounted', () => {
+        queueMicrotask(() => {
+          if (!contextState) return;
+          if (!viewerRoot.querySelector('.media-viewer-overlay')) restoreContextAfterViewer();
+        });
+      });
+      viewerGestureCleanup = off;
+      return;
+    }
+
     let gesture = null;
 
     const onStart = (event) => {
@@ -575,7 +629,7 @@
     const mediaKind = getMediaKindFromDom(messageEl, mediaIndex);
     const text = getMessageText(messageEl, messageId);
     const messagesBox = document.getElementById('messages');
-    const background = messagesBox ? { box: messagesBox, scrollTop: messagesBox.scrollTop } : null;
+    const background = messagesBox ? { box: messagesBox } : null;
     const sourceRect = getOriginalMessageRect(messageEl);
     const boxRect = messagesBox?.getBoundingClientRect?.() || { left: 0, width: window.innerWidth };
 
@@ -668,6 +722,7 @@
 
   document.addEventListener('touchstart', (event) => {
     if (contextState || event.touches?.length !== 1) return;
+    if(window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat')return;
     const messageEl = getMessageElement(event.target);
     if (!messageEl) return;
     const touch = event.touches[0];
@@ -677,10 +732,20 @@
       startX: touch.clientX,
       startY: touch.clientY,
       triggered: false,
-      timer: null
+      timer: null,
+      actionLease: null
     };
+    session.actionLease = window.FPGesture135?.watchAction?.('message-long-press', event, (reason) => {
+      clearTimeout(session.timer);
+      session.timer = null;
+      if (reason === 'end') return;
+      if (session.triggered && reason === 'layer') return;
+      if (touchSession === session) touchSession = null;
+    }) || null;
     session.timer = setTimeout(() => {
       if (touchSession !== session || !messageEl.isConnected) return;
+      if(window.FPGesture135&&FPGesture135.currentLayer(null,session.target)!=='chat')return;
+      if(session.actionLease&&!session.actionLease.claim()){cancelContextTouch178();return;}
       session.triggered = true;
       suppressUnderlyingClickUntil = Date.now() + 700;
       openContext(messageEl, session.target, { x: session.startX, y: session.startY, source: 'touch' });
@@ -692,6 +757,7 @@
   document.addEventListener('touchmove', (event) => {
     const session = touchSession;
     if (!session || event.touches?.length !== 1) return;
+    if(!session.triggered&&window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat'){cancelContextTouch178();return;}
     if (session.triggered && contextState && getMessageElement(event.target) === session.messageEl) {
       if (event.cancelable) event.preventDefault();
       event.stopPropagation();
@@ -701,21 +767,16 @@
     const dx = touch.clientX - session.startX;
     const dy = touch.clientY - session.startY;
     if (Math.hypot(dx, dy) > MOVE_CANCEL_PX) {
-      clearTimeout(session.timer);
-      touchSession = null;
+      cancelContextTouch178();
     }
   }, { capture: true, passive: false });
 
   document.addEventListener('touchend', () => {
-    if (!touchSession) return;
-    clearTimeout(touchSession.timer);
-    touchSession = null;
+    cancelContextTouch178();
   }, { capture: true, passive: true });
 
   document.addEventListener('touchcancel', () => {
-    if (!touchSession) return;
-    clearTimeout(touchSession.timer);
-    touchSession = null;
+    cancelContextTouch178({ closeTriggered: true });
   }, { capture: true, passive: true });
 
   document.addEventListener('click', (event) => {
@@ -735,5 +796,13 @@
 
   window.addEventListener('resize', () => {
     if (contextState) closeContext();
+  });
+
+  window.FPDOM173?.on?.('chat', 'unmounted', () => {
+    closeContextBoundary178();
+  });
+
+  window.FPLifecycle170?.subscribe?.((event) => {
+    if (['background', 'pagehide', 'beforeunload'].includes(event?.lastType)) closeContextBoundary178();
   });
 })();

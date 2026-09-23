@@ -158,6 +158,7 @@
     }
     if (activeMediaPromises.size) await Promise.allSettled([...activeMediaPromises]);
     if (activeCacheWrites.size) await Promise.allSettled([...activeCacheWrites]);
+    await window.FPNetwork171?.waitForMediaCacheIdle?.();
     await sleep(0);
   }
 
@@ -199,45 +200,39 @@
     return observer;
   }
 
-  document.addEventListener('click', (event) => {
-    const button = event.target instanceof Element ? event.target.closest('#fpStorage167StartClear') : null;
-    if (!button || startIntercepting || clearingActive) return;
-    const originalHandler = button.onclick;
-    if (typeof originalHandler !== 'function') return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
+  async function runExclusive(startClear, button = null) {
+    if (typeof startClear !== 'function' || startIntercepting || clearingActive) return false;
     startIntercepting = true;
     clearingActive = true;
     lastBlockedFetchAt = Date.now();
     window.addEventListener('beforeunload', unloadGuard, true);
     showPreparingOverlay();
-    button.disabled = true;
+    if (button) button.disabled = true;
 
     safetyTimer = setTimeout(() => releaseClearGuard(), 5 * 60 * 1000);
 
-    void (async () => {
-      try {
-        await waitForInflightToStop();
-        const observer = monitorClearCompletion();
-        hidePreparingOverlay();
-        originalHandler.call(button);
-        markProgressPageExclusive();
-        setTimeout(() => {
-          if (!document.getElementById('fpStorage167Percent') && clearingActive) {
-            observer.disconnect();
-            releaseClearGuard();
-          }
-        }, 1000);
-      } catch {
-        releaseClearGuard();
-        button.disabled = false;
-      }
-    })();
-  }, true);
+    try {
+      await waitForInflightToStop();
+      const observer = monitorClearCompletion();
+      hidePreparingOverlay();
+      startClear();
+      markProgressPageExclusive();
+      setTimeout(() => {
+        if (!document.getElementById('fpStorage167Percent') && clearingActive) {
+          observer.disconnect();
+          releaseClearGuard();
+        }
+      }, 1000);
+      return true;
+    } catch {
+      releaseClearGuard();
+      if (button) button.disabled = false;
+      return false;
+    }
+  }
 
   window.FPStorage167ClearGuard = Object.freeze({
+    runExclusive,
     isClearing: () => clearingActive,
     activeDownloads: () => activeMediaPromises.size,
     activeCacheWrites: () => activeCacheWrites.size

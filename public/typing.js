@@ -1,4 +1,4 @@
-/* Build 121: transient Telegram-like typing, media and voice activity indicator. */
+/* Build 170: transient Telegram-like typing/media activity using connection and room events. */
 (() => {
   const STOP_DELAY_MS = 3000;
   const START_HEARTBEAT_MS = 1500;
@@ -206,9 +206,6 @@
     window.fetch = wrappedFetch;
   }
 
-  // FPChat's current media pipeline uses XMLHttpRequest in
-  // uploadEncryptedMediaXhr(), not fetch(). Keep the existing upload function
-  // untouched and observe only the exact /media/upload request here.
   if (xhrProto && baseXhrOpen && baseXhrSend && !xhrProto.__fpActivityWrapped) {
     const wrappedOpen = function fpActivityXhrOpen(method, url, ...rest) {
       this.__fpActivityRequestUrl = url;
@@ -267,7 +264,13 @@
     const line = document.getElementById('presenceLine');
     if (!line) return false;
     const label = activityLabel(entry.activity);
-    if (line.dataset.fpTypingDevice === entry.deviceId && line.dataset.fpActivity === entry.activity && line.classList.contains('fp-typing-active')) return true;
+    const renderedLabel = line.querySelector('.fp-typing-label');
+    if (
+      line.dataset.fpTypingDevice === entry.deviceId &&
+      line.dataset.fpActivity === entry.activity &&
+      line.classList.contains('fp-typing-active') &&
+      renderedLabel?.textContent === label
+    ) return true;
     line.dataset.fpTypingDevice = entry.deviceId;
     line.dataset.fpActivity = entry.activity;
     line.classList.add('fp-typing-active');
@@ -325,17 +328,26 @@
 
   function attachCurrentWs() {
     const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    if (ws === attachedWs) return;
     if (attachedWs) {
       try { attachedWs.removeEventListener('message', handleWsMessage); } catch {}
     }
-    attachedWs = ws;
+    attachedWs = ws || null;
+    if (!ws) return;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => {
       for (const [roomId, entry] of localMediaUploads) sendMediaPulse(roomId, entry);
       const input = document.getElementById('msgInput');
       if (!hasLocalMediaUpload() && document.activeElement === input && String(input?.value || '').length > 0) pulseLocalTyping(input);
     }, { once: true });
+  }
+
+  function syncRoomTransition() {
+    const roomId = currentRoomId();
+    if (activeTypingRoomId && activeTypingRoomId !== roomId) stopLocalTyping(activeTypingRoomId);
+    if (!renderRemoteActivity() && !isRoomClosed() && baseRenderPresenceStatus) {
+      try { baseRenderPresenceStatus(); } catch {}
+    }
   }
 
   if (baseRenderPresenceStatus && !baseRenderPresenceStatus.__fpTypingWrapped) {
@@ -349,7 +361,7 @@
   }
 
   document.addEventListener('input', (event) => {
-    if (event.target?.id !== 'msgInput') return;
+    if (event.target?.id !== 'msgInput' || !event.isTrusted) return;
     pulseLocalTyping(event.target);
   }, true);
 
@@ -363,50 +375,31 @@
     scheduleStop();
   }, true);
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') {
-      stopLocalTyping();
-      stopAllLocalMedia();
-    } else {
+  window.FPLifecycle170?.subscribe(event => {
+    if (['background','pagehide','beforeunload'].includes(event.lastType)) {
+      stopLocalTyping();stopAllLocalMedia();
+    } else if (event.lastType === 'foreground') {
       attachCurrentWs();
       const entry = remoteActivity.get(currentRoomId());
       if (entry?.expiresAt > Date.now()) renderRemoteActivity();
-    }
-  });
-
-  window.addEventListener('pagehide', () => {
-    stopLocalTyping();
-    stopAllLocalMedia();
-  });
-  window.addEventListener('offline', () => {
-    typingStarted = false;
-    lastStartSentAt = 0;
-    clearStopTimer();
-    for (const entry of localMediaUploads.values()) {
-      if (entry.heartbeatTimer) clearInterval(entry.heartbeatTimer);
-      entry.heartbeatTimer = null;
-    }
-  });
-  window.addEventListener('online', () => {
-    attachCurrentWs();
-    for (const [roomId, entry] of localMediaUploads) {
-      sendMediaPulse(roomId, entry);
-      ensureMediaHeartbeat(roomId, entry);
-    }
-  });
-
-  let lastRoomId = currentRoomId();
-  setInterval(() => {
-    attachCurrentWs();
-    const roomId = currentRoomId();
-    if (lastRoomId !== roomId) {
-      if (activeTypingRoomId && activeTypingRoomId !== roomId) stopLocalTyping(activeTypingRoomId);
-      lastRoomId = roomId;
-      if (!renderRemoteActivity() && !isRoomClosed() && baseRenderPresenceStatus) {
-        try { baseRenderPresenceStatus(); } catch {}
+    } else if (event.lastType === 'offline') {
+      typingStarted=false;lastStartSentAt=0;clearStopTimer();
+      for(const entry of localMediaUploads.values()){
+        if(entry.heartbeatTimer)clearInterval(entry.heartbeatTimer);
+        entry.heartbeatTimer=null;
       }
+    } else if (event.lastType === 'online') {
+      attachCurrentWs();
+      for(const [roomId,entry]of localMediaUploads){sendMediaPulse(roomId,entry);ensureMediaHeartbeat(roomId,entry);}
     }
-  }, 500);
+  });
+
+  window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
+  window.addEventListener('fpchat:room-context-changed', syncRoomTransition, { passive: true });
+  window.addEventListener('fpchat:room-context-ended', syncRoomTransition, { passive: true });
+  window.addEventListener('fpchat:room-open170', (event) => {
+    if (event?.detail?.stage === 'ready' || event?.detail?.stage === 'left') syncRoomTransition();
+  }, { passive: true });
 
   attachCurrentWs();
 })();

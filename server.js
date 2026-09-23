@@ -8,6 +8,18 @@ const webpush = require('web-push');
 const fs = require('fs');
 const multer = require('multer');
 const { createDb } = require('./src/db');
+const { installMessageActionsServer } = require('./src/message-actions-server');
+const { installMessagePinsServer } = require('./src/message-pins-server');
+const { installTypingServer } = require('./src/typing-server');
+const { installUsernameServer } = require('./src/username-server');
+const { installSystemEventsServer } = require('./src/system-events-server');
+const { installStorageStats168 } = require('./src/storage-stats168');
+const { installUserBlocks165Server } = require('./src/user-blocks165');
+const { installUserBlockEventActions165 } = require('./src/user-block-event-actions165');
+const { installChatRequestsServer } = require('./src/chat-requests-server147');
+const { installVoiceServer } = require('./src/voice-server');
+const { createEncryptedUpload179 } = require('./src/encrypted-upload179');
+const { createHistoryRead179 } = require('./src/history-read179');
 
 dotenv.config();
 
@@ -27,7 +39,9 @@ if (pushEnabled) {
 }
 
 const db = createDb(DATABASE_PATH);
-const UPLOAD_DIR = path.join(__dirname, 'data', 'uploads');
+const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);
+const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db, { userBlocks: fpUserBlocks165 });
+const UPLOAD_DIR = process.env.FPCHAT_UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 110 * 1024 * 1024 } });
 const app = express();
@@ -129,6 +143,12 @@ const q = {
   deleteRoomById: db.prepare('DELETE FROM rooms WHERE id=?')
 };
 
+const fpHistoryRead179 = createHistoryRead179({
+  db,
+  listMessagesLatest: q.listMessagesLatest,
+  listMessagesBefore: q.listMessagesBefore
+});
+
 function randomToken(length) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let out = '';
@@ -185,13 +205,7 @@ function serializeMessages(messages) {
 }
 function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE) {
   const safeLimit = normalizeHistoryLimit(limit);
-  const rows = beforeCursor === null
-    ? q.listMessagesLatest.all(roomId, safeLimit + 1)
-    : q.listMessagesBefore.all(roomId, beforeCursor, safeLimit + 1);
-  const hasMore = rows.length > safeLimit;
-  const pageRows = rows.slice(0, safeLimit).reverse();
-  const messages = serializeMessages(pageRows);
-  return { messages, hasMore, nextCursor: messages.length ? Number(messages[0].id) : null };
+  return fpHistoryRead179.readPage({ roomId, beforeCursor, safeLimit, serializeMessages });
 }
 function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE) {
   const safeLimit = normalizeHistoryLimit(limit);
@@ -409,8 +423,9 @@ function mediaToDto(media, req) {
 function cleanupStalePendingMedia() {
   const rows = q.listStalePendingMedia.all();
   for (const media of rows) {
-    safeUnlink(media.server_filename);
-    safeUnlink(media.thumbnail_filename);
+    const cleanupInput = { mediaKind: media.media_kind, media };
+    if (fpEncryptedImageUpload179.handles(cleanupInput)) fpEncryptedImageUpload179.cleanup(cleanupInput);
+    else cleanupPendingMediaFiles179(media);
     q.deletePendingMediaById.run(media.id);
   }
 }
@@ -534,6 +549,18 @@ app.post('/api/invites/:inviteCode/join', async (req, res) => {
   const safeDeviceId = String(deviceId).slice(0, 64);
   const safeName = String(displayName).slice(0, 48);
   if (!safeDeviceId) return res.status(400).json({ error: 'deviceId required' });
+  const inviteBlock165 = fpUserBlocks165.inviteGuard(room.id, safeDeviceId);
+  if (!inviteBlock165.ok) {
+    if (inviteBlock165.code === 'INVITE_BLOCKED_BY_CREATOR') {
+      try {
+        fpBlockedInviteEvents165.note({ roomId: room.id, joinerId: safeDeviceId, fallbackName: safeName });
+      } catch (error) {
+        console.error('Blocked invite system event failed', error);
+      }
+      return res.status(403).json({ ok: false, error: 'Вход недоступен: пользователь вас заблокировал.', code: inviteBlock165.code });
+    }
+    return res.status(403).json({ ok: false, error: 'Сначала разблокируйте пользователя.', code: inviteBlock165.code });
+  }
   if (q.findParticipantAny.get(room.id, safeDeviceId)) return res.status(409).json({ error: 'device already belongs to room' });
   if (q.listParticipantsByRoom.all(room.id).length >= 2) return res.status(409).json({ error: 'room is full' });
   const roomSecret = invite.room_secret;
@@ -562,12 +589,9 @@ app.post('/api/invites/:inviteCode/join', async (req, res) => {
   console.log(`[ROOM] invite accepted room=${room.public_id}`);
   console.log(`[ROOM] participant joined room=${room.public_id} participant=${participantId}`);
   const participant = q.findParticipant.get(room.id, safeDeviceId);
-  const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
-    deviceId: item.device_id,
-    displayName: item.display_name,
-    online: Boolean(item.online),
-    lastSeenAt: toIsoUtc(item.last_seen_at)
-  }));
+  const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
+    fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
+  );
   const history = getMessageHistoryPage(room.id);
   const systemEvents = history.messages.filter((message) => message.type === 'system');
   const responseHistory = { ...history, messages: history.messages.filter((message) => message.type !== 'system') };
@@ -616,12 +640,9 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   if (!participant) return res.status(403).json({ error: 'forbidden', code: 'ACCESS_REVOKED' });
   q.upsertParticipant.run(room.id, String(displayName).slice(0, 48), safeDeviceId);
   const updated = q.findParticipant.get(room.id, safeDeviceId);
-  const participants = q.listParticipantsByRoom.all(room.id).map((item) => ({
-    deviceId: item.device_id,
-    displayName: item.display_name,
-    online: Boolean(item.online),
-    lastSeenAt: toIsoUtc(item.last_seen_at)
-  }));
+  const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
+    fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
+  );
   const history = getMessageHistoryPage(room.id);
   const unread = getUnreadState(room.id, updated.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
@@ -752,7 +773,15 @@ function broadcastRoomState(room) {
   sendToRoomParticipants(room.public_id, { type: 'room:state', roomId: room.public_id, status: String(room.status || ROOM_OPEN).toLowerCase(), closedAt: toIsoUtc(room.closed_at) });
 }
 function broadcastPresenceUpdate(roomPublicId, payload) {
-  sendToRoomParticipants(roomPublicId, { type: 'presence:update', roomId: roomPublicId, ...payload });
+  const room = q.findRoomByPublicId.get(roomPublicId);
+  if (!room || !payload?.deviceId) return;
+  const event = { type: 'presence:update', roomId: roomPublicId, ...payload };
+  for (const participant of q.listParticipantsByRoom.all(room.id)) {
+    if (!fpUserBlocks165.canViewerSeePresence(participant.device_id, payload.deviceId)) continue;
+    const sockets = socketsByDevice.get(participant.device_id);
+    if (!sockets) continue;
+    for (const client of sockets) sendWsJson(client, event);
+  }
 }
 function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
   const sockets = socketsByDevice.get(deviceId);
@@ -795,24 +824,16 @@ function unregisterWsFromAllDevices(ws) {
   }
 }
 
-app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedFile', maxCount: 1 }, { name: 'encryptedThumbnail', maxCount: 1 }]), (req, res) => {
-  const room = q.findRoomByPublicId.get(req.params.publicId);
-  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
-  const deviceId = String(req.body?.deviceId || '').slice(0, 64);
-  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
-  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });
-  const mimeType = String(req.body?.mimeType || '');
-  const mediaKind = String(req.body?.mediaKind || '');
-  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']);
-  if (!allowed.has(mimeType)) return res.status(400).json({ ok: false, error: 'mime not allowed' });
-  if (!['image', 'video'].includes(mediaKind)) return res.status(400).json({ ok: false, error: 'mediaKind invalid' });
-  const sizeBytes = Number(req.body?.sizeBytes || 0);
-  if (mediaKind === 'image' && sizeBytes > 10 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'image too large' });
-  if (mediaKind === 'video' && sizeBytes > 100 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'video too large' });
-  const encryptedFile = req.files?.encryptedFile?.[0];
-  if (!encryptedFile) return res.status(400).json({ ok: false, error: 'encryptedFile required' });
-  const encryptedThumb = req.files?.encryptedThumbnail?.[0] || null;
-  const publicId = randomToken(24);
+function persistEncryptedMedia179({
+  room,
+  req,
+  publicId,
+  encryptedFile,
+  encryptedThumb,
+  mimeType,
+  mediaKind,
+  sizeBytes
+}) {
   const serverFilename = `media_${publicId}.bin`;
   const thumbFilename = encryptedThumb ? `thumb_${publicId}.bin` : null;
   fs.writeFileSync(path.join(UPLOAD_DIR, serverFilename), encryptedFile.buffer);
@@ -835,7 +856,63 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
     Number(req.body?.height || 0) || null,
     Number(req.body?.durationSeconds || 0) || null
   );
-  const media = q.findMediaByPublicId.get(publicId);
+  return q.findMediaByPublicId.get(publicId);
+}
+
+function cleanupPendingMediaFiles179(media) {
+  safeUnlink(media?.server_filename);
+  safeUnlink(media?.thumbnail_filename);
+}
+
+const fpEncryptedImageUpload179 = createEncryptedUpload179({
+  mediaKind: 'image',
+  persist: persistEncryptedMedia179,
+  cleanup: cleanupPendingMediaFiles179
+});
+app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedFile', maxCount: 1 }, { name: 'encryptedThumbnail', maxCount: 1 }]), (req, res) => {
+  const room = q.findRoomByPublicId.get(req.params.publicId);
+  if (!room) return res.status(404).json({ ok: false, error: 'room not found' });
+  const deviceId = String(req.body?.deviceId || '').slice(0, 64);
+  if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  if (!isRoomOpen(room)) return res.status(409).json({ ok: false, error: 'room closed', code: 'ROOM_CLOSED' });
+  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, deviceId);
+  if (!blockGuard165.ok) return res.status(403).json({ ok: false, error: 'blocked', code: blockGuard165.code });
+  const mimeType = String(req.body?.mimeType || '');
+  const mediaKind = String(req.body?.mediaKind || '');
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime']);
+  if (!allowed.has(mimeType)) return res.status(400).json({ ok: false, error: 'mime not allowed' });
+  if (!['image', 'video'].includes(mediaKind)) return res.status(400).json({ ok: false, error: 'mediaKind invalid' });
+  const sizeBytes = Number(req.body?.sizeBytes || 0);
+  if (mediaKind === 'image' && sizeBytes > 10 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'image too large' });
+  if (mediaKind === 'video' && sizeBytes > 100 * 1024 * 1024) return res.status(400).json({ ok: false, error: 'video too large' });
+  const encryptedFile = req.files?.encryptedFile?.[0];
+  if (!encryptedFile) return res.status(400).json({ ok: false, error: 'encryptedFile required' });
+  const encryptedThumb = req.files?.encryptedThumbnail?.[0] || null;
+  const uploadId = String(req.body?.uploadId || '');
+  if (uploadId && !/^[a-f0-9]{32}$/.test(uploadId)) return res.status(400).json({ ok: false, error: 'invalid uploadId' });
+  const publicId = uploadId || randomToken(24);
+  const previousUpload = q.findMediaByPublicId.get(publicId);
+  if (previousUpload) {
+    if (previousUpload.room_id !== room.id || previousUpload.status !== 'pending') return res.status(409).json({ ok: false, error: 'uploadId already used' });
+    return res.json({ ok: true, media: mediaToDto(previousUpload, req) });
+  }
+  if (req.aborted || res.destroyed) return;
+  const persistenceInput = {
+    room,
+    req,
+    publicId,
+    encryptedFile,
+    encryptedThumb,
+    mimeType,
+    mediaKind,
+    sizeBytes
+  };
+  const media = fpEncryptedImageUpload179.handles(persistenceInput)
+    ? fpEncryptedImageUpload179.save(persistenceInput)
+    : persistEncryptedMedia179(persistenceInput);
+  // Once the pending media row is committed, keep it independent of response delivery.
+  // A client that loses the response retries the same uploadId and recovers this row.
+  // Explicit cancel/delete and the existing 24h stale-pending cleanup own orphan cleanup.
   return res.json({ ok: true, media: mediaToDto(media, req) });
 });
 app.get('/api/media/:publicId/blob', (req, res) => {
@@ -864,10 +941,16 @@ app.delete('/api/rooms/:publicId/media/pending', (req, res) => {
   const deviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!q.findParticipant.get(room.id, deviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const mediaIds = Array.isArray(req.body?.mediaIds) ? req.body.mediaIds.map(Number).filter(Boolean) : [];
+  for (const uploadId of (Array.isArray(req.body?.uploadIds) ? req.body.uploadIds.slice(0, 10) : [])) {
+    if (!/^[a-f0-9]{32}$/.test(String(uploadId))) continue;
+    const pending = q.findMediaByPublicId.get(uploadId);
+    if (pending?.room_id === room.id && pending.status === 'pending') mediaIds.push(pending.id);
+  }
   const rows = q.listPendingMediaByIds.all(room.id, JSON.stringify(mediaIds));
   for (const media of rows) {
-    safeUnlink(media.server_filename);
-    safeUnlink(media.thumbnail_filename);
+    const cleanupInput = { mediaKind: media.media_kind, media };
+    if (fpEncryptedImageUpload179.handles(cleanupInput)) fpEncryptedImageUpload179.cleanup(cleanupInput);
+    else cleanupPendingMediaFiles179(media);
   }
   q.deletePendingMediaByIds.run(room.id, JSON.stringify(mediaIds));
   res.json({ ok: true, deleted: rows.length });
@@ -1007,6 +1090,8 @@ async function handleTextMessage(ws, payload) {
   const sender = q.findParticipant.get(room.id, ws.deviceId);
   if (!sender) return sendMessageRejected(ws, room, clientMessageId, 'forbidden', 'ACCESS_REVOKED');
   if (!isRoomOpen(room)) return sendMessageRejected(ws, room, clientMessageId, 'room closed', 'ROOM_CLOSED');
+  const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);
+  if (!blockGuard165.ok) return sendMessageRejected(ws, room, clientMessageId, 'blocked', blockGuard165.code);
   if (!clientMessageId || clientMessageId.length > 128) return sendMessageRejected(ws, room, clientMessageId, 'invalid client message id');
   const ciphertext = String(payload.ciphertext || '');
   const iv = String(payload.iv || '');
@@ -1099,6 +1184,11 @@ wss.on('connection', (ws, req) => {
         sendMessageRejected(ws, room, null, 'room closed', 'ROOM_CLOSED');
         return;
       }
+      const blockGuard165 = fpUserBlocks165.roomSendGuard(room.id, ws.deviceId);
+      if (!blockGuard165.ok) {
+        sendMessageRejected(ws, room, null, 'blocked', blockGuard165.code);
+        return;
+      }
       const ciphertext = String(payload.ciphertext || '');
       const iv = String(payload.iv || '');
       if (!ciphertext || !iv) return;
@@ -1182,6 +1272,83 @@ wss.on('connection', (ws, req) => {
     unregisterWsFromAllDevices(ws);
     syncDevicePresence(ws.deviceId);
   });
+});
+
+installMessageActionsServer({
+  app,
+  db,
+  q,
+  socketsByDevice,
+  sendWsJson,
+  sendToRoomParticipants,
+  broadcastUnreadState,
+  toIsoUtc,
+  safeUnlink,
+  isRoomOpen,
+  roomStatePayload
+});
+installMessagePinsServer({
+  app,
+  db,
+  q,
+  socketsByDevice,
+  sendWsJson,
+  sendToRoomParticipants,
+  toIsoUtc,
+  isRoomOpen,
+  roomStatePayload
+});
+installTypingServer({
+  wss,
+  q,
+  sendToRoomParticipants,
+  isRoomOpen,
+  userBlocks: fpUserBlocks165
+});
+installUsernameServer({
+  app,
+  db
+});
+installSystemEventsServer({
+  app,
+  db
+});
+installStorageStats168({
+  app,
+  db
+});
+installUserBlocks165Server({
+  app,
+  db,
+  q,
+  socketsByDevice,
+  sendWsJson,
+  toIsoUtc,
+  userBlocks: fpUserBlocks165
+});
+installUserBlockEventActions165({
+  app,
+  userBlocks: fpUserBlocks165
+});
+installChatRequestsServer({
+  app,
+  db,
+  q,
+  isRoomOpen,
+  removeRoomCascade
+});
+installVoiceServer({
+  app,
+  db,
+  q,
+  upload,
+  UPLOAD_DIR,
+  fs,
+  path,
+  randomToken,
+  safeUnlink,
+  isRoomOpen,
+  userBlocks: fpUserBlocks165
 });
 
 cleanupExpiredSoloRooms();

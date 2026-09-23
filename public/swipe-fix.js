@@ -17,7 +17,12 @@
   const isMobile = () => window.matchMedia("(max-width: 900px)").matches;
   const chatIsOpen = () => Boolean(document.querySelector(".chat-view") && document.getElementById("messages"));
   const modernSettingsRoot = () => document.querySelector('.fp-settings131');
-  const mediaViewerIsOpen = () => Boolean(document.querySelector('#mediaViewerRoot .media-viewer-overlay'));
+  const mediaViewerIsOpen = () => {
+    try {
+      if (window.FPLayer173?.topLayer) return window.FPLayer173.topLayer() === 'viewer';
+    } catch {}
+    return Boolean(document.querySelector('#mediaViewerRoot .media-viewer-overlay'));
+  };
   const gestureManager = () => window.FPGesture135 || null;
   const settingsIsOpen = () => {
     if (modernSettingsRoot()) return true;
@@ -199,6 +204,13 @@
     }
 
     if (swipe.axis !== "horizontal" || swipe.dx <= 0) return;
+    // Build 175: cancel competing pending actions before capture stops the row
+    // from receiving its own touchmove/touchend cleanup. Thresholds stay here.
+    if (manager?.claimAction && !manager.claimAction(`navigate:${swipe.mode}`, event)) {
+      if (swipe.modernSettings) resetModernSettingsVisual();
+      swipe = null;
+      return;
+    }
     swipe.owned = true;
     if (event.cancelable) event.preventDefault();
     event.stopImmediatePropagation();

@@ -1,0 +1,15 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const server=read('server.js');
+const boot=read('src/message-actions-bootstrap.js');
+const pins=read('src/message-pins-server.js');
+assert.equal((server.match(/installMessagePinsServer\(\{/g)||[]).length,1,'I2 must be explicit exactly once');
+assert.equal((boot.match(/installMessagePinsServer\(\{/g)||[]).length,0,'I2 must not be bootstrap-installed');
+const i1=server.indexOf('installMessageActionsServer({'),i2=server.indexOf('installMessagePinsServer({');
+assert(i1>=0&&i2>i1,'I2 must remain after I1');
+assert(!/__fp[A-Za-z0-9_]*Installed/.test(pins),'I2 historical no-local-guard contract changed');
+console.log('PASS 179.4 I2 remains explicit exactly once after I1');

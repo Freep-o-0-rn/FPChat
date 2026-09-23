@@ -1,0 +1,47 @@
+{
+  "environment": "Linux headless Chromium, 500 synthetic rows, 20 updates to one row, two animation frames after completion, 3 fresh profiles; not a mobile baseline",
+  "results": [
+    {
+      "firstMs": 161.19999999995343,
+      "update20Ms": 1232.9000000000233,
+      "retainedRows": 0,
+      "addedRows": 10000,
+      "removedRows": 10000,
+      "domNodes": 4646,
+      "bootReadyMs": 1059
+    },
+    {
+      "firstMs": 180.10000000009313,
+      "update20Ms": 1086,
+      "retainedRows": 0,
+      "addedRows": 10000,
+      "removedRows": 10000,
+      "domNodes": 4646,
+      "bootReadyMs": 1176
+    },
+    {
+      "firstMs": 182.70000000006985,
+      "update20Ms": 1051.0999999999767,
+      "retainedRows": 0,
+      "addedRows": 10000,
+      "removedRows": 10000,
+      "domNodes": 4646,
+      "bootReadyMs": 1063
+    }
+  ],
+  "summary": {
+    "firstMs": {
+      "median": 180.1,
+      "worst": 182.7
+    },
+    "update20Ms": {
+      "median": 1086,
+      "worst": 1232.9
+    },
+    "bootReadyMs": {
+      "median": 1063,
+      "worst": 1176
+    }
+  },
+  "errors": []
+}

@@ -244,12 +244,36 @@
         const res = await fetch('/version.json', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
-          const buildNumber = Number(data?.build);
-          if (Number.isFinite(buildNumber)) {
-            buildSuffix = `?v=${buildNumber}`;
+          const buildId = String(data?.build ?? '').trim();
+          if (/^\d+(?:\.\d+)*$/.test(buildId)) {
+            buildSuffix = `?v=${encodeURIComponent(buildId)}`;
           }
         }
       } catch {}
+
+      // Preload fetches early, but never executes scripts out of dependency order.
+      // Edges below document the existing execution chains and the room-entry gate.
+      const startupDependencies174 = {
+        'app.js':['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js'],
+        'voice.js':['app.js','typing.js'],
+        'voice-polish123.js':['voice.js'],
+        'message-context.js':['app.js','message-selection.js'],
+        'message-context-fix.js':['message-context.js'],
+        'message-actions.js':['message-context-fix.js'],
+        'message-pins.js':['message-actions.js'],
+        'message-pins-screen114.js':['message-pins.js'],
+        'room-lifecycle.js':['app.js','settings-fix.js'],
+        'sync-coordinator176.js':['app.js','connection170.js'],
+        'room-open170.js':['room-lifecycle.js','room-context170.js','lifecycle170.js','connection170.js','sync-coordinator176.js'],
+        'send-manager177.js':['room-open170.js'],
+        'text-send170.js':['send-manager177.js'],
+        'media-send170.js':['text-send170.js']
+      };
+      const preload174 = ['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js','app.js','settings-fix.js','room-lifecycle.js'];
+      let resolveOwners174;
+      const ownersReady174=new Promise(resolve=>{resolveOwners174=resolve;});
+      window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
+      window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});
 
       const css = document.createElement('link');
       css.rel = 'stylesheet';
@@ -311,78 +335,187 @@
       voicePins127Css.href = `/voice-pins127.css${buildSuffix}`;
       document.head.appendChild(voicePins127Css);
 
-      const script = document.createElement('script');
-      script.src = `/app.js${buildSuffix}`;
-      script.defer = true;
-      script.onload = () => {
-        const typing = document.createElement('script');
-        typing.src = `/typing.js${buildSuffix}`;
-        typing.onload = () => {
-          const voice = document.createElement('script');
-          voice.src = `/voice.js${buildSuffix}`;
-          voice.onload = () => {
-            const voicePolish = document.createElement('script');
-            voicePolish.src = `/voice-polish123.js${buildSuffix}`;
-            voicePolish.onload = () => {
-              const voiceCancel125 = document.createElement('script');
-              voiceCancel125.src = `/voice-cancel125.js${buildSuffix}`;
-              document.body.appendChild(voiceCancel125);
+      // Fetch the critical chain after CSS hints; optional feature downloads
+      // keep their existing onload chains instead of competing at startup.
+      for(const name of preload174){
+        const hint=document.createElement('link');hint.rel='preload';hint.as='script';hint.href=`/${name}${buildSuffix}`;
+        document.head.appendChild(hint);
+      }
 
-              const voicePins127 = document.createElement('script');
-              voicePins127.src = `/voice-pins127.js${buildSuffix}`;
-              document.body.appendChild(voicePins127);
-            };
-            document.body.appendChild(voicePolish);
-          };
-          document.body.appendChild(voice);
+      const loadApp = () => {
+        const work = document.createElement('script');
+        work.src = `/work174.js${buildSuffix}`;
+        work.onload = loadHistoryThenApp;
+        work.onerror = () => {
+          // Preserve a functioning client if the optional scheduler asset fails.
+          window.FPWork174 = {each: async (items, visit, {current=()=>true}={}) => {
+            for(let i=0;i<items.length;i++){if(!current())return false;await visit(items[i],i);}
+            return current();
+          }};
+          loadHistoryThenApp();
         };
-        document.body.appendChild(typing);
-
-        const settingsFix = document.createElement('script');
-        settingsFix.src = `/settings-fix.js${buildSuffix}`;
-        document.body.appendChild(settingsFix);
-
-        const chatFix = document.createElement('script');
-        chatFix.src = `/chat-fix.js${buildSuffix}`;
-        document.body.appendChild(chatFix);
-
-        const loadContextStack = () => {
-          const messageContext = document.createElement('script');
-          messageContext.src = `/message-context.js${buildSuffix}`;
-          messageContext.onload = () => {
-            const messageContextFix = document.createElement('script');
-            messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
-            messageContextFix.onload = () => {
-              const messageActions = document.createElement('script');
-              messageActions.src = `/message-actions.js${buildSuffix}`;
-              messageActions.onload = () => {
-                const messagePins = document.createElement('script');
-                messagePins.src = `/message-pins.js${buildSuffix}`;
-                messagePins.onload = () => {
-                  const messagePins114 = document.createElement('script');
-                  messagePins114.src = `/message-pins-screen114.js${buildSuffix}`;
-                  document.body.appendChild(messagePins114);
-                };
-                document.body.appendChild(messagePins);
-              };
-              document.body.appendChild(messageActions);
-            };
-            document.body.appendChild(messageContextFix);
-          };
-          document.body.appendChild(messageContext);
-
-          const swipeFix = document.createElement('script');
-          swipeFix.src = `/swipe-fix.js${buildSuffix}`;
-          document.body.appendChild(swipeFix);
-        };
-
-        const messageSelection = document.createElement('script');
-        messageSelection.src = `/message-selection.js${buildSuffix}`;
-        messageSelection.onload = loadContextStack;
-        messageSelection.onerror = loadContextStack;
-        document.body.appendChild(messageSelection);
+        document.body.appendChild(work);
       };
-      document.body.appendChild(script);
+      const loadHistoryThenApp = () => {
+        const history = document.createElement('script');
+        history.src = `/history174.js${buildSuffix}`;
+        history.onload = loadContextThenApp174;
+        history.onerror = loadContextThenApp174;
+        document.body.appendChild(history);
+      };
+      const loadContextThenApp174 = () => {
+        const context=document.createElement('script');
+        context.src=`/room-context170.js${buildSuffix}`;context.dataset.fpRoomContext170='1';
+        context.onload=()=>{
+          const lifecycle=document.createElement('script');
+          lifecycle.src=`/lifecycle170.js${buildSuffix}`;lifecycle.dataset.fpLifecycle170='1';
+          lifecycle.onload=loadAppAfterWork;
+          lifecycle.onerror=()=>{FPStartup174.fail();loadAppAfterWork();};
+          document.body.appendChild(lifecycle);
+        };
+        context.onerror=()=>{FPStartup174.fail();loadAppAfterWork();};
+        document.body.appendChild(context);
+      };
+      const loadAppAfterWork = () => {
+        const script = document.createElement('script');
+        script.src = `/app.js${buildSuffix}`;
+        script.defer = true;
+        script.onload = () => {
+          const typing = document.createElement('script');
+          typing.src = `/typing.js${buildSuffix}`;
+          typing.onload = () => {
+            const voice = document.createElement('script');
+            voice.src = `/voice.js${buildSuffix}`;
+            voice.onload = () => {
+              const voicePolish = document.createElement('script');
+              voicePolish.src = `/voice-polish123.js${buildSuffix}`;
+              voicePolish.onload = () => {
+                const voiceCancel125 = document.createElement('script');
+                voiceCancel125.src = `/voice-cancel125.js${buildSuffix}`;
+                document.body.appendChild(voiceCancel125);
+
+                const voicePins127 = document.createElement('script');
+                voicePins127.src = `/voice-pins127.js${buildSuffix}`;
+                document.body.appendChild(voicePins127);
+              };
+              document.body.appendChild(voicePolish);
+            };
+            document.body.appendChild(voice);
+          };
+          document.body.appendChild(typing);
+
+          const settingsFix = document.createElement('script');
+          settingsFix.src = `/settings-fix.js${buildSuffix}`;
+          settingsFix.onerror = () => {
+            window.FPRoomLifecycle98Ready = 'failed';
+            window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
+          };
+          document.body.appendChild(settingsFix);
+
+          const chatFix = document.createElement('script');
+          chatFix.src = `/chat-fix.js${buildSuffix}`;
+          document.body.appendChild(chatFix);
+
+          const loadContextStack = () => {
+            const messageContext = document.createElement('script');
+            messageContext.src = `/message-context.js${buildSuffix}`;
+            messageContext.onload = () => {
+              const messageContextFix = document.createElement('script');
+              messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
+              messageContextFix.onload = () => {
+                const messageActions = document.createElement('script');
+                messageActions.src = `/message-actions.js${buildSuffix}`;
+                messageActions.onload = () => {
+                  const messagePins = document.createElement('script');
+                  messagePins.src = `/message-pins.js${buildSuffix}`;
+                  messagePins.onload = () => {
+                    const messagePins114 = document.createElement('script');
+                    messagePins114.src = `/message-pins-screen114.js${buildSuffix}`;
+                    document.body.appendChild(messagePins114);
+                  };
+                  document.body.appendChild(messagePins);
+                };
+                document.body.appendChild(messageActions);
+              };
+              document.body.appendChild(messageContextFix);
+            };
+            document.body.appendChild(messageContext);
+
+            const swipeFix = document.createElement('script');
+            swipeFix.src = `/swipe-fix.js${buildSuffix}`;
+            document.body.appendChild(swipeFix);
+          };
+
+          const messageSelection = document.createElement('script');
+          messageSelection.src = `/message-selection.js${buildSuffix}`;
+          messageSelection.onload = loadContextStack;
+          messageSelection.onerror = loadContextStack;
+          document.body.appendChild(messageSelection);
+        };
+        document.body.appendChild(script);
+      };
+
+      // Build 173 owners load before app.js. This is dependency wiring, not
+      // startup optimization: DOM lifecycle and layer ownership must exist before
+      // feature modules begin mounting UI and gestures.
+      let owners173Started = false;
+      const load173OwnersThenApp = () => {
+        if (owners173Started) return;
+        owners173Started = true;
+
+        const loadLayer = () => {
+          const layer = document.createElement('script');
+          layer.src = `/layer-manager173.js${buildSuffix}`;
+          layer.dataset.fpLayerManager173 = '1';
+          layer.onload = loadApp;
+          layer.onerror = () => {
+            console.error('[FPChat] Build 173 LayerManager failed to load; using legacy gesture layer detection.');
+            loadApp();
+          };
+          document.body.appendChild(layer);
+        };
+
+        const domLifecycle = document.createElement('script');
+        domLifecycle.src = `/dom-lifecycle173.js${buildSuffix}`;
+        domLifecycle.dataset.fpDomLifecycle173 = '1';
+        domLifecycle.onload = loadLayer;
+        domLifecycle.onerror = () => {
+          console.error('[FPChat] Build 173 DOM lifecycle failed to load; LayerManager will use compatibility state.');
+          loadLayer();
+        };
+        document.body.appendChild(domLifecycle);
+      };
+
+      // Build 172: MessageStore must exist before app.js so the legacy
+      // messageCache surface becomes an adapter instead of a second state owner.
+      // A load failure still falls back to the previous app path rather than
+      // leaving the user on the boot screen.
+      let storeLoadStarted = false;
+      const loadMessageStoreThenApp = () => {
+        if (storeLoadStarted) return;
+        storeLoadStarted = true;
+        const store = document.createElement('script');
+        store.src = `/message-store172.js${buildSuffix}`;
+        store.dataset.fpMessageStore172 = '1';
+        store.onload = load173OwnersThenApp;
+        store.onerror = () => {
+          console.error('[FPChat] Build 172 MessageStore failed to load; using legacy messageCache.');
+          load173OwnersThenApp();
+        };
+        document.body.appendChild(store);
+      };
+
+      // Build 171 remains the single fetch/XHR owner and still loads before
+      // app.js and before legacy feature modules.
+      const network = document.createElement('script');
+      network.src = `/network171.js${buildSuffix}`;
+      network.dataset.fpNetwork171 = '1';
+      network.onload = loadMessageStoreThenApp;
+      network.onerror = () => {
+        console.error('[FPChat] Build 171 network coordinator failed to load; using legacy fetch chain.');
+        loadMessageStoreThenApp();
+      };
+      document.body.appendChild(network);
     })();
   </script>
 </body>

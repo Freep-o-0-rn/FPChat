@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const server=read('server.js');
+const boot=read('src/message-actions-bootstrap.js');
+const actions=read('src/message-actions-server.js');
+assert.equal((server.match(/installMessageActionsServer\(\{/g)||[]).length,1,'I1 must be explicit exactly once');
+assert.equal((boot.match(/installMessageActionsServer\(\{/g)||[]).length,0,'I1 must not be bootstrap-installed');
+assert(server.indexOf('installMessageActionsServer({')<server.indexOf('installMessagePinsServer({'),'I1 must precede I2');
+assert(!/__fp[A-Za-z0-9_]*Installed/.test(actions),'I1 historical no-local-guard contract changed');
+console.log('PASS 179.3 I1 remains explicit exactly once before I2');

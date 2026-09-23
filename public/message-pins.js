@@ -1,4 +1,4 @@
-/* Build 113: isolated hybrid shared/personal message pins layer. */
+/* Build 170: isolated hybrid shared/personal message pins layer with event-driven connection attachment. */
 (() => {
   const ROOT = '.message-context-root';
   const MENU = '.message-context-menu';
@@ -422,12 +422,13 @@
   }
 
   function attachCurrentWs() {
-    const ws = state?.ws;
-    if (!ws || ws === attachedWs) return;
+    const ws = state?.ws || null;
+    if (ws === attachedWs) return;
     if (attachedWs) {
       try { attachedWs.removeEventListener('message', handleWsMessage); } catch {}
     }
     attachedWs = ws;
+    if (!ws) return;
     ws.addEventListener('message', handleWsMessage);
     ws.addEventListener('open', () => { const id = roomId(); if (id) void fetchPins(id); }, { once: true });
     if (ws.readyState === WebSocket.OPEN) { const id = roomId(); if (id) void fetchPins(id); }
@@ -440,26 +441,42 @@
     void fetchPins(id);
   }
 
-  const observer = new MutationObserver((records) => {
-    let chatAdded = false;
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches(ROOT)) decorateContext(node);
-        node.querySelectorAll?.(ROOT).forEach(decorateContext);
-        const root = node.closest?.(ROOT);
-        if (root) decorateContext(root);
-        if (node.matches('.chat-view,#messages') || node.querySelector?.('.chat-view,#messages')) chatAdded = true;
-      }
-    }
-    if (chatAdded) syncCurrentChat();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
+  function handleLifecycle170(event) {
+    const type = String(event?.detail?.lastType || '');
+    if (type === 'foreground' || type === 'online' || type === 'pageshow') syncCurrentChat();
+  }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') syncCurrentChat();
-  });
-  window.addEventListener('online', syncCurrentChat);
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('context', 'mounted', ({ node }) => decorateContext(node));
+    window.FPDOM173.on('chat', 'mounted', syncCurrentChat);
+  } else {
+    const observer = new MutationObserver((records) => {
+      let chatAdded = false;
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          if (node.matches(ROOT)) decorateContext(node);
+          node.querySelectorAll?.(ROOT).forEach(decorateContext);
+          const root = node.closest?.(ROOT);
+          if (root) decorateContext(root);
+          if (node.matches('.chat-view,#messages') || node.querySelector?.('.chat-view,#messages')) chatAdded = true;
+        }
+      }
+      if (chatAdded) syncCurrentChat();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  window.addEventListener('fpchat:connection170', attachCurrentWs, { passive: true });
+  window.addEventListener('fpchat:lifecycle170', handleLifecycle170, { passive: true });
+  window.addEventListener('fpchat:room-open170', (event) => {
+    if (event?.detail?.stage === 'ready') syncCurrentChat();
+    if (event?.detail?.stage === 'left') {
+      document.querySelector('.chat-pin-bar')?.remove();
+      closePinsScreen();
+    }
+  }, { passive: true });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && screenState) {
       event.preventDefault();
@@ -468,7 +485,6 @@
   }, true);
 
   attachCurrentWs();
-  setInterval(attachCurrentWs, 500);
   document.querySelectorAll(ROOT).forEach(decorateContext);
   syncCurrentChat();
 })();

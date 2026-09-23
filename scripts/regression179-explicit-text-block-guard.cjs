@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const server=read('server.js'),boot=read('src/message-actions-bootstrap.js');
+const at=server.indexOf('async function handleTextMessage(ws, payload)');
+const fn=server.slice(at,server.indexOf('\n}',at)+2);
+assert(fn.includes('fpUserBlocks165.roomSendGuard(room.id, ws.deviceId)'));
+assert(fn.includes("sendMessageRejected(ws, room, clientMessageId, 'blocked', blockGuard165.code)"));
+assert(!boot.includes("'text message block guard'"));
+console.log('PASS 179.4 T4 explicit message:send block guard');

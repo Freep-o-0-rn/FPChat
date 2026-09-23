@@ -253,26 +253,33 @@
   document.addEventListener('pointerup', end, true);
   document.addEventListener('pointercancel', end, true);
 
-  const observer = new MutationObserver((records) => {
-    ensureUi();
-    let composerChanged = false;
-    for (const record of records) {
-      for (const node of record.addedNodes || []) {
-        if (node.nodeType !== 1) continue;
-        if (
-          node.id === 'sendForm' ||
-          node.matches?.('.fp-voice-record-btn') ||
-          node.querySelector?.('#sendForm, .fp-voice-record-btn')
-        ) {
-          composerChanged = true;
-          break;
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('composer', 'mounted', () => {
+      ensureUi();
+      scheduleVoiceComposerSync();
+    });
+  } else {
+    const observer = new MutationObserver((records) => {
+      ensureUi();
+      let composerChanged = false;
+      for (const record of records) {
+        for (const node of record.addedNodes || []) {
+          if (node.nodeType !== 1) continue;
+          if (
+            node.id === 'sendForm' ||
+            node.matches?.('.fp-voice-record-btn') ||
+            node.querySelector?.('#sendForm, .fp-voice-record-btn')
+          ) {
+            composerChanged = true;
+            break;
+          }
         }
+        if (composerChanged) break;
       }
-      if (composerChanged) break;
-    }
-    if (composerChanged) scheduleVoiceComposerSync();
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+      if (composerChanged) scheduleVoiceComposerSync();
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') scheduleVoiceComposerSync();

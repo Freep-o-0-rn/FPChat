@@ -190,6 +190,10 @@
     requestAnimationFrame(() => {
       if (!pinBottom || performance.now() > pinBottomUntil || box !== document.getElementById('messages')) return;
       try {
+        if (window.FPScroll173?.requestBottom) {
+          window.FPScroll173.requestBottom(box);
+          return;
+        }
         if (typeof scrollCoordinator !== 'undefined' && scrollCoordinator?.requestBottom) {
           scrollCoordinator.requestBottom(box);
           return;
@@ -202,6 +206,21 @@
   function clearSettleTimers() {
     for (const timer of settleTimers) clearTimeout(timer);
     settleTimers = [];
+  }
+
+  function syncViewportCorrectionNow() {
+    const nextCorrection = Math.min(
+      Math.max(0, Number(window.innerHeight) || 1200),
+      requestedViewportCorrection(),
+    );
+
+    if (Math.abs(nextCorrection - correctionY) > 0.5) {
+      correctionY = nextCorrection;
+      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
+    } else if (!app.style.getPropertyValue('--fpchat-viewport-correction-y')) {
+      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
+    }
+    return correctionY;
   }
 
   function syncViewportNow() {
@@ -218,17 +237,7 @@
     app.classList.add(MANAGED_CLASS);
     app.style.setProperty('--fpchat-visible-height', `${Math.ceil(currentVisibleHeight())}px`);
 
-    const nextCorrection = Math.min(
-      Math.max(0, Number(window.innerHeight) || 1200),
-      requestedViewportCorrection(),
-    );
-
-    if (Math.abs(nextCorrection - correctionY) > 0.5) {
-      correctionY = nextCorrection;
-      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
-    } else if (!app.style.getPropertyValue('--fpchat-viewport-correction-y')) {
-      app.style.setProperty('--fpchat-viewport-correction-y', `${Math.round(correctionY)}px`);
-    }
+    syncViewportCorrectionNow();
 
     keepBottomPinned();
   }
@@ -252,9 +261,17 @@
   installStyles();
   closedViewportHeight = rawVisualHeight();
 
+  function handleVisualViewportChange() {
+    // iOS may pan the visual viewport before the next animation frame while
+    // focusing the composer. Apply only the existing Y correction immediately
+    // so the fixed app/header does not flash at WebKit's transient pan offset.
+    if (composerIsFocused() && chatIsOpen()) syncViewportCorrectionNow();
+    requestViewportSync();
+  }
+
   const viewport = window.visualViewport;
-  viewport?.addEventListener('resize', requestViewportSync, { passive: true });
-  viewport?.addEventListener('scroll', requestViewportSync, { passive: true });
+  viewport?.addEventListener('resize', handleVisualViewportChange, { passive: true });
+  viewport?.addEventListener('scroll', handleVisualViewportChange, { passive: true });
   window.addEventListener('resize', settleViewport, { passive: true });
   window.addEventListener('orientationchange', () => {
     closedViewportHeight = 0;
@@ -302,10 +319,49 @@
     settleViewport();
   }, { passive: true });
 
-  // Chat DOM is rebuilt when a room is opened/closed/restored. Re-evaluate the
-  // managed viewport without coupling this fix to the chat rendering code.
-  const observer = new MutationObserver(requestViewportSync);
-  observer.observe(document.getElementById('contentPane') || app, { childList: true, subtree: true });
+  // Build 173: chat/composer mount state now comes from the centralized DOM
+  // lifecycle owner. The broad subtree observer is retained only as a fallback.
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('chat', 'mounted', settleViewport);
+    window.FPDOM173.on('chat', 'unmounted', settleViewport);
+    window.FPDOM173.on('composer', 'mounted', settleViewport);
+    window.FPDOM173.on('composer', 'unmounted', settleViewport);
+  } else {
+    const observer = new MutationObserver(requestViewportSync);
+    observer.observe(document.getElementById('contentPane') || app, { childList: true, subtree: true });
+  }
+
+  window.FPViewport173 = Object.freeze({
+    owners: Object.freeze({
+      geometry: 'viewport-fix158',
+      keyboardState: 'FPViewport136',
+      messageScroll: 'FPScroll173'
+    }),
+    sync: requestViewportSync,
+    settle: settleViewport,
+    stopBottomPin,
+    snapshot: () => ({
+      owner: 'FPViewport173',
+      chatOpen: chatIsOpen(),
+      composerFocused: composerIsFocused(),
+      correctionY: Math.round(correctionY || 0),
+      closedViewportHeight: Math.round(closedViewportHeight || 0),
+      visibleHeight: Math.round(currentVisibleHeight() || 0),
+      bottomPin: Boolean(pinBottom)
+    })
+  });
+
+  const registerRuntime = () => {
+    try {
+      window.FPRuntime?.registerOwner?.('viewport-geometry173', {
+        role: 'mobile-viewport-geometry-owner',
+        mode: 'active-owner',
+        publicOwner: 'FPViewport173'
+      });
+    } catch {}
+  };
+  registerRuntime();
+  window.addEventListener?.('fpchat:boot-ready', registerRuntime, { once: true, passive: true });
 
   settleViewport();
 })();

@@ -46,7 +46,7 @@
       const roomId = String(state?.roomId || '');
       const generation = ++galleryGeneration;
 
-      mediaViewerState = {
+      const nextViewer = {
         messageMedia: initialItems,
         index: initialIndex,
         loaded: new Map(),
@@ -54,7 +54,9 @@
         fpRoomId: roomId,
         fpGeneration: generation,
       };
-      renderMediaViewer();
+      const manager = window.FPMediaManager177;
+      if (manager?.openViewer) manager.openViewer(nextViewer, openViewerWorker177);
+      else openViewerWorker177(nextViewer);
       void hydrateWholeRoomGallery(roomId, sourcePublicId, generation, initialItems);
     };
 
@@ -63,6 +65,12 @@
     installTouchGuard();
     installKeyboardNavigation();
   };
+
+  function openViewerWorker177(viewer) {
+    mediaViewerState = viewer;
+    renderMediaViewer();
+    return viewer;
+  }
 
   function isGalleryMedia(item) {
     const kind = String(item?.media_kind || '');
@@ -316,14 +324,13 @@
     const cached = assetCache.get(key);
     if (cached) return cached.promise;
 
-    const entry = { url: '', promise: null };
+    const entry = { url: '', promise: null, controller:new AbortController() };
     entry.promise = (async () => {
       const persisted = STORAGE.get(STORAGE.roomState(roomId));
       if (!persisted?.deviceId) throw new Error('gallery device unavailable');
-      const response = await fetch(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`);
-      if (!response.ok) throw new Error(`gallery media ${response.status}`);
-      const encrypted = await response.blob();
-      const plain = await decryptBlobWithIvPrefix(encrypted, item.mime_type || 'application/octet-stream');
+      const key=await getRoomKey(roomId);
+      const plain=await readEncryptedMedia174(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,item.mime_type || 'application/octet-stream',key,{signal:entry.controller.signal});
+      if(entry.controller.signal.aborted||assetCache.get(mediaKey(roomId,item))!==entry)throw new DOMException('Stale gallery asset','AbortError');
       entry.url = URL.createObjectURL(plain);
       return { url: entry.url };
     })();
@@ -331,7 +338,7 @@
     try {
       return await entry.promise;
     } catch (error) {
-      assetCache.delete(key);
+      if(assetCache.get(key)===entry)assetCache.delete(key);
       throw error;
     }
   }
@@ -339,6 +346,7 @@
   function dropAsset(roomId, item) {
     const key = mediaKey(roomId, item);
     const entry = assetCache.get(key);
+    entry?.controller?.abort();
     if (entry?.url) URL.revokeObjectURL(entry.url);
     assetCache.delete(key);
   }
@@ -346,16 +354,26 @@
   function pruneAssetCache(keep) {
     for (const [key, entry] of assetCache) {
       if (keep.has(key)) continue;
+      entry?.controller?.abort();
       if (entry?.url) URL.revokeObjectURL(entry.url);
       assetCache.delete(key);
     }
   }
 
-  function closeGallery() {
+  function closeGalleryWorker177(viewer) {
+    if (!viewer || mediaViewerState !== viewer) return false;
     pointerGesture = null;
     touchGuard = null;
     mediaViewerState = null;
     renderMediaViewer134();
+    return true;
+  }
+
+  function closeGallery(viewer = currentGalleryState()) {
+    if (!viewer) return false;
+    const manager = window.FPMediaManager177;
+    if (manager?.closeViewer) return manager.closeViewer(viewer, closeGalleryWorker177);
+    return closeGalleryWorker177(viewer);
   }
 
   async function navigateGallery(direction, animate) {
@@ -386,6 +404,10 @@
     window.addEventListener('pointerdown', (event) => {
       const overlay = event.target?.closest?.('.media-viewer-overlay.fp-gallery134');
       if (!overlay || event.pointerType === 'mouse' || event.button !== 0) return;
+      try {
+        const manager = window.FPGesture135;
+        if (manager && manager.currentLayer(event, event.target) !== 'viewer') return;
+      } catch { return; }
       if (event.target?.closest?.('.media-viewer-close,.media-viewer-nav,.media-error-box button')) return;
       const stage = overlay.querySelector('.fp-gallery134-stage');
       const track = overlay.querySelector('.fp-gallery134-track');

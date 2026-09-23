@@ -8,11 +8,11 @@
   const WAVEFORM_POINTS = 64;
   const VOICE_SPEED_KEY = 'fpchat:voice-speed';
   const PLAYBACK_SPEEDS = [1, 1.5, 2];
+  const VOICE_BLOB_CACHE_LIMIT = 6;
 
   const voiceMessages = new Map();
   const voiceBlobCache = new Map();
   const voiceMetaCache = new Map();
-  const boundComposers = new WeakSet();
 
   let pendingPress = null;
   let recordingState = null;
@@ -22,6 +22,7 @@
   let localActivityTimer = null;
   let activePlayback = null;
   let lastRoomId = '';
+  let playbackGeneration = 0;
 
   const baseAppendMessage = typeof appendMessage === 'function' ? appendMessage : null;
   const baseBuildMediaFallbackText = typeof buildMediaFallbackText === 'function' ? buildMediaFallbackText : null;
@@ -471,6 +472,7 @@
   }
 
   function stopActivePlayback(reset = false) {
+    playbackGeneration += 1;
     const current = activePlayback;
     if (!current) return;
     try { current.audio.pause(); } catch {}
@@ -484,20 +486,58 @@
     activePlayback = null;
   }
 
+  function revokeVoiceBlobAsset(asset) {
+    const url = String(asset?.url || '');
+    if (!url) return;
+    try { URL.revokeObjectURL(url); } catch {}
+  }
+
+  function evictVoiceBlobCache(key) {
+    const safeKey = String(key || '');
+    if (!safeKey || !voiceBlobCache.has(safeKey)) return false;
+    const pending = voiceBlobCache.get(safeKey);
+    voiceBlobCache.delete(safeKey);
+    Promise.resolve(pending).then(revokeVoiceBlobAsset).catch(() => {});
+    return true;
+  }
+
+  function pruneVoiceBlobCache(limit = VOICE_BLOB_CACHE_LIMIT) {
+    const safeLimit = Math.max(1, Number(limit) || VOICE_BLOB_CACHE_LIMIT);
+    const activeKey = String(activePlayback?.messageId || '');
+    for (const key of [...voiceBlobCache.keys()]) {
+      if (voiceBlobCache.size <= safeLimit) break;
+      if (key === activeKey) continue;
+      evictVoiceBlobCache(key);
+    }
+  }
+
+  function clearVoiceBlobCache() {
+    const activeKey = String(activePlayback?.messageId || '');
+    for (const key of [...voiceBlobCache.keys()]) {
+      if (key === activeKey) continue;
+      evictVoiceBlobCache(key);
+    }
+  }
+
   async function loadVoiceUrl(messageId) {
     const key = String(messageId);
-    if (voiceBlobCache.has(key)) return voiceBlobCache.get(key);
+    if (voiceBlobCache.has(key)) {
+      const cached = voiceBlobCache.get(key);
+      voiceBlobCache.delete(key);
+      voiceBlobCache.set(key, cached);
+      return cached;
+    }
     const entry = voiceMessages.get(key);
     if (!entry?.media?.public_id) throw new Error('voice media unavailable');
     const roomId = currentRoomId();
     const deviceId = roomDeviceId(roomId);
     if (!roomId || !deviceId) throw new Error('voice room unavailable');
+    const context = window.FPRoomContext170?.current?.();
+    const roomKey = await getRoomKey(roomId);
+    if (currentRoomId() !== roomId || (context && !window.FPRoomContext170.isCurrent(context))) throw new DOMException('Stale voice room', 'AbortError');
 
     const promise = (async () => {
-      const response = await fetch(`/api/media/${encodeURIComponent(entry.media.public_id)}/blob?deviceId=${encodeURIComponent(deviceId)}`);
-      if (!response.ok) throw new Error('voice load failed');
-      const encrypted = await response.blob();
-      const plain = await decryptBlobWithIvPrefix(encrypted, entry.media.mime_type || 'audio/webm');
+      const plain = await readEncryptedMedia174(`/api/media/${encodeURIComponent(entry.media.public_id)}/blob?deviceId=${encodeURIComponent(deviceId)}`,entry.media.mime_type || 'audio/webm',roomKey,{signal:context?.signal});
       if (!entry.waveform?.length) {
         const extracted = await extractWaveformFromBlob(plain);
         if (extracted?.length) {
@@ -513,10 +553,17 @@
     })();
 
     voiceBlobCache.set(key, promise);
+    pruneVoiceBlobCache();
     try {
-      return await promise;
+      const loaded = await promise;
+      if (voiceBlobCache.get(key) === promise) {
+        voiceBlobCache.delete(key);
+        voiceBlobCache.set(key, promise);
+        pruneVoiceBlobCache();
+      }
+      return loaded;
     } catch (error) {
-      voiceBlobCache.delete(key);
+      if (voiceBlobCache.get(key) === promise) voiceBlobCache.delete(key);
       throw error;
     }
   }
@@ -538,10 +585,12 @@
 
     stopActivePlayback(false);
     const button = root.querySelector('.fp-voice-play');
+    const generation = playbackGeneration;
     setPlayIcon(button, 'loading');
 
     try {
       const loaded = await loadVoiceUrl(messageId);
+      if (generation !== playbackGeneration || !root.isConnected) return;
       const audio = new Audio(loaded.url);
       audio.preload = 'metadata';
       audio.playbackRate = playbackSpeed();
@@ -752,23 +801,24 @@
     if (!form?.isConnected) return;
     const input = form.querySelector('#msgInput');
     const send = form.querySelector('#sendBtn');
-    const mic = form.querySelector('.fp-voice-record-btn');
-    if (!input || !send || !mic) return;
+    if (!input || !send) return;
     const empty = !String(input.value || '').trim();
-    const closed = form.closest('.chat-view')?.classList.contains('room-closed') === true;
+    send.disabled = empty;
+    const mic = form.querySelector('.fp-voice-record-btn');
+    if (!mic) return;
+    const view = form.closest('.chat-view');
+    const closed = view?.classList.contains('room-closed') === true;
+    const editing = view?.classList.contains('fp-editing-message') === true;
     const currentBusy = Boolean(recordingState || uploadInFlight || previewState);
-    form.classList.toggle('fp-voice-mic-mode', empty && !closed && !currentBusy);
-    mic.disabled = closed || currentBusy || !empty;
+    form.classList.toggle('fp-voice-mic-mode', empty && !editing && !closed && !currentBusy);
+    mic.disabled = editing || closed || currentBusy || !empty;
   }
 
-  function ensureComposer() {
-    const form = document.getElementById('sendForm');
-    if (!form || boundComposers.has(form)) return;
-    boundComposers.add(form);
-
+  function mountComposerVoiceUi177(form) {
+    if (!form) return false;
     const send = form.querySelector('#sendBtn');
     const input = form.querySelector('#msgInput');
-    if (!send || !input) return;
+    if (!send || !input) return false;
 
     const mic = document.createElement('button');
     mic.type = 'button';
@@ -801,7 +851,8 @@
       <button type="button" class="fp-voice-preview-send" aria-label="Отправить запись">${SEND_SVG}</button>`;
     form.insertBefore(previewBar, form.firstChild);
 
-    input.addEventListener('input', () => syncComposer(form), true);
+    const onInput = () => syncComposer(form);
+    input.addEventListener('input', onInput, true);
     mic.addEventListener('pointerdown', (event) => {
       if (event.button != null && event.button !== 0) return;
       event.preventDefault();
@@ -840,6 +891,38 @@
       renderPreviewProgress(target);
     });
     syncComposer(form);
+    return { form, input, mic, recordingBar, previewBar, onInput };
+  }
+
+  function unmountComposerVoiceUi177(form, mounted) {
+    if (!form || !mounted) return false;
+    try { mounted.input?.removeEventListener('input', mounted.onInput, true); } catch {}
+    for (const node of [mounted.mic, mounted.recordingBar, mounted.previewBar]) {
+      try { node?.remove?.(); } catch {}
+    }
+    form.classList.remove(
+      'fp-voice-mic-mode',
+      'fp-voice-recording',
+      'fp-voice-locked',
+      'fp-voice-processing',
+      'fp-voice-previewing',
+      'fp-voice-preview-sending'
+    );
+    return true;
+  }
+
+  function ensureComposer(form = document.getElementById('sendForm')) {
+    if (!form) return false;
+    const manager = window.FPMediaManager177;
+    if (!manager?.mountVoiceUI) return false;
+    return manager.mountVoiceUI(form, mountComposerVoiceUi177);
+  }
+
+  function unmountComposer(form) {
+    if (!form) return false;
+    const manager = window.FPMediaManager177;
+    if (!manager?.unmountVoiceUI) return false;
+    return manager.unmountVoiceUI(form, unmountComposerVoiceUi177);
   }
 
   async function beginPressRecording(event, form, mic) {
@@ -1055,6 +1138,14 @@
   }
 
   async function uploadAndSendVoice(data) {
+    const contexts = window.FPRoomContext170;
+    const operation = contexts?.beginOperation?.(data.roomId, 'voice-send') || null;
+    const draft = typeof ensureDraftState === 'function' ? ensureDraftState(data.roomId) : state.drafts?.[data.roomId];
+    const draftText = draft?.text || '';
+    const draftReply = draft?.replyTo || null;
+    const replyToMessageId = draftReply?.messageId || null;
+    let operationStatus = 'failed';
+
     uploadInFlight = true;
     syncComposer(data.form);
     startLocalActivity(data.roomId, 'audio');
@@ -1072,7 +1163,11 @@
       fd.append('metaCiphertext', meta.ciphertext);
       fd.append('metaIv', meta.iv);
 
-      const uploadResponse = await fetch(`/api/rooms/${encodeURIComponent(data.roomId)}/voice/upload`, { method: 'POST', body: fd });
+      const uploadResponse = await fetch(`/api/rooms/${encodeURIComponent(data.roomId)}/voice/upload`, {
+        method: 'POST',
+        body: fd,
+        signal: operation?.signal
+      });
       const uploadData = await uploadResponse.json().catch(() => null);
       if (!uploadResponse.ok || !uploadData?.ok || !uploadData.media?.id) throw new Error(uploadData?.error || 'voice upload failed');
       uploadedMedia = uploadData.media;
@@ -1082,8 +1177,6 @@
       if (!wsOk || !state.ws || state.ws.readyState !== WebSocket.OPEN || state.ws.deviceId !== data.deviceId) throw new Error('voice websocket unavailable');
 
       const enc = await encryptVoiceText(data.roomId, '');
-      const draft = typeof ensureDraftState === 'function' ? ensureDraftState(data.roomId) : state.drafts?.[data.roomId];
-      const replyToMessageId = draft?.replyTo?.messageId || null;
       if (replyToMessageId && typeof markReplyTargetRead === 'function' && currentRoomId() === data.roomId) markReplyTargetRead(replyToMessageId);
 
       state.ws.send(JSON.stringify({
@@ -1097,22 +1190,32 @@
         mediaIds: [Number(uploadedMedia.id)]
       }));
 
-      if (draft) {
+      const draftUnchanged = Boolean(draft && draft.text === draftText && draft.replyTo === draftReply);
+      if (draftUnchanged) {
         draft.replyTo = null;
         if (currentRoomId() === data.roomId && typeof updateReplyComposerBar === 'function') updateReplyComposerBar();
+        if (typeof clearDraftOnServer === 'function') {
+          try { await clearDraftOnServer(data.roomId); } catch {}
+        }
       }
-      if (typeof clearDraftOnServer === 'function') {
-        try { await clearDraftOnServer(data.roomId); } catch {}
-      }
+      operationStatus = 'sent';
       return true;
-    } catch {
+    } catch (error) {
+      operationStatus = error?.name === 'AbortError' ? 'cancelled' : 'failed';
       if (uploadedMedia?.id) await deletePendingVoice(data.roomId, data.deviceId, uploadedMedia.id);
       return false;
     } finally {
+      if (operation) contexts?.finishOperation?.(operation, operationStatus);
       uploadInFlight = false;
       stopLocalActivity('audio');
       syncComposer(data.form);
     }
+  }
+
+  function dispatchReadyVoice177(data) {
+    const manager = window.FPSendManager177;
+    if (!manager?.dispatch) return false;
+    return manager.dispatch(() => uploadAndSendVoice(data));
   }
 
   async function finalizeRecording(rec) {
@@ -1164,7 +1267,7 @@
       return;
     }
 
-    const sent = await uploadAndSendVoice(data);
+    const sent = await dispatchReadyVoice177(data);
     if (!sent) {
       showPreview(data);
       alert('Не удалось отправить голосовое сообщение. Запись сохранена в предпросмотре — можно повторить отправку.');
@@ -1249,7 +1352,7 @@
     if (!preview || uploadInFlight) return;
     try { preview.audio?.pause?.(); } catch {}
     preview.form?.classList.add('fp-voice-preview-sending');
-    const sent = await uploadAndSendVoice(preview);
+    const sent = await dispatchReadyVoice177(preview);
     preview.form?.classList.remove('fp-voice-preview-sending');
     if (sent && previewState === preview) clearPreview(true);
     else if (!sent) alert('Не удалось отправить голосовое сообщение. Запись осталась в предпросмотре.');
@@ -1265,20 +1368,22 @@
     if (localActivity?.activity === 'recording_audio') stopLocalActivity('recording_audio');
   }
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') handleVisibilityLoss();
+  window.FPLifecycle170?.subscribe(event => {
+    if (['background','pagehide','beforeunload'].includes(event.lastType)) handleVisibilityLoss();
+    if (event.lastType === 'pagehide') {stopActivePlayback(false);clearVoiceBlobCache();}
   });
-  window.addEventListener('pagehide', handleVisibilityLoss);
 
   async function refreshVoiceSnapshot(roomId) {
     const deviceId = roomDeviceId(roomId);
     if (!roomId || !deviceId) return;
+    const context = window.FPRoomContext170?.current?.();
     try {
       const query = new URLSearchParams({ deviceId, limit: '100' });
       const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${query.toString()}`, { cache: 'no-store' });
       if (!response.ok) return;
       const data = await response.json().catch(() => null);
       for (const message of data?.messages || []) {
+        if (currentRoomId() !== roomId || lastRoomId !== roomId || (context && !window.FPRoomContext170.isCurrent(context))) return;
         if (!isVoiceMessage(message)) continue;
         registerVoiceMessage(message);
         decorateVoiceMessage(message.id);
@@ -1286,34 +1391,59 @@
     } catch {}
   }
 
-  const observer = new MutationObserver((records) => {
-    let composerChanged = false;
-    let messagesChanged = false;
-    for (const record of records) {
-      for (const node of record.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        if (node.id === 'sendForm' || node.querySelector?.('#sendForm')) composerChanged = true;
-        if (node.matches?.('.bubble-wrap.msg') || node.querySelector?.('.bubble-wrap.msg')) messagesChanged = true;
-      }
-    }
-    if (composerChanged) ensureComposer();
-    if (messagesChanged) {
-      for (const messageId of voiceMessages.keys()) decorateVoiceMessage(messageId);
-    }
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  setInterval(() => {
+  function handleRoomChange173(roomId = currentRoomId()) {
+    const nextRoomId = String(roomId || '');
     ensureComposer();
-    const roomId = currentRoomId();
-    if (roomId !== lastRoomId) {
-      stopActivePlayback(false);
-      if (recordingState && recordingState.roomId !== roomId) stopRecording('cancel');
-      if (previewState && previewState.roomId !== roomId) clearPreview(false);
-      lastRoomId = roomId;
-      if (roomId) void refreshVoiceSnapshot(roomId);
-    }
-  }, 500);
+    if (nextRoomId === lastRoomId) return;
+    stopActivePlayback(false);
+    clearVoiceBlobCache();
+    voiceMessages.clear();
+    voiceMetaCache.clear();
+    if (recordingState && recordingState.roomId !== nextRoomId) stopRecording('cancel');
+    if (previewState && previewState.roomId !== nextRoomId) clearPreview(false);
+    lastRoomId = nextRoomId;
+    if (nextRoomId) void refreshVoiceSnapshot(nextRoomId);
+  }
+
+  if (window.FPDOM173?.on) {
+    window.FPDOM173.on('composer', 'mounted', ({ node }) => ensureComposer(node));
+    window.FPDOM173.on('composer', 'unmounted', ({ node }) => unmountComposer(node));
+    window.FPDOM173.on('message', 'mounted', ({ node }) => {
+      const messageId = String(node?.dataset?.messageId || node?.dataset?.id || '');
+      if (messageId) decorateVoiceMessage(messageId);
+    });
+    window.FPDOM173.on('chat', 'mounted', () => handleRoomChange173());
+    window.FPDOM173.on('chat', 'unmounted', () => queueMicrotask(() => handleRoomChange173()));
+    window.addEventListener('fpchat:room-open170', (event) => {
+      const stage = String(event?.detail?.stage || '');
+      if (stage === 'ready' || stage === 'committed-direct') handleRoomChange173(event.detail.roomId || currentRoomId());
+      if (stage === 'left') handleRoomChange173('');
+    }, { passive: true });
+  } else {
+    // Compatibility fallback only if the Build 173 DOM lifecycle owner failed.
+    const observer = new MutationObserver((records) => {
+      let composerChanged = false;
+      let messagesChanged = false;
+      for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.id === 'sendForm') unmountComposer(node);
+          node.querySelectorAll?.('#sendForm').forEach((form) => unmountComposer(form));
+        }
+        for (const node of record.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.id === 'sendForm' || node.querySelector?.('#sendForm')) composerChanged = true;
+          if (node.matches?.('.bubble-wrap.msg') || node.querySelector?.('.bubble-wrap.msg')) messagesChanged = true;
+        }
+      }
+      if (composerChanged) ensureComposer();
+      if (messagesChanged) {
+        for (const messageId of voiceMessages.keys()) decorateVoiceMessage(messageId);
+      }
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    setInterval(() => handleRoomChange173(), 500);
+  }
 
   window.addEventListener('resize', () => {
     for (const [messageId] of voiceMessages) {
@@ -1329,8 +1459,18 @@
   if (lastRoomId) void refreshVoiceSnapshot(lastRoomId);
 
   window.FPVoice = {
+    // Build 175: programmatic text changes use the same UI owner as native input.
+    // Do not dispatch synthetic input: that would also run typing/draft handlers.
+    syncComposer: (form = document.getElementById('sendForm')) => syncComposer(form),
     cancelRecording: () => stopRecording('cancel'),
     stopPlayback: () => stopActivePlayback(false),
-    clearPreview: () => clearPreview(true)
+    clearPreview: () => clearPreview(true),
+    clearBlobCache: () => clearVoiceBlobCache(),
+    memorySnapshot: () => ({
+      blobCacheEntries: voiceBlobCache.size,
+      messageEntries: voiceMessages.size,
+      metaEntries: voiceMetaCache.size,
+      blobCacheLimit: VOICE_BLOB_CACHE_LIMIT
+    })
   };
 })();

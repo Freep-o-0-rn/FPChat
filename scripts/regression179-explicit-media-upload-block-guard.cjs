@@ -1,0 +1,11 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
+const server=read('server.js'),boot=read('src/message-actions-bootstrap.js');
+const at=server.indexOf("app.post('/api/rooms/:publicId/media/upload'");
+const block=server.slice(at,server.indexOf('const mimeType',at)+120);
+assert(block.includes('fpUserBlocks165.roomSendGuard(room.id, deviceId)'));
+assert(block.includes("res.status(403).json({ ok: false, error: 'blocked', code: blockGuard165.code })"));
+assert(!boot.includes("'media upload block guard'"));
+console.log('PASS 179.4 T6 explicit encrypted media upload block guard');
