@@ -140,7 +140,8 @@
     "test:180:1813": "npm run test:180:init-coordination && npm run test:180:last-transfer-rollback",
     "test:181:notifications": "node ./scripts/regression181-notifications.cjs",
     "test:182:microphone": "node ./scripts/regression182-microphone-permission.cjs",
-    "test:183:chat-back": "node ./scripts/regression183-chat-back-animation.cjs"
+    "test:183:chat-back": "node ./scripts/regression183-chat-back-animation.cjs",
+    "test:183": "npm run test:183:chat-back && npm run test:182:microphone"
   },
   "license": "MIT",
   "dependencies": {
