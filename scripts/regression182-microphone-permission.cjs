@@ -27,12 +27,13 @@ assert(voice.includes('stream = await acquireMicrophoneStream182();'), 'recordin
 assert(!voice.includes('stream = await navigator.mediaDevices.getUserMedia({'), 'legacy direct recording getUserMedia path remains');
 assert(voice.includes('releaseMicrophoneStream182(rec.stream);'), 'recording finalization bypasses MediaManager release');
 assert(!voice.includes('Настройки веб-сайта → Микрофон → Разрешить'), 'instructional microphone alert returned');
+assert(!voice.includes('FPChat уже получал доступ к микрофону'), 'long iOS microphone guidance alert returned');
 assert(!voice.includes('onPersistentPermissionHint'), 'voice still wires microphone instruction callbacks');
 
-assert.equal(version.build, '182.6');
-assert(updater.includes('set "EXPECTED_BUILD=182.6"'), 'safe updater build gate does not match Build 182.6');
+assert.equal(version.build, '183.9');
+assert(updater.includes('set "EXPECTED_BUILD=183.9"'), 'safe updater build gate does not match Build 183.9');
 
 console.log('PASS Build 182 microphone permission ownership');
 console.log('PASS microphone access stays centralized without extra instructional UI');
 console.log('PASS voice recording relies on browser permission UI only');
-console.log('PASS updater/version gate matches Build 182.6');
+console.log('PASS updater/version gate matches Build 183.9');
