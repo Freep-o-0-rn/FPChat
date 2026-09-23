@@ -64,7 +64,20 @@ run(async ({ browser, origin, errors }) => {
   });
 
   await page.evaluate(room => openChat(room), roomId);
-  await page.waitForSelector('#sendForm .fp-voice-record-btn');
+  await page.waitForFunction(() => {
+    const form=document.getElementById('sendForm');
+    const input=form?.querySelector('#msgInput');
+    const send=form?.querySelector('#sendBtn');
+    const mic=form?.querySelector('.fp-voice-record-btn');
+    return Boolean(
+      form && input && send && mic
+      && input.value===''
+      && send.disabled===true
+      && mic.disabled===false
+      && getComputedStyle(mic).display!=='none'
+      && form.querySelectorAll('.fp-voice-record-btn').length===1
+    );
+  });
 
   const state = () => page.evaluate(() => {
     const form=document.getElementById('sendForm');
