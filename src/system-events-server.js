@@ -1,4 +1,24 @@
-/* Build 165: isolated personal system-event channel used by service notifications and chat requests. */
+/* Build 181.4: durable personal system-event channel with post-insert notification observers. */
+const systemEventInsertedListeners181 = new Set();
+
+function subscribeSystemEventInserted(listener) {
+  if (typeof listener !== 'function') return () => {};
+  systemEventInsertedListeners181.add(listener);
+  return () => systemEventInsertedListeners181.delete(listener);
+}
+
+function publishSystemEventInserted181(event) {
+  if (!event?.id) return;
+  setImmediate(() => {
+    for (const listener of systemEventInsertedListeners181) {
+      try {
+        Promise.resolve(listener(event)).catch((error) => console.warn('System event observer failed', error));
+      } catch (error) {
+        console.warn('System event observer failed', error);
+      }
+    }
+  });
+}
 function safeDeviceId(value) {
   const text = String(value || '').trim();
   if (text.length < 8 || text.length > 128) return '';
@@ -63,15 +83,28 @@ function createSystemEventStore(db) {
       const type = String(eventType || '').trim().slice(0, 64);
       if (!device || !type) return { ok: false };
       const payloadJson = payload == null ? null : JSON.stringify(payload);
+      const safeRefType = refType ? String(refType).slice(0, 64) : null;
+      const safeRefId = refId == null ? null : String(refId).slice(0, 128);
       const result = insert.run(
         device,
         type,
-        refType ? String(refType).slice(0, 64) : null,
-        refId == null ? null : String(refId).slice(0, 128),
+        safeRefType,
+        safeRefId,
         dedupeKey ? String(dedupeKey).slice(0, 160) : null,
         payloadJson
       );
-      return { ok: true, inserted: Number(result.changes || 0) > 0 };
+      const inserted = Number(result.changes || 0) > 0;
+      const id = inserted ? Number(result.lastInsertRowid) : null;
+      if (inserted && Number.isSafeInteger(id) && id > 0) {
+        publishSystemEventInserted181({
+          id,
+          deviceId: device,
+          eventType: type,
+          refType: safeRefType,
+          refId: safeRefId
+        });
+      }
+      return { ok: true, inserted, id };
     },
     list(deviceId, limit = 50) {
       const device = safeDeviceId(deviceId);
@@ -148,5 +181,6 @@ function installSystemEventsServer({ app, db }) {
 module.exports = {
   installSystemEventsServer,
   ensureSystemEventsSchema,
-  createSystemEventStore
+  createSystemEventStore,
+  subscribeSystemEventInserted
 };

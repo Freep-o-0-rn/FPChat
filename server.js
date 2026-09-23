@@ -12,7 +12,7 @@ const { installMessageActionsServer } = require('./src/message-actions-server');
 const { installMessagePinsServer } = require('./src/message-pins-server');
 const { installTypingServer } = require('./src/typing-server');
 const { installUsernameServer } = require('./src/username-server');
-const { installSystemEventsServer } = require('./src/system-events-server');
+const { installSystemEventsServer, ensureSystemEventsSchema, subscribeSystemEventInserted } = require('./src/system-events-server');
 const { installStorageStats168 } = require('./src/storage-stats168');
 const { installUserBlocks165Server } = require('./src/user-blocks165');
 const { installUserBlockEventActions165 } = require('./src/user-block-event-actions165');
@@ -260,6 +260,7 @@ function messageToDto(row) {
   };
 }
 
+ensureSystemEventsSchema(db);
 const fpNotification181 = createNotificationService181({
   db,
   q,
@@ -268,6 +269,7 @@ const fpNotification181 = createNotificationService181({
   hasVisibleRoomSocketForDevice
 });
 fpNotification181.installDeviceRoutes({ app, pushOff });
+subscribeSystemEventInserted((event) => fpNotification181.sendPersonalSystemEvent(event));
 
 app.get('/api/push/vapid-public-key', (req, res) => res.json(pushEnabled ? { enabled: true, publicKey: VAPID_PUBLIC_KEY } : { enabled: false }));
 app.post('/api/push/subscribe', (req, res) => {

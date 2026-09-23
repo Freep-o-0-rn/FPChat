@@ -62,7 +62,12 @@ function createNotificationService181({ db, q, webpush, pushEnabled, hasVisibleR
     deleteById: db.prepare('DELETE FROM device_push_subscriptions WHERE id=?'),
     byDevice: db.prepare('SELECT * FROM device_push_subscriptions WHERE device_id=?'),
     claimSystem: db.prepare('INSERT OR IGNORE INTO system_push_deliveries(system_event_id, device_id) VALUES(?, ?)'),
-    releaseSystem: db.prepare('DELETE FROM system_push_deliveries WHERE system_event_id=? AND device_id=?')
+    releaseSystem: db.prepare('DELETE FROM system_push_deliveries WHERE system_event_id=? AND device_id=?'),
+    systemEventById: db.prepare(`
+      SELECT id, device_id, event_type, ref_type, ref_id, payload_json
+      FROM system_events
+      WHERE id=? AND device_id=?
+    `)
   };
 
   function parseSubscription(subscription) {
@@ -236,6 +241,22 @@ function createNotificationService181({ db, q, webpush, pushEnabled, hasVisibleR
     const systemEventId = Number(event?.id);
     const deviceId = safeDeviceId181(event?.deviceId);
     if (!Number.isSafeInteger(systemEventId) || systemEventId <= 0 || !deviceId) return false;
+
+    // The observer runs after the synchronous add call. Re-read the row so a
+    // rolled-back outer transaction can never produce a push.
+    const durable = deviceQ.systemEventById.get(systemEventId, deviceId);
+    if (!durable) return false;
+    let durablePayload = null;
+    try { durablePayload = durable.payload_json ? JSON.parse(durable.payload_json) : null; } catch {}
+    const durableEvent = {
+      id: Number(durable.id),
+      deviceId: durable.device_id,
+      eventType: durable.event_type,
+      refType: durable.ref_type || null,
+      refId: durable.ref_id || null,
+      payload: durablePayload
+    };
+
     const sub = deviceQ.byDevice.get(deviceId);
     if (!sub || !sub.notify_system_events) return false;
     const claim = deviceQ.claimSystem.run(systemEventId, deviceId);
@@ -245,12 +266,12 @@ function createNotificationService181({ db, q, webpush, pushEnabled, hasVisibleR
       category: 'system',
       target: 'system',
       systemEventId,
-      systemType: String(event?.eventType || '').slice(0, 64) || null,
-      refType: event?.refType ? String(event.refType).slice(0, 64) : null,
-      refId: event?.refId == null ? null : String(event.refId).slice(0, 128),
-      url: '/',
+      systemType: String(durableEvent.eventType || '').slice(0, 64) || null,
+      refType: durableEvent.refType,
+      refId: durableEvent.refId,
+      url: `/?systemEvent=${encodeURIComponent(systemEventId)}`,
       title: 'FPChat',
-      body: personalSystemBody(event, Boolean(sub.hide_sender))
+      body: personalSystemBody(durableEvent, Boolean(sub.hide_sender))
     });
     try {
       await webpush.sendNotification(
