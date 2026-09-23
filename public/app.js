@@ -94,15 +94,17 @@ class FPMediaManager177Class {
         throw error;
       }
 
-      const previouslyGranted = localStorage.getItem('fpchat:microphone-ever-granted') === '1';
-      const hintShown = sessionStorage.getItem('fpchat:microphone-persistent-hint-shown') === '1';
+      let previouslyGranted = false;
+      let hintShown = false;
+      try { previouslyGranted = localStorage.getItem('fpchat:microphone-ever-granted') === '1'; } catch {}
+      try { hintShown = sessionStorage.getItem('fpchat:microphone-persistent-hint-shown') === '1'; } catch {}
       if (permission === 'prompt' && previouslyGranted && !hintShown) {
-        sessionStorage.setItem('fpchat:microphone-persistent-hint-shown', '1');
+        try { sessionStorage.setItem('fpchat:microphone-persistent-hint-shown', '1'); } catch {}
         try { onPersistentPermissionHint?.(); } catch {}
       }
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      localStorage.setItem('fpchat:microphone-ever-granted', '1');
+      try { localStorage.setItem('fpchat:microphone-ever-granted', '1'); } catch {}
       this.#microphonePermissionState = 'granted';
       return stream;
     };
