@@ -76,6 +76,38 @@
     return true;
   };
 
+  // Build 183: room-back animation reuses the existing chat-list/content panes.
+  // This is visual state only; room/session state is not changed here.
+  const chatBackElements = () => ({
+    app: document.getElementById('appRoot'),
+    list: document.getElementById('chatListPane'),
+    content: document.getElementById('contentPane'),
+  });
+
+  const clearChatBackVisual = () => {
+    const { app, list, content } = chatBackElements();
+    app?.classList.remove('fp-chat-back-preview', 'fp-chat-back-anim');
+    if (content) {
+      content.style.transform = '';
+      content.style.willChange = '';
+    }
+    if (list) {
+      list.style.transform = '';
+      list.style.willChange = '';
+    }
+  };
+
+  const prepareChatBackVisual = () => {
+    if (!isMobile() || !chatIsOpen()) return false;
+    const { app, list, content } = chatBackElements();
+    if (!app || !list || !content) return false;
+    app.classList.add('fp-chat-back-preview');
+    app.classList.remove('fp-chat-back-anim');
+    content.style.willChange = 'transform';
+    list.style.willChange = 'transform';
+    return true;
+  };
+
   // Settings now use the same mobile gesture model as chats, so the explicit
   // Back button is no longer needed. Keep desktop navigation via the sidebar.
   try {
