@@ -196,11 +196,6 @@
       window.FPRoomLifecycle98Ready = 'failed';
       window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
     };
-    lifecycleScript.onload = () => {
-      if (state.notif.enabled && getNotificationPermission() === 'granted') {
-        void syncPushPresentationSettings();
-      }
-    };
     document.body.appendChild(lifecycleScript);
   }
   if (!document.getElementById('fpchat-viewport-fix-js')) {

@@ -1,7 +1,7 @@
 const STORAGE={roomState:(id)=>`fpchat:room:${id}`,activeChatsKey:'fpchat:active-chats',lastSelectedRoomId:'lastSelectedRoomId',nick:'fpchat:nick',theme:'fpchat:theme',roomNames:'fpchat:room-names',notif:'fpchat:notif',roomMute:'fpchat:room-mute',deviceId:'fpchat:device-id',set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),get:(k)=>{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}};
-const DEFAULT_NOTIFICATION_SETTINGS=Object.freeze({enabled:true,showText:true,hideSender:false,sound:true});
+const DEFAULT_NOTIFICATION_SETTINGS=Object.freeze({enabled:true,showText:true,hideSender:false,sound:true,notifySystemEvents:true});
 const NOTIFICATION_PROMPTED_KEY='fpchat:notification-prompted';
-function normalizeNotificationSettings(value){const raw=value&&typeof value==='object'?value:{};return {enabled:raw.enabled!==false,showText:raw.showText!==false,hideSender:raw.hideSender===true,sound:raw.sound!==false};}
+function normalizeNotificationSettings(value){const raw=value&&typeof value==='object'?value:{};return {enabled:raw.enabled!==false,showText:raw.showText!==false,hideSender:raw.hideSender===true,sound:raw.sound!==false,notifySystemEvents:raw.notifySystemEvents!==false};}
 const storedNotificationSettings=STORAGE.get(STORAGE.notif);
 const initialNotificationSettings=normalizeNotificationSettings(storedNotificationSettings||DEFAULT_NOTIFICATION_SETTINGS);
 function getOrCreateDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(current))return current;const deviceId=crypto.randomUUID();localStorage.setItem(STORAGE.deviceId,deviceId);return deviceId;}
@@ -1696,8 +1696,8 @@ pushAppHistoryState();
   await registerServiceWorker();
   const updateStarted=await checkAppVersionOnEntry();
   if(updateStarted)return;
-  void getPushConfig().then(()=>{if(document.getElementById('notificationPermissionStatus'))renderNotificationPermissionStatus();});
-  void initializeNotifications();
+  // Build 181: NotificationManager181 loads immediately after app.js and is
+  // the only owner that performs notification subscription synchronization.
   applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
   const inv=parseInvite();
   const chat=parseChat();
