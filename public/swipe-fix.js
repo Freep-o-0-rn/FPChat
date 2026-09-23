@@ -108,6 +108,44 @@
     return true;
   };
 
+  let chatBackVisualToken = 0;
+
+  const moveChatBackVisual = (dx) => {
+    if (!prepareChatBackVisual()) return false;
+    const { list, content } = chatBackElements();
+    const width = Math.max(1, content?.clientWidth || window.innerWidth || 1);
+    const x = Math.min(Math.max(0, Number(dx) || 0), width * .96);
+    const progress = Math.max(0, Math.min(1, x / width));
+    content.style.transform = `translate3d(${x}px,0,0)`;
+    list.style.transform = `translate3d(${-24 * (1 - progress)}px,0,0)`;
+    return true;
+  };
+
+  const resetChatBackVisual = (animate = true) => {
+    const { app, list, content } = chatBackElements();
+    if (!app?.classList.contains('fp-chat-back-preview')) {
+      clearChatBackVisual();
+      return false;
+    }
+    const token = ++chatBackVisualToken;
+    if (animate) app.classList.add('fp-chat-back-anim');
+    else app.classList.remove('fp-chat-back-anim');
+    if (content) content.style.transform = 'translate3d(0,0,0)';
+    if (list) list.style.transform = 'translate3d(-24px,0,0)';
+
+    const finish = () => {
+      if (token !== chatBackVisualToken) return;
+      clearChatBackVisual();
+    };
+    if (!animate || !content) {
+      finish();
+      return true;
+    }
+    content.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 240);
+    return true;
+  };
+
   // Settings now use the same mobile gesture model as chats, so the explicit
   // Back button is no longer needed. Keep desktop navigation via the sidebar.
   try {
@@ -199,6 +237,7 @@
 
   document.addEventListener("touchmove", (event) => {
     if (mediaViewerIsOpen()) {
+      if (swipe?.mode === 'chat') resetChatBackVisual();
       swipe = null;
       resetLegacyDrawerSwipe();
       return;
@@ -208,6 +247,7 @@
     const manager = gestureManager();
     if (manager && !manager.canNavigate(swipe.mode, event.target, event)) {
       if (swipe.modernSettings) resetModernSettingsVisual();
+      if (swipe.mode === 'chat') resetChatBackVisual();
       swipe = null;
       resetLegacyDrawerSwipe();
       return;
@@ -249,10 +289,12 @@
     resetLegacyDrawerSwipe();
 
     if (swipe.modernSettings) moveModernSettingsVisual(swipe.dx);
+    if (swipe.mode === 'chat') moveChatBackVisual(swipe.dx);
   }, { capture: true, passive: false });
 
   document.addEventListener("touchend", (event) => {
     if (mediaViewerIsOpen()) {
+      if (swipe?.mode === 'chat') resetChatBackVisual();
       swipe = null;
       resetLegacyDrawerSwipe();
       return;
@@ -264,6 +306,7 @@
     const manager = gestureManager();
     if (manager && !manager.canNavigate(current.mode, event.target, event)) {
       if (current.modernSettings) resetModernSettingsVisual();
+      if (current.mode === 'chat') resetChatBackVisual();
       resetLegacyDrawerSwipe();
       return;
     }
@@ -273,6 +316,7 @@
         resetLegacyDrawerSwipe();
         resetModernSettingsVisual();
       }
+      if (current.mode === 'chat') resetChatBackVisual();
       return;
     }
 
@@ -287,6 +331,7 @@
         : DRAWER_THRESHOLD_PX;
     if (current.canceled || current.dx < threshold) {
       if (current.modernSettings) resetModernSettingsVisual();
+      if (current.mode === 'chat') resetChatBackVisual();
       return;
     }
 
@@ -321,6 +366,7 @@
 
   document.addEventListener("touchcancel", () => {
     if (swipe?.modernSettings) resetModernSettingsVisual();
+    if (swipe?.mode === 'chat') resetChatBackVisual();
     swipe = null;
     resetLegacyDrawerSwipe();
   }, { capture: true, passive: true });
