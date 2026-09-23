@@ -133,7 +133,9 @@
     "test:180:init-coordination": "node ./scripts/regression180-init-coordination.cjs",
     "test:180:1810": "npm run test:180:1809 && npm run test:180:init-coordination",
     "test:180:single-owner-audit": "node ./scripts/regression180-single-owner-audit.cjs",
-    "test:180:1811": "npm run test:180:1810 && npm run test:180:single-owner-audit"
+    "test:180:1811": "npm run test:180:1810 && npm run test:180:single-owner-audit",
+    "test:180:cumulative": "node ./scripts/run18012-cumulative.cjs",
+    "test:180:1812": "npm run test:180:1811 && npm run test:180:cumulative"
   },
   "license": "MIT",
   "dependencies": {

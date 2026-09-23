@@ -53,11 +53,15 @@ assert(preloadStart>=0&&preloadEnd>preloadStart,'startup preload174 list missing
 const preload=indexHtml.slice(preloadStart,preloadEnd);
 const domPos=preload.indexOf("'dom-lifecycle173.js'");
 const appPos=preload.indexOf("'app.js'");
-const selectionPos=indexHtml.indexOf("messageSelection.src = `/message-selection.js${buildSuffix}`;");
-const contextPos=indexHtml.indexOf("messageContext.src = `/message-context.js${buildSuffix}`;");
 assert(domPos>=0&&appPos>domPos,'FPDOM173 is no longer preloaded before app.js');
 assert(indexHtml.includes("'app.js':['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js']"),'app startup dependency no longer requires FPDOM173');
-assert(selectionPos>=0&&contextPos>selectionPos,'message-selection listener is no longer installed before message-context');
+const loadContextStart=indexHtml.indexOf('const loadContextStack = () => {');
+const loadContextEnd=indexHtml.indexOf('\n          };',loadContextStart);
+assert(loadContextStart>=0&&loadContextEnd>loadContextStart,'message context stack loader missing');
+const loadContext=indexHtml.slice(loadContextStart,loadContextEnd);
+assert(loadContext.includes("messageContext.src = `/message-context.js${buildSuffix}`;"),'message-context load left the gated context stack');
+assert(indexHtml.includes('messageSelection.onload = loadContextStack;'),'message-selection success no longer gates message-context');
+assert(indexHtml.includes('messageSelection.onerror = loadContextStack;'),'message-selection compatibility failure no longer continues context stack');
 
 // Mini semantic check of the actual decorator source: repeated mount of the same
 // context must reuse the same action button and therefore the same click bind.

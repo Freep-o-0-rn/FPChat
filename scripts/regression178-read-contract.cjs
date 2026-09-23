@@ -23,6 +23,7 @@ function fn(source,name){
 
 const queueRead=fn(app,'queueReadIds');
 const flushRead=fn(app,'flushPendingReads');
+const flushReadWorker=fn(app,'flushPendingReadsWorker178');
 const markRead=fn(app,'markMessageRead');
 const admitVisible=fn(app,'admitVisibleMessageRead178');
 const markIncomingRead=fn(app,'markIncomingMessagesRead');
@@ -71,10 +72,11 @@ assert(queueRead.includes('pendingReadQueue.set(roomId,{deviceId,ids:new Set(),s
 assert(queueRead.includes('ids.forEach((id)=>entry.ids.add(id));'),'pending read dedupe Set changed');
 assert(markIncomingRead.includes('queueReadIds(roomId,deviceId,ids);'),'read no longer queues before flush');
 assert(markIncomingRead.includes('const flushed=flushPendingReads(roomId,deviceId);'),'read flush call changed');
-assert(flushRead.includes('state.ws.readyState!==WebSocket.OPEN||wsDeviceId!==deviceId'),'read flush WS/device guard changed');
-assert(flushRead.includes('if(entry.sentAt&&Date.now()-entry.sentAt<1000)return true;'),'read resend throttle changed');
-assert(flushRead.includes("type:'message:read:bulk'"),'read bulk payload changed');
-assert(flushRead.includes('},1500);'),'read retry delay changed');
+assert(flushRead.includes('window.FPReadState178?.flushPending?.(roomId,deviceId)'),'read flush facade no longer delegates to FPReadState178');
+assert(flushReadWorker.includes('state.ws.readyState!==WebSocket.OPEN||wsDeviceId!==deviceId'),'read flush WS/device guard changed');
+assert(flushReadWorker.includes('if(entry.sentAt&&Date.now()-entry.sentAt<1000)return true;'),'read resend throttle changed');
+assert(flushReadWorker.includes("type:'message:read:bulk'"),'read bulk payload changed');
+assert(flushReadWorker.includes('},1500);'),'read retry delay changed');
 assert(wsStatus.includes("if(status==='read')acknowledgeRead(roomId,payload.messageId);"),'read status no longer acknowledges pending id');
 assert(ackRead.includes('entry.ids.delete(Number(messageId));'),'read ACK no longer removes id');
 assert(ackRead.includes('pendingReadQueue.delete(roomId);'),'empty read queue cleanup changed');
