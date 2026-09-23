@@ -277,6 +277,20 @@
       window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
       window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});
 
+      // Fetch the optional visual in parallel with the existing owner chain.
+      // A failed visual asset keeps the old reply indicator functional.
+      const replyVisualReady184 = new Promise(resolve => {
+        const visual = document.createElement('script');
+        visual.src = `/reply-swipe-visual184.js${buildSuffix}`;
+        visual.onload = () => resolve(true);
+        visual.onerror = () => resolve(false);
+        document.body.appendChild(visual);
+      });
+      const replyVisualCss = document.createElement('link');
+      replyVisualCss.rel = 'stylesheet';
+      replyVisualCss.href = `/reply-swipe-visual184.css${buildSuffix}`;
+      document.head.appendChild(replyVisualCss);
+
       const css = document.createElement('link');
       css.rel = 'stylesheet';
       css.href = `/styles.css${buildSuffix}`;
@@ -378,7 +392,8 @@
         context.onerror=()=>{FPStartup174.fail();loadAppAfterWork();};
         document.body.appendChild(context);
       };
-      const loadAppAfterWork = () => {
+      const loadAppAfterWork = async () => {
+        await replyVisualReady184;
         const script = document.createElement('script');
         script.src = `/app.js${buildSuffix}`;
         script.defer = true;
