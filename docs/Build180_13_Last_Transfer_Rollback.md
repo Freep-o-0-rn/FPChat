@@ -53,3 +53,43 @@ The production branch is never rewritten or reverted by this test. Both rollback
 - the exact target scenario passes again after restoration.
 
 Unknown or conflicting results are failures; there is no expected-failure allowance in 180.13.
+
+
+## Verified result
+
+Tested candidate:
+
+```text
+a40beae6a4f70120102f3e8adfbd521ba43999f9
+```
+
+GitHub Actions run:
+
+```text
+35813041982
+```
+
+All three jobs completed successfully:
+
+- `last-transfer-rollback` — PASS;
+- `windows-180-acceptance` — PASS;
+- `cumulative-regression` — PASS.
+
+The isolated rollback job proved:
+
+- exact Build 180.10 transfer commit reverted successfully;
+- rollback changed only `public/room-context170.js`;
+- neighboring fixes remained intact;
+- target init-coordination scenario failed at the expected missing Lifecycle170 failure boundary after rollback;
+- revert-of-revert restored a tree identical to the source HEAD;
+- the same target init-coordination scenario passed after restoration.
+
+The accumulated regression now contains 110 leaf checks because the 180.13 rollback regression is included automatically:
+
+- 109 PASS;
+- 1 EXPECTED_FAIL — the already documented historical `regression178-release.cjs`;
+- 0 unexpected FAIL;
+- 0 TIMEOUT;
+- 0 XPASS.
+
+No production/runtime file was changed by Build 180.13.
