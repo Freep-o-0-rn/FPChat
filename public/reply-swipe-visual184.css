@@ -34,6 +34,13 @@
   transform: scale(var(--fp-reply-icon-scale, 0.5));
 }
 .fp-reply-ripple { opacity: 0; }
+.fp-reply-ripple-active .fp-reply-ripple {
+  animation: fp-reply-ripple184 220ms ease-out both;
+}
+@keyframes fp-reply-ripple184 {
+  from { transform: scale(1); opacity: 0.45; }
+  to { transform: scale(1.7); opacity: 0; }
+}
 .fp-reply-indicator.fp-reply-hidden,
 .fp-reply-indicator.fp-reply-cancel { opacity: 0; visibility: hidden; }
 .fp-reply-indicator.fp-reply-cancel {
@@ -41,6 +48,7 @@
 }
 .fp-reply-cancel .fp-reply-circle { transition: transform 140ms ease; }
 @media (prefers-reduced-motion: reduce) {
+  .fp-reply-ripple-active .fp-reply-ripple { animation: none; }
   .fp-reply-indicator.fp-reply-cancel,
   .fp-reply-cancel .fp-reply-circle { transition: none; }
 }

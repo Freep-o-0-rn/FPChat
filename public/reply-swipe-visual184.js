@@ -21,7 +21,7 @@
     icon.appendChild(arrow);
     circle.appendChild(icon);
     root.append(ripple, circle);
-    return { root, circle, icon, ripple, state: 'hidden' };
+    return { root, circle, icon, ripple, state: 'hidden', ripplePlayed: false };
   }
 
   function setState(visual, state) {
@@ -43,12 +43,19 @@
     visual.root.style.setProperty('--fp-reply-opacity', String(0.5 + 0.5 * growth));
     visual.root.style.setProperty('--fp-reply-icon-opacity', String(growth));
     visual.root.style.setProperty('--fp-reply-icon-scale', String(0.5 + 0.5 * growth));
+    // A single pulse for the entire touch, including retreat then re-arm.
+    if (armed && !visual.ripplePlayed) {
+      visual.ripplePlayed = true;
+      visual.root.classList.add('fp-reply-ripple-active');
+    }
   }
 
   function reset(visual, animate = false) {
     if (!visual) return;
     setState(visual, animate && visual.state !== 'hidden' ? 'cancel' : 'hidden');
     visual.root.style.setProperty('--fp-reply-scale', '0');
+    visual.root.classList.remove('fp-reply-ripple-active');
+    visual.ripplePlayed = false;
   }
 
   window.FPReplySwipeVisual184 = Object.freeze({ create, update, reset });
