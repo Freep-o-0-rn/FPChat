@@ -76,6 +76,120 @@
     return true;
   };
 
+  // Build 183: room-back animation reuses the existing chat-list/content panes.
+  // This is visual state only; room/session state is not changed here.
+  const chatBackElements = () => ({
+    app: document.getElementById('appRoot'),
+    list: document.getElementById('chatListPane'),
+    content: document.getElementById('contentPane'),
+  });
+
+  let chatBackVisualToken = 0;
+  let chatBackCommitInFlight = false;
+
+  const clearChatBackVisual = () => {
+    const { app, list, content } = chatBackElements();
+    app?.classList.remove('fp-chat-back-preview', 'fp-chat-back-anim');
+    if (content) {
+      content.style.transform = '';
+      content.style.willChange = '';
+    }
+    if (list) {
+      list.style.transform = '';
+      list.style.willChange = '';
+    }
+  };
+
+  const prepareChatBackVisual = () => {
+    if (!isMobile() || !chatIsOpen()) return false;
+    const { app, list, content } = chatBackElements();
+    if (!app || !list || !content) return false;
+    app.classList.add('fp-chat-back-preview');
+    app.classList.remove('fp-chat-back-anim');
+    content.style.willChange = 'transform';
+    list.style.willChange = 'transform';
+    return true;
+  };
+
+  const moveChatBackVisual = (dx) => {
+    if (chatBackCommitInFlight) return false;
+    chatBackVisualToken += 1;
+    if (!prepareChatBackVisual()) return false;
+    const { list, content } = chatBackElements();
+    const width = Math.max(1, content?.clientWidth || window.innerWidth || 1);
+    const x = Math.min(Math.max(0, Number(dx) || 0), width * .96);
+    const progress = Math.max(0, Math.min(1, x / width));
+    content.style.transform = `translate3d(${x}px,0,0)`;
+    list.style.transform = `translate3d(${-24 * (1 - progress)}px,0,0)`;
+    return true;
+  };
+
+  const resetChatBackVisual = (animate = true) => {
+    if (chatBackCommitInFlight) return true;
+    const { app, list, content } = chatBackElements();
+    if (!app?.classList.contains('fp-chat-back-preview')) {
+      clearChatBackVisual();
+      return false;
+    }
+    const token = ++chatBackVisualToken;
+    if (animate) app.classList.add('fp-chat-back-anim');
+    else app.classList.remove('fp-chat-back-anim');
+    if (content) content.style.transform = 'translate3d(0,0,0)';
+    if (list) list.style.transform = 'translate3d(-24px,0,0)';
+
+    const finish = () => {
+      if (token !== chatBackVisualToken) return;
+      clearChatBackVisual();
+    };
+    if (!animate || !content) {
+      finish();
+      return true;
+    }
+    content.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 240);
+    return true;
+  };
+
+  const runExistingChatListExit = () => {
+    try {
+      if (typeof window.showChatsList === 'function') window.showChatsList();
+      else if (typeof showChatsList === 'function') showChatsList();
+    } catch {}
+    try {
+      history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, '', '/');
+    } catch {}
+  };
+
+  const commitChatBackVisual = () => {
+    if (!isMobile() || !chatIsOpen()) return false;
+    if (chatBackCommitInFlight) return true;
+    if (!prepareChatBackVisual()) return false;
+    const { app, list, content } = chatBackElements();
+    if (!app || !content) return false;
+
+    chatBackCommitInFlight = true;
+    const token = ++chatBackVisualToken;
+    app.classList.add('fp-chat-back-anim');
+    content.style.transform = 'translate3d(105%,0,0)';
+    if (list) list.style.transform = 'translate3d(0,0,0)';
+
+    let finished = false;
+    const finish = () => {
+      if (finished || token !== chatBackVisualToken) return;
+      finished = true;
+      chatBackCommitInFlight = false;
+      clearChatBackVisual();
+      runExistingChatListExit();
+    };
+    content.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 260);
+    return true;
+  };
+
+  // Existing swipe executor exposed for the room Back button/system Back.
+  // It is not a new owner: FPGesture135/FPLayer173 still arbitrate gestures.
+  window.fpCommitChatBackTransition = commitChatBackVisual;
+
   // Settings now use the same mobile gesture model as chats, so the explicit
   // Back button is no longer needed. Keep desktop navigation via the sidebar.
   try {
@@ -167,6 +281,7 @@
 
   document.addEventListener("touchmove", (event) => {
     if (mediaViewerIsOpen()) {
+      if (swipe?.mode === 'chat') resetChatBackVisual();
       swipe = null;
       resetLegacyDrawerSwipe();
       return;
@@ -176,6 +291,7 @@
     const manager = gestureManager();
     if (manager && !manager.canNavigate(swipe.mode, event.target, event)) {
       if (swipe.modernSettings) resetModernSettingsVisual();
+      if (swipe.mode === 'chat') resetChatBackVisual();
       swipe = null;
       resetLegacyDrawerSwipe();
       return;
@@ -217,10 +333,12 @@
     resetLegacyDrawerSwipe();
 
     if (swipe.modernSettings) moveModernSettingsVisual(swipe.dx);
+    if (swipe.mode === 'chat') moveChatBackVisual(swipe.dx);
   }, { capture: true, passive: false });
 
   document.addEventListener("touchend", (event) => {
     if (mediaViewerIsOpen()) {
+      if (swipe?.mode === 'chat') resetChatBackVisual();
       swipe = null;
       resetLegacyDrawerSwipe();
       return;
@@ -232,6 +350,7 @@
     const manager = gestureManager();
     if (manager && !manager.canNavigate(current.mode, event.target, event)) {
       if (current.modernSettings) resetModernSettingsVisual();
+      if (current.mode === 'chat') resetChatBackVisual();
       resetLegacyDrawerSwipe();
       return;
     }
@@ -241,6 +360,7 @@
         resetLegacyDrawerSwipe();
         resetModernSettingsVisual();
       }
+      if (current.mode === 'chat') resetChatBackVisual();
       return;
     }
 
@@ -255,16 +375,14 @@
         : DRAWER_THRESHOLD_PX;
     if (current.canceled || current.dx < threshold) {
       if (current.modernSettings) resetModernSettingsVisual();
+      if (current.mode === 'chat') resetChatBackVisual();
       return;
     }
 
     if (current.mode === "chat") {
       if (!chatIsOpen()) return;
       document.activeElement?.blur?.();
-      if (typeof window.showChatsList === "function") window.showChatsList();
-      try {
-        history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, "", "/");
-      } catch {}
+      if (!commitChatBackVisual()) runExistingChatListExit();
       return;
     }
 
@@ -289,6 +407,7 @@
 
   document.addEventListener("touchcancel", () => {
     if (swipe?.modernSettings) resetModernSettingsVisual();
+    if (swipe?.mode === 'chat') resetChatBackVisual();
     swipe = null;
     resetLegacyDrawerSwipe();
   }, { capture: true, passive: true });

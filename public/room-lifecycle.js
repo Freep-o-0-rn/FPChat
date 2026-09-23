@@ -53,32 +53,6 @@
     }
   }
 
-  const originalNormalizeNotificationSettings = normalizeNotificationSettings;
-  normalizeNotificationSettings = function normalizeNotificationSettingsWithSystemEvents(value) {
-    const normalized = originalNormalizeNotificationSettings(value);
-    const raw = value && typeof value === 'object' ? value : {};
-    return { ...normalized, notifySystemEvents: raw.notifySystemEvents !== false };
-  };
-  state.notif = normalizeNotificationSettings(state.notif);
-  STORAGE.set(STORAGE.notif, state.notif);
-
-  // Keep the existing push implementation, but extend its payload with the new setting.
-  window.fetch = function fpchatLifecycleFetch(input, init) {
-    try {
-      const url = typeof input === 'string' ? input : input?.url;
-      if ((url === '/api/push/subscribe' || url === '/api/push/settings') && init?.body) {
-        const body = JSON.parse(init.body);
-        if (url === '/api/push/subscribe') {
-          body.settings = { ...(body.settings || {}), notifySystemEvents: state.notif.notifySystemEvents !== false };
-        } else {
-          body.notifySystemEvents = state.notif.notifySystemEvents !== false;
-        }
-        init = { ...init, body: JSON.stringify(body) };
-      }
-    } catch {}
-    return nativeFetch(input, init);
-  };
-
   const originalDecryptRoomText = decryptRoomText;
   decryptRoomText = async function decryptRoomTextWithSystemEvents(roomId, message) {
     if (message?.type === 'system') return systemEventText(message);

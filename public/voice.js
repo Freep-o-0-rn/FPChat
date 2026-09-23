@@ -925,6 +925,30 @@
     return manager.unmountVoiceUI(form, unmountComposerVoiceUi177);
   }
 
+  const MICROPHONE_CONSTRAINTS_182 = Object.freeze({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+  });
+
+  function releaseMicrophoneStream182(stream) {
+    const manager = window.FPMediaManager177;
+    if (manager?.releaseMicrophoneStream) return manager.releaseMicrophoneStream(stream);
+    let released = false;
+    for (const track of stream?.getTracks?.() || []) {
+      try { track.stop(); released = true; } catch {}
+    }
+    return released;
+  }
+
+  async function acquireMicrophoneStream182() {
+    const manager = window.FPMediaManager177;
+    if (manager?.acquireMicrophoneStream) {
+      return manager.acquireMicrophoneStream({
+        constraints: MICROPHONE_CONSTRAINTS_182
+      });
+    }
+    return navigator.mediaDevices.getUserMedia(MICROPHONE_CONSTRAINTS_182);
+  }
+
   async function beginPressRecording(event, form, mic) {
     if (pendingPress || recordingState || uploadInFlight || previewState) return;
     const roomId = currentRoomId();
@@ -952,18 +976,20 @@
 
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      });
-    } catch {
+      stream = await acquireMicrophoneStream182();
+    } catch (error) {
       if (pendingPress === session) pendingPress = null;
-      alert('Нет доступа к микрофону. Разрешите доступ к микрофону для FPChat.');
+      if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+        alert('Нет доступа к микрофону. Разрешите микрофон для FPChat в настройках сайта или браузера.');
+      } else {
+        alert('Не удалось открыть микрофон. Проверьте доступ к микрофону и повторите попытку.');
+      }
       syncComposer(form);
       return;
     }
 
     if (pendingPress !== session || session.released || session.cancelled || currentRoomId() !== roomId) {
-      stream.getTracks().forEach((track) => track.stop());
+      releaseMicrophoneStream182(stream);
       if (pendingPress === session) pendingPress = null;
       syncComposer(form);
       return;
@@ -974,7 +1000,7 @@
     try {
       recorder = mimeType ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 64000 }) : new MediaRecorder(stream);
     } catch {
-      stream.getTracks().forEach((track) => track.stop());
+      releaseMicrophoneStream182(stream);
       pendingPress = null;
       alert('Не удалось запустить запись голосового сообщения.');
       syncComposer(form);
@@ -1019,7 +1045,7 @@
     } catch {
       recordingState = null;
       pendingPress = null;
-      stream.getTracks().forEach((track) => track.stop());
+      releaseMicrophoneStream182(stream);
       alert('Не удалось запустить запись голосового сообщения.');
       syncComposer(form);
       return;
@@ -1228,7 +1254,7 @@
     rec.timer = null;
     rec.maxTimer = null;
     stopLiveAnalyser(rec);
-    rec.stream?.getTracks?.().forEach((track) => track.stop());
+    releaseMicrophoneStream182(rec.stream);
     resetGestureUi(rec.form);
     setRecordingUi(rec, 'off', false);
 

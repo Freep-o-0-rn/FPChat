@@ -118,3 +118,41 @@
 .media-viewer-content{position:absolute;inset:56px 8px 20px;display:flex;align-items:center;justify-content:center}.media-viewer-content img,.media-viewer-content video{max-width:100%;max-height:100%;border-radius:10px}
 .media-viewer-nav{position:absolute;top:50%;transform:translateY(-50%);border:0;background:rgba(255,255,255,.25);color:#fff;border-radius:999px;width:36px;height:36px}.media-viewer-nav.prev{left:10px}.media-viewer-nav.next{right:10px}
 .media-progress-ring{color:#fff}.media-error-box{color:#fff;display:flex;gap:8px;align-items:center}
+
+
+/* Build 183: interactive room -> chat list back transition.
+   FPGesture135/FPLayer173 remain the gesture/layer owners; these rules only
+   expose the existing chat-list underneath the existing content pane. */
+@media (max-width: 900px) {
+  .app.fp-chat-back-preview[data-pane="content"] {
+    position: relative;
+    display: block;
+  }
+  .app.fp-chat-back-preview[data-pane="content"] .chat-list {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    transform: translate3d(-24px,0,0);
+    will-change: transform;
+  }
+  .app.fp-chat-back-preview[data-pane="content"] .content {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    background: var(--panel);
+    transform: translate3d(0,0,0);
+    will-change: transform;
+    box-shadow: -12px 0 30px rgba(0,0,0,.18);
+  }
+  .app.fp-chat-back-preview.fp-chat-back-anim[data-pane="content"] .content,
+  .app.fp-chat-back-preview.fp-chat-back-anim[data-pane="content"] .chat-list {
+    transition: transform .18s ease;
+  }
+}
