@@ -98,7 +98,7 @@ class FPMediaManager177Class {
       let hintShown = false;
       try { previouslyGranted = localStorage.getItem('fpchat:microphone-ever-granted') === '1'; } catch {}
       try { hintShown = sessionStorage.getItem('fpchat:microphone-persistent-hint-shown') === '1'; } catch {}
-      if (permission === 'prompt' && previouslyGranted && !hintShown) {
+      if ((permission === 'prompt' || permission === 'unknown') && previouslyGranted && !hintShown) {
         try { sessionStorage.setItem('fpchat:microphone-persistent-hint-shown', '1'); } catch {}
         try { onPersistentPermissionHint?.(); } catch {}
       }

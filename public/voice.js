@@ -945,7 +945,17 @@
       return manager.acquireMicrophoneStream({
         constraints: MICROPHONE_CONSTRAINTS_182,
         onPersistentPermissionHint: () => {
-          alert('FPChat уже получал доступ к микрофону, но браузер снова запрашивает разрешение. В следующем системном окне выберите постоянный вариант доступа, например «Разрешить при посещении сайта», если он доступен.');
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+          const isStandalone = window.matchMedia?.('(display-mode: standalone)')?.matches
+            || navigator.standalone === true;
+          if (isIOS) {
+            alert(isStandalone
+              ? 'FPChat уже получал доступ к микрофону, но iOS снова запрашивает его после запуска приложения. Для Safari откройте настройки сайта FPChat и установите «Микрофон → Разрешить». В установленном PWA iOS может всё равно повторно запросить доступ после полного закрытия приложения — FPChat не может отменить системный запрос.'
+              : 'FPChat уже получал доступ к микрофону, но Safari снова запрашивает разрешение. Откройте меню страницы → Настройки веб-сайта → Микрофон → Разрешить, чтобы Safari не спрашивал каждый раз.');
+            return;
+          }
+          alert('FPChat уже получал доступ к микрофону, но браузер снова запрашивает разрешение. Выберите постоянный вариант доступа к микрофону для сайта, если браузер его предлагает.');
         }
       });
     }
