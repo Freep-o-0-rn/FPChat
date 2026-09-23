@@ -84,6 +84,9 @@
     content: document.getElementById('contentPane'),
   });
 
+  let chatBackVisualToken = 0;
+  let chatBackCommitInFlight = false;
+
   const clearChatBackVisual = () => {
     const { app, list, content } = chatBackElements();
     app?.classList.remove('fp-chat-back-preview', 'fp-chat-back-anim');
@@ -108,9 +111,9 @@
     return true;
   };
 
-  let chatBackVisualToken = 0;
-
   const moveChatBackVisual = (dx) => {
+    if (chatBackCommitInFlight) return false;
+    chatBackVisualToken += 1;
     if (!prepareChatBackVisual()) return false;
     const { list, content } = chatBackElements();
     const width = Math.max(1, content?.clientWidth || window.innerWidth || 1);
@@ -122,6 +125,7 @@
   };
 
   const resetChatBackVisual = (animate = true) => {
+    if (chatBackCommitInFlight) return true;
     const { app, list, content } = chatBackElements();
     if (!app?.classList.contains('fp-chat-back-preview')) {
       clearChatBackVisual();
@@ -145,8 +149,6 @@
     setTimeout(finish, 240);
     return true;
   };
-
-  let chatBackCommitInFlight = false;
 
   const runExistingChatListExit = () => {
     try {
