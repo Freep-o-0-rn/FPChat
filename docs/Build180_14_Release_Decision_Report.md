@@ -25,29 +25,22 @@ At the start of 180.14, `build/180-development` is 301 commits ahead of and 2 co
 
 ## Current release metadata
 
-The development candidate is still published internally as:
+Release identity has now been finalized as:
 
 ```json
 {
   "version": "1.0.0",
-  "build": "178.28.1"
+  "build": "180.14"
 }
 ```
 
-`update.bat` also requires:
+`update.bat` requires the same build:
 
 ```text
-EXPECTED_BUILD=178.28.1
+EXPECTED_BUILD=180.14
 ```
 
-This is an intentional release-decision item. Build 180.14 does not change it.
-
-Before a production release, choose one of these approaches explicitly:
-
-1. release the accumulated candidate under the existing `178.28.1` package/build identity; or
-2. create a separate release/version-bump step and update every build identity/check consistently.
-
-Do not change only `version.json` or only `EXPECTED_BUILD`.
+The settings fallback label, presentation bridge build label/cache suffix and Windows updater contract test use the same build identity.
 
 ## Major accumulated changes since Build 168
 
@@ -184,11 +177,9 @@ It includes real-device checks for:
 
 These are not prerequisites for continuing development, but they remain prerequisites if the release policy requires full physical parity confirmation before production.
 
-### Version identity not finalized
+### Version identity finalized
 
-The executable candidate is still identified as build `178.28.1`.
-
-A production release must explicitly decide whether to retain that identity or introduce a coordinated version bump.
+The release candidate is identified consistently as Build `180.14` across version metadata, user-facing fallback labels/cache suffix and updater build gate.
 
 ### Development/main histories diverge
 
@@ -237,7 +228,7 @@ A release requires a separate explicit decision/action after this report.
 
 ## Suggested manual release sequence when chosen later
 
-1. decide final release/build identity;
+1. use the finalized Build 180.14 release identity;
 2. reconcile the two main-only CHANGELOG commits;
 3. run the full Build 180 workflow against the exact release SHA after any version/merge changes;
 4. optionally perform the deferred physical matrix;
