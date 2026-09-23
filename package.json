@@ -135,7 +135,9 @@
     "test:180:single-owner-audit": "node ./scripts/regression180-single-owner-audit.cjs",
     "test:180:1811": "npm run test:180:1810 && npm run test:180:single-owner-audit",
     "test:180:cumulative": "node ./scripts/run18012-cumulative.cjs",
-    "test:180:1812": "npm run test:180:1811 && npm run test:180:cumulative"
+    "test:180:1812": "npm run test:180:1811 && npm run test:180:cumulative",
+    "test:180:last-transfer-rollback": "node ./scripts/regression180-last-transfer-rollback.cjs",
+    "test:180:1813": "npm run test:180:init-coordination && npm run test:180:last-transfer-rollback"
   },
   "license": "MIT",
   "dependencies": {
