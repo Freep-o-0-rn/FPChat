@@ -286,6 +286,65 @@
     renderNotificationPermissionStatus();
   }
 
+  const PENDING_SYSTEM_KEY = 'fpchat:pending-system-notification181';
+
+  function normalizeSystemTarget(value) {
+    const systemEventId = Number(value?.systemEventId || value?.eventId || 0);
+    return {
+      systemEventId: Number.isSafeInteger(systemEventId) && systemEventId > 0 ? systemEventId : null,
+      systemType: value?.systemType ? String(value.systemType).slice(0, 64) : null,
+      refType: value?.refType ? String(value.refType).slice(0, 64) : null,
+      refId: value?.refId == null ? null : String(value.refId).slice(0, 128)
+    };
+  }
+
+  function rememberSystemTarget(value) {
+    const target = normalizeSystemTarget(value);
+    try { sessionStorage.setItem(PENDING_SYSTEM_KEY, JSON.stringify(target)); } catch {}
+    return target;
+  }
+
+  function openSystemTarget(value) {
+    const target = rememberSystemTarget(value);
+    const api = window.FPSystem144;
+    if (!api?.open) return false;
+    try {
+      api.open({ eventId: target.systemEventId, refType: target.refType, refId: target.refId });
+      sessionStorage.removeItem(PENDING_SYSTEM_KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function retryPendingSystemTarget() {
+    let pending = null;
+    try { pending = JSON.parse(sessionStorage.getItem(PENDING_SYSTEM_KEY) || 'null'); } catch {}
+    if (pending) openSystemTarget(pending);
+  }
+
+  function consumeSystemTargetFromUrl() {
+    try {
+      const url = new URL(location.href);
+      const raw = url.searchParams.get('systemEvent');
+      const id = Number(raw || 0);
+      if (!Number.isSafeInteger(id) || id <= 0) return;
+      url.searchParams.delete('systemEvent');
+      const clean = `${url.pathname}${url.search}${url.hash}`;
+      history.replaceState(history.state, '', clean || '/');
+      openSystemTarget({ systemEventId: id });
+    } catch {}
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      const data = event.data || {};
+      if (data.type !== 'open-system') return;
+      openSystemTarget(data);
+    });
+  }
+  window.addEventListener('fpchat:system-ready181', retryPendingSystemTarget);
+
   const persisted = STORAGE.get(STORAGE.notif) || {};
   state.notif = normalize({ ...state.notif, notifySystemEvents: persisted.notifySystemEvents });
   STORAGE.set(STORAGE.notif, state.notif);
@@ -312,9 +371,11 @@
     updateAllSettings,
     unsubscribeAll,
     initialize,
+    openSystemTarget,
     owner: 'NotificationManager181'
   });
 
+  queueMicrotask(consumeSystemTargetFromUrl);
   if (state.notif.enabled && permission() === 'granted') {
     queueMicrotask(() => { void syncAll(); });
   }
