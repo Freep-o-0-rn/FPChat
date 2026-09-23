@@ -137,7 +137,8 @@
     "test:180:cumulative": "node ./scripts/run18012-cumulative.cjs",
     "test:180:1812": "npm run test:180:1811 && npm run test:180:cumulative",
     "test:180:last-transfer-rollback": "node ./scripts/regression180-last-transfer-rollback.cjs",
-    "test:180:1813": "npm run test:180:init-coordination && npm run test:180:last-transfer-rollback"
+    "test:180:1813": "npm run test:180:init-coordination && npm run test:180:last-transfer-rollback",
+    "test:181:notifications": "node ./scripts/regression181-notifications.cjs"
   },
   "license": "MIT",
   "dependencies": {
