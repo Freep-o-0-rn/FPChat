@@ -1,7 +1,7 @@
 const STORAGE={roomState:(id)=>`fpchat:room:${id}`,activeChatsKey:'fpchat:active-chats',lastSelectedRoomId:'lastSelectedRoomId',nick:'fpchat:nick',theme:'fpchat:theme',roomNames:'fpchat:room-names',notif:'fpchat:notif',roomMute:'fpchat:room-mute',deviceId:'fpchat:device-id',set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),get:(k)=>{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}};
-const DEFAULT_NOTIFICATION_SETTINGS=Object.freeze({enabled:true,showText:true,hideSender:false,sound:true});
+const DEFAULT_NOTIFICATION_SETTINGS=Object.freeze({enabled:true,showText:true,hideSender:false,sound:true,notifySystemEvents:true});
 const NOTIFICATION_PROMPTED_KEY='fpchat:notification-prompted';
-function normalizeNotificationSettings(value){const raw=value&&typeof value==='object'?value:{};return {enabled:raw.enabled!==false,showText:raw.showText!==false,hideSender:raw.hideSender===true,sound:raw.sound!==false};}
+function normalizeNotificationSettings(value){const raw=value&&typeof value==='object'?value:{};return {enabled:raw.enabled!==false,showText:raw.showText!==false,hideSender:raw.hideSender===true,sound:raw.sound!==false,notifySystemEvents:raw.notifySystemEvents!==false};}
 const storedNotificationSettings=STORAGE.get(STORAGE.notif);
 const initialNotificationSettings=normalizeNotificationSettings(storedNotificationSettings||DEFAULT_NOTIFICATION_SETTINGS);
 function getOrCreateDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(current))return current;const deviceId=crypto.randomUUID();localStorage.setItem(STORAGE.deviceId,deviceId);return deviceId;}
@@ -52,6 +52,79 @@ class FPMediaManager177Class {
   #previewThumbnailObjectUrls = new Set();
   #voiceUiByForm = new WeakMap();
   #activeViewer = null;
+  #microphoneRequestPromise = null;
+  #microphonePermissionState = 'unknown';
+
+  async microphonePermission() {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      this.#microphonePermissionState = 'unsupported';
+      return 'unsupported';
+    }
+    if (!navigator.permissions?.query) {
+      this.#microphonePermissionState = 'unknown';
+      return 'unknown';
+    }
+    try {
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      const state = ['granted', 'denied', 'prompt'].includes(status?.state) ? status.state : 'unknown';
+      this.#microphonePermissionState = state;
+      return state;
+    } catch {
+      this.#microphonePermissionState = 'unknown';
+      return 'unknown';
+    }
+  }
+
+  async acquireMicrophoneStream({
+    constraints = { audio: true }
+  } = {}) {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      const error = new Error('microphone unsupported');
+      error.name = 'NotSupportedError';
+      throw error;
+    }
+    if (this.#microphoneRequestPromise) return this.#microphoneRequestPromise;
+
+    const run = async () => {
+      const permission = await this.microphonePermission();
+      if (permission === 'denied') {
+        const error = new Error('microphone permission denied');
+        error.name = 'NotAllowedError';
+        throw error;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.#microphonePermissionState = 'granted';
+      return stream;
+    };
+
+    const pending = run();
+    this.#microphoneRequestPromise = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#microphoneRequestPromise === pending) this.#microphoneRequestPromise = null;
+    }
+  }
+
+  releaseMicrophoneStream(stream) {
+    if (!stream?.getTracks) return false;
+    let released = false;
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop();
+        released = true;
+      } catch {}
+    }
+    return released;
+  }
+
+  microphoneSnapshot() {
+    return Object.freeze({
+      permission: this.#microphonePermissionState,
+      requestInFlight: Boolean(this.#microphoneRequestPromise)
+    });
+  }
 
   ownPreviewThumbnailObjectUrl(item) {
     const url = item?.thumbnailObjectUrl;
@@ -158,7 +231,7 @@ try {
   window.FPRuntime?.registerOwner?.('media-manager177', {
     role: 'media-preview-lifecycle',
     mode: 'active-owner',
-    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup + voice UI mount/unmount delegation + media viewer open/close delegation'
+    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup + voice UI mount/unmount delegation + microphone permission/stream acquisition/release + media viewer open/close delegation'
   });
 } catch {}
 let mediaViewerState=null;
@@ -417,7 +490,7 @@ function showBackExitToast(){
 function handleAndroidBackNavigation(){
   const sidebarOpen=els.sidebar?.classList.contains('open');
   if(sidebarOpen){closeMobileMenu();return true;}
-  if(state.roomId){showChatsList();return true;}
+  if(state.roomId){if(window.fpCommitChatBackTransition?.())return true;showChatsList();return true;}
   if(state.view&&state.view!=='chats'){setView('chats');return true;}
   const now=Date.now();
   if(now-lastBackPressAt<BACK_EXIT_INTERVAL)return false;
@@ -1008,7 +1081,7 @@ const FPComposer177=Object.freeze({
   }
 });
 window.FPComposer177=FPComposer177;
-async function renderChatView(messages,deviceId,viewState=null){const view=captureRoomView170();resetUnreadDividerSession(state.roomId);messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>showChatsList()); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>FPReadState178.admitVisible(entry,box));},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); await FPWork174.each(messages,async m=>{appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext,view.key).catch(()=>"[cannot decrypt]"); if(!isRoomViewCurrent170(view))return; appendMessage(box,m,txt,mine,false);},{current:()=>isRoomViewCurrent170(view)});if(!isRoomViewCurrent170(view))return;if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
+async function renderChatView(messages,deviceId,viewState=null){const view=captureRoomView170();resetUnreadDividerSession(state.roomId);messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>{if(window.fpCommitChatBackTransition?.())return;showChatsList();}); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>FPReadState178.admitVisible(entry,box));},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); await FPWork174.each(messages,async m=>{appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext,view.key).catch(()=>"[cannot decrypt]"); if(!isRoomViewCurrent170(view))return; appendMessage(box,m,txt,mine,false);},{current:()=>isRoomViewCurrent170(view)});if(!isRoomViewCurrent170(view))return;if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
 box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();});
 document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
 renderPresenceStatus();
@@ -1696,8 +1769,8 @@ pushAppHistoryState();
   await registerServiceWorker();
   const updateStarted=await checkAppVersionOnEntry();
   if(updateStarted)return;
-  void getPushConfig().then(()=>{if(document.getElementById('notificationPermissionStatus'))renderNotificationPermissionStatus();});
-  void initializeNotifications();
+  // Build 181: NotificationManager181 loads immediately after app.js and is
+  // the only owner that performs notification subscription synchronization.
   applyTheme(localStorage.getItem(STORAGE.theme)||'auto');
   const inv=parseInvite();
   const chat=parseChat();

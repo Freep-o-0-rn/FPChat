@@ -182,6 +182,7 @@
   function renderEvent(event) {
     const card = document.createElement('div');
     card.className = 'fp-system145-event';
+    if (event?.id != null) card.dataset.systemEventId = String(event.id);
 
     if (event?.type === 'chat_request_received') {
       const sender = event.payload?.sender || {};
@@ -238,7 +239,7 @@
     }
   }
 
-  async function openSystemChat() {
+  async function openSystemChat(options = {}) {
     closeSystemChat();
 
     const root = document.createElement('div');
@@ -292,7 +293,17 @@
         feed.appendChild(emptyState);
       } else {
         [...events].reverse().forEach((event) => feed.appendChild(renderEvent(event)));
-        feed.scrollTop = feed.scrollHeight;
+        const focusEventId = Number(options?.eventId || 0);
+        const focusTarget = Number.isSafeInteger(focusEventId) && focusEventId > 0
+          ? feed.querySelector(`[data-system-event-id="${focusEventId}"]`)
+          : null;
+        if (focusTarget) {
+          focusTarget.scrollIntoView({ block: 'center' });
+          focusTarget.classList.add('fp-system145-event-focus');
+          setTimeout(() => focusTarget.classList.remove('fp-system145-event-focus'), 1600);
+        } else {
+          feed.scrollTop = feed.scrollHeight;
+        }
         const unreadIds = events.filter((event) => !event.readAt).map((event) => event.id);
         if (unreadIds.length) {
           try { await markRead(unreadIds); } catch {}
@@ -338,5 +349,6 @@
   }, 10000);
 
   window.FPSystem144 = Object.freeze({ getState, getEvents, markRead, refresh, open: openSystemChat, close: closeSystemChat });
+  window.dispatchEvent(new Event('fpchat:system-ready181'));
   void refresh();
 })();
