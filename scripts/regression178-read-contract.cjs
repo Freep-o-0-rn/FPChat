@@ -24,6 +24,7 @@ function fn(source,name){
 const queueRead=fn(app,'queueReadIds');
 const flushRead=fn(app,'flushPendingReads');
 const markRead=fn(app,'markMessageRead');
+const admitVisible=fn(app,'admitVisibleMessageRead178');
 const markIncomingRead=fn(app,'markIncomingMessagesRead');
 const markReceived=fn(app,'markMessagesReceived');
 const flushReceived=fn(app,'flushPendingReceived');
@@ -51,13 +52,13 @@ assert(markRead.includes("if(msgEl.dataset.read==='1')return;"),'already-read gu
 assert(markRead.includes("rememberMessageStatus(state.roomId,id,'read');"),'local canonical read status update changed');
 assert(markRead.includes('markIncomingMessagesRead(state.roomId,activeChatDeviceId,[id]);'),'actual read no longer enters existing pending-read queue');
 
-// Intersection visibility remains one admission path, not a new status model.
-assert(app.includes("unreadVisibleObserver=new IntersectionObserver((entries)=>{if(document.visibilityState!=='visible')return;"),'visible observer document guard changed');
-assert(app.includes('if(!entry.isIntersecting)return;'),'intersection admission changed');
-assert(app.includes("if(el.dataset.incoming!=='1')return;"),'observer incoming guard changed');
-assert(app.includes("if(el.dataset.read==='1')return;"),'observer already-read guard changed');
-assert(app.includes('markMessageRead(el.dataset.messageId||el.dataset.id);'),'observer no longer delegates to existing read handler');
+// Intersection visibility remains one admission path, now through the later FPReadState178 admission facade.
+assert(app.includes('entries.forEach((entry)=>FPReadState178.admitVisible(entry,box));'),'visible observer no longer delegates to FPReadState178');
 assert(app.includes('},{root:box,threshold:0.2});'),'observer threshold changed');
+assert(admitVisible.includes("if(initialMessagesScrollPending||document.visibilityState!=='visible'||!state.roomId||!activeChatDeviceId)return false;"),'visible admission opening/background/session guard changed');
+assert(admitVisible.includes("if(!entry?.isIntersecting||!el||document.getElementById('messages')!==box||!box.contains(el)||!el.isConnected)return false;"),'visible admission stale/current-node guard changed');
+assert(admitVisible.includes("if(el.dataset.incoming!=='1'||el.dataset.read==='1')return false;"),'visible admission incoming/read guard changed');
+assert(admitVisible.includes('markMessageRead(el.dataset.messageId||el.dataset.id);'),'visible admission no longer delegates to existing read handler');
 assert(app.includes("function observeUnreadMessage(el){if(initialMessagesScrollPending||!el||!unreadVisibleObserver)return;"),'initial render can now observe/read too early');
 
 // Existing explicit UX paths still delegate to the same handler.

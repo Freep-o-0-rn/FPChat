@@ -47,12 +47,17 @@ const fallbackObserver=selection.indexOf('const observer = new MutationObserver'
 assert(ownerBranch>=0&&fallback>ownerBranch&&fallbackObserver>fallback,'legacy MutationObserver escaped the FPDOM173 fallback branch');
 
 // Startup order: DOM owner before app; selection listener before message-context creates contexts.
-const domPos=indexHtml.indexOf("domLifecycle.src = `/dom-lifecycle173.js${buildSuffix}`;");
-const appPos=indexHtml.indexOf("script.src = `/app.js${buildSuffix}`;");
+const preloadStart=indexHtml.indexOf("const preload174 = [");
+const preloadEnd=indexHtml.indexOf("];",preloadStart);
+assert(preloadStart>=0&&preloadEnd>preloadStart,'startup preload174 list missing');
+const preload=indexHtml.slice(preloadStart,preloadEnd);
+const domPos=preload.indexOf("'dom-lifecycle173.js'");
+const appPos=preload.indexOf("'app.js'");
 const selectionPos=indexHtml.indexOf("messageSelection.src = `/message-selection.js${buildSuffix}`;");
 const contextPos=indexHtml.indexOf("messageContext.src = `/message-context.js${buildSuffix}`;");
-assert(domPos>=0&&appPos>domPos,'FPDOM173 is no longer loaded before app.js');
-assert(selectionPos>appPos&&contextPos>selectionPos,'message-selection listener is no longer installed before message-context');
+assert(domPos>=0&&appPos>domPos,'FPDOM173 is no longer preloaded before app.js');
+assert(indexHtml.includes("'app.js':['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js']"),'app startup dependency no longer requires FPDOM173');
+assert(selectionPos>=0&&contextPos>selectionPos,'message-selection listener is no longer installed before message-context');
 
 // Mini semantic check of the actual decorator source: repeated mount of the same
 // context must reuse the same action button and therefore the same click bind.

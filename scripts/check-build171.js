@@ -41,9 +41,10 @@ const networkSource = parseJs('public/network171.js');
 const voiceSource = parseJs('public/voice.js');
 const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
+const buildNumber = Number(String(version.build).split('.')[0]);
 const packageJson = JSON.parse(read('package.json'));
 
-assert(Number.isInteger(Number(version.build)) && Number(version.build) >= 171, 'public/version.json must report build 171 or a later integrating build');
+assert(Number.isInteger(buildNumber) && buildNumber >= 171, 'public/version.json must report build 171 or a later integrating build');
 assert(indexSource.includes('/network171.js'), 'index.html must load network171.js');
 assert(indexSource.includes('network.onload = loadMessageStoreThenApp') && indexSource.includes('store.onload = load173OwnersThenApp') && indexSource.includes('layer.onload = loadApp'), 'app.js must be gated by successful network171 load');
 assert(indexSource.includes('network.onerror = () =>'), 'index.html must retain a safe legacy boot fallback');

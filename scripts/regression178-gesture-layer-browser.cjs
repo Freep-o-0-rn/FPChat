@@ -67,9 +67,9 @@ run(async ({newClient,errors})=>{
   assert.equal(await page.evaluate(()=>lowerLease17821.claim()),false,'stale cancelled lower lease could claim after overlay close');
 
   // A touch restart invalidates only the old touch lease.
-  await page.evaluate(()=>{touch17821('touchstart');});
+  await page.evaluate(()=>{window.oldLowerLease17821=window.lowerLease17821;touch17821('touchstart');});
   await page.waitForTimeout(20);
-  assert.equal(await page.evaluate(()=>lowerLease17821.claim()),false,'old touch lease survived touch restart');
+  assert.equal(await page.evaluate(()=>oldLowerLease17821.claim()),false,'old touch lease survived touch restart');
 
   // Create pointer session in parallel; cancelling touch must not clear pointer.
   await page.evaluate(()=>{installPointerWatcher17821=true;pointer17821('pointerdown',91);});

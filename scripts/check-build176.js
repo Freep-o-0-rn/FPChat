@@ -26,8 +26,9 @@ const files = [
 const source = Object.fromEntries(files.map((file) => [file, parse(file)]));
 const index = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
+const buildNumber = Number(String(version.build).split('.')[0]);
 
-assert(Number(version.build) >= 176, 'version.json must report Build 176 or later');
+assert(Number.isInteger(buildNumber) && buildNumber >= 176, 'version.json must report Build 176 or later');
 
 const lifecycle = source['public/lifecycle170.js'];
 const cooldown = source['public/chat-request-cooldown160.js'];

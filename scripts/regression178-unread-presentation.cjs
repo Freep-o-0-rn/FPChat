@@ -14,7 +14,9 @@ function exactFn(source,name){
   const m=new RegExp('(?:async\\s+)?function\\s+'+name+'\\s*\\(').exec(source);
   assert(m,'function missing: '+name);
   const start=m.index;
-  const brace=source.indexOf('{',start);
+  const paramsEnd=source.indexOf(')',start);
+  assert(paramsEnd>=0,'function parameters missing: '+name);
+  const brace=source.indexOf('{',paramsEnd);
   let depth=0;
   for(let i=brace;i<source.length;i+=1){
     if(source[i]==='{')depth+=1;

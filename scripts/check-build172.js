@@ -27,9 +27,10 @@ const appSource = parseJs('public/app.js');
 const actionsSource = parseJs('public/message-actions.js');
 const indexSource = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
+const buildNumber = Number(String(version.build).split('.')[0]);
 const packageJson = JSON.parse(read('package.json'));
 
-assert(Number.isInteger(Number(version.build)) && Number(version.build) >= 172, 'public/version.json must report build 172 or a later integrating build');
+assert(Number.isInteger(buildNumber) && buildNumber >= 172, 'public/version.json must report build 172 or a later integrating build');
 assert(indexSource.includes('/message-store172.js'), 'index.html must load message-store172.js');
 assert(indexSource.includes('store.onload = load173OwnersThenApp') && indexSource.includes('layer.onload = loadApp'), 'app.js must wait for MessageStore when it loads successfully');
 assert(appSource.includes("FPMessageStore172?.legacyCacheAdapter"), 'legacy messageCache must be an adapter to MessageStore');
