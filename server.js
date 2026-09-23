@@ -20,6 +20,7 @@ const { installChatRequestsServer } = require('./src/chat-requests-server147');
 const { installVoiceServer } = require('./src/voice-server');
 const { createEncryptedUpload179 } = require('./src/encrypted-upload179');
 const { createHistoryRead179 } = require('./src/history-read179');
+const { createNotificationService181 } = require('./src/notification-service181');
 
 dotenv.config();
 
@@ -259,6 +260,15 @@ function messageToDto(row) {
   };
 }
 
+const fpNotification181 = createNotificationService181({
+  db,
+  q,
+  webpush,
+  pushEnabled,
+  hasVisibleRoomSocketForDevice
+});
+fpNotification181.installDeviceRoutes({ app, pushOff });
+
 app.get('/api/push/vapid-public-key', (req, res) => res.json(pushEnabled ? { enabled: true, publicKey: VAPID_PUBLIC_KEY } : { enabled: false }));
 app.post('/api/push/subscribe', (req, res) => {
   if (!pushEnabled) return pushOff(res);
@@ -330,53 +340,11 @@ app.post('/api/push/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
-async function sendPushForMessage({ roomId, messageId, roomPublicId, senderDeviceId, senderName, preview }) {
-  if (!pushEnabled) return false;
-  const safeMessageId = Number(messageId);
-  if (!Number.isSafeInteger(safeMessageId) || safeMessageId <= 0) return false;
-  const subs = q.listPushForRoom.all(roomId);
-  let delivered = false;
-  for (const sub of subs) {
-    if (sub.device_id === senderDeviceId || sub.muted) continue;
-    if (hasVisibleRoomSocketForDevice(sub.device_id, roomPublicId)) continue;
-    const claim = q.claimPushDelivery.run(roomId, safeMessageId, sub.device_id);
-    if (!claim.changes) continue;
-    const privateBody = sub.hide_sender ? 'Новое сообщение' : `${senderName}: новое сообщение`;
-    const shownPreview = sub.show_text && preview ? (sub.hide_sender ? preview : `${senderName}: ${preview}`) : privateBody;
-    const payload = JSON.stringify({ type: 'message', roomId: roomPublicId, url: `/chat/${roomPublicId}`, title: 'FPChat', body: shownPreview });
-    try {
-      await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
-      delivered = true;
-    } catch (err) {
-      q.deletePushDelivery.run(roomId, safeMessageId, sub.device_id);
-      if (err?.statusCode === 404 || err?.statusCode === 410) q.deletePushById.run(sub.id);
-      else console.warn(`Push send failed for room ${roomPublicId}: ${err?.statusCode || 'error'}`);
-    }
-  }
-  return delivered;
+async function sendPushForMessage(input) {
+  return fpNotification181.sendRoomMessage(input);
 }
 async function sendPushForSystemEvent(room, message) {
-  if (!pushEnabled || !room || !message) return false;
-  const safeMessageId = Number(message.id);
-  if (!Number.isSafeInteger(safeMessageId) || safeMessageId <= 0) return false;
-  let delivered = false;
-  for (const sub of q.listPushForRoom.all(room.id)) {
-    if (sub.device_id === message.sender_device_id || sub.muted || !sub.notify_system_events) continue;
-    if (hasVisibleRoomSocketForDevice(sub.device_id, room.public_id)) continue;
-    const claim = q.claimPushDelivery.run(room.id, safeMessageId, sub.device_id);
-    if (!claim.changes) continue;
-    const body = systemEventText(message, Boolean(sub.hide_sender));
-    const payload = JSON.stringify({ type: 'system', roomId: room.public_id, url: `/chat/${room.public_id}`, title: 'FPChat', body });
-    try {
-      await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
-      delivered = true;
-    } catch (err) {
-      q.deletePushDelivery.run(room.id, safeMessageId, sub.device_id);
-      if (err?.statusCode === 404 || err?.statusCode === 410) q.deletePushById.run(sub.id);
-      else console.warn(`System push failed for room ${room.public_id}: ${err?.statusCode || 'error'}`);
-    }
-  }
-  return delivered;
+  return fpNotification181.sendRoomSystemEvent(room, message);
 }
 
 function safeUnlink(file) {
