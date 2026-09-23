@@ -141,6 +141,13 @@ run(async ({browser,origin,errors})=>{
   assert.equal(editState.draftText,'177.14 preserved draft','entering edit must not overwrite existing draft');
 
   await page.locator('#msgInput').fill('');
+  await page.waitForFunction(()=>{
+    const form=document.getElementById('sendForm');
+    const input=document.getElementById('msgInput');
+    const send=document.getElementById('sendBtn');
+    const mic=document.querySelector('.fp-voice-record-btn');
+    return Boolean(form&&input&&send&&mic&&input.value===''&&send.disabled===true&&mic.disabled===true&&form.classList.contains('fp-voice-mic-mode')===false);
+  });
   const emptyEdit=await page.evaluate(()=>({
     sendDisabled:document.getElementById('sendBtn')?.disabled,
     micMode:document.getElementById('sendForm')?.classList.contains('fp-voice-mic-mode')===true,
