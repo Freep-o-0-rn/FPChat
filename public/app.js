@@ -52,6 +52,88 @@ class FPMediaManager177Class {
   #previewThumbnailObjectUrls = new Set();
   #voiceUiByForm = new WeakMap();
   #activeViewer = null;
+  #microphoneRequestPromise = null;
+  #microphonePermissionState = 'unknown';
+
+  async microphonePermission() {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      this.#microphonePermissionState = 'unsupported';
+      return 'unsupported';
+    }
+    if (!navigator.permissions?.query) {
+      this.#microphonePermissionState = 'unknown';
+      return 'unknown';
+    }
+    try {
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      const state = ['granted', 'denied', 'prompt'].includes(status?.state) ? status.state : 'unknown';
+      this.#microphonePermissionState = state;
+      return state;
+    } catch {
+      this.#microphonePermissionState = 'unknown';
+      return 'unknown';
+    }
+  }
+
+  async acquireMicrophoneStream({
+    constraints = { audio: true },
+    onPersistentPermissionHint = null
+  } = {}) {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      const error = new Error('microphone unsupported');
+      error.name = 'NotSupportedError';
+      throw error;
+    }
+    if (this.#microphoneRequestPromise) return this.#microphoneRequestPromise;
+
+    const run = async () => {
+      const permission = await this.microphonePermission();
+      if (permission === 'denied') {
+        const error = new Error('microphone permission denied');
+        error.name = 'NotAllowedError';
+        throw error;
+      }
+
+      const previouslyGranted = localStorage.getItem('fpchat:microphone-ever-granted') === '1';
+      const hintShown = sessionStorage.getItem('fpchat:microphone-persistent-hint-shown') === '1';
+      if (permission === 'prompt' && previouslyGranted && !hintShown) {
+        sessionStorage.setItem('fpchat:microphone-persistent-hint-shown', '1');
+        try { onPersistentPermissionHint?.(); } catch {}
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStorage.setItem('fpchat:microphone-ever-granted', '1');
+      this.#microphonePermissionState = 'granted';
+      return stream;
+    };
+
+    const pending = run();
+    this.#microphoneRequestPromise = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#microphoneRequestPromise === pending) this.#microphoneRequestPromise = null;
+    }
+  }
+
+  releaseMicrophoneStream(stream) {
+    if (!stream?.getTracks) return false;
+    let released = false;
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop();
+        released = true;
+      } catch {}
+    }
+    return released;
+  }
+
+  microphoneSnapshot() {
+    return Object.freeze({
+      permission: this.#microphonePermissionState,
+      requestInFlight: Boolean(this.#microphoneRequestPromise)
+    });
+  }
 
   ownPreviewThumbnailObjectUrl(item) {
     const url = item?.thumbnailObjectUrl;
@@ -158,7 +240,7 @@ try {
   window.FPRuntime?.registerOwner?.('media-manager177', {
     role: 'media-preview-lifecycle',
     mode: 'active-owner',
-    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup + voice UI mount/unmount delegation + media viewer open/close delegation'
+    owns: 'preview identity + open/close/cancel + generated preview thumbnail ObjectURL cleanup + voice UI mount/unmount delegation + microphone permission/stream acquisition/release + media viewer open/close delegation'
   });
 } catch {}
 let mediaViewerState=null;
