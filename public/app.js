@@ -1154,6 +1154,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     else if(swipeIcon){swipeIcon.style.opacity='';swipeIcon.style.transform='';}
   };
   const paintReplyVisual=(progress)=>{
+    if(!swipeIcon&&progress===0)return;
     // Most messages are never swiped: do not add indicator DOM to every row.
     if(!swipeIcon){
       replyVisual=replyVisualView?.create();
@@ -1168,32 +1169,49 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     }
   };
   let touchStartX=0,touchStartY=0,currentDx=0,tracking=false,replyActionLease=null,replyClaimed=false;
+  let swipeRoomView=null,swipeResetTimer=null;
+  const releaseReplySwipe=()=>{
+    tracking=false;currentDx=0;replyClaimed=false;
+    replyActionLease?.release?.();replyActionLease=null;
+    swipeRoomView?.context?.signal?.removeEventListener('abort',cancelReplySwipe);
+    swipeRoomView=null;
+  };
+  const cancelReplySwipe=()=>{
+    releaseReplySwipe();
+    clearTimeout(swipeResetTimer);swipeResetTimer=null;
+    bubble.style.transform='';resetReplyVisual();
+    w.classList.remove('swiping','swipe-reset');
+  };
+  const replyRowIsCurrent=()=>w.isConnected&&w.parentElement===document.getElementById('messages')&&isRoomViewCurrent170(swipeRoomView);
   w.addEventListener('touchstart',(e)=>{
+    cancelReplySwipe();
     if(e.touches.length!==1||!bubble)return;
     if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat')return;
     const t=e.touches[0];
-    replyActionLease?.release?.();replyActionLease=null;replyClaimed=false;
-    resetReplyVisual();
+    swipeRoomView=captureRoomView170();
+    if(!replyRowIsCurrent()){cancelReplySwipe();return;}
+    swipeRoomView.context?.signal?.addEventListener('abort',cancelReplySwipe,{once:true});
     touchStartX=t.clientX;touchStartY=t.clientY;currentDx=0;tracking=true;
     replyActionLease=window.FPGesture135?.watchAction?.('message-reply-swipe',e,(reason)=>{
       if(reason==='end')return;
-      tracking=false;currentDx=0;replyClaimed=false;replyActionLease=null;
-      bubble.style.transform='';resetReplyVisual();w.classList.remove('swiping');
+      cancelReplySwipe();
     })||null;
+    if(!tracking)return;
     w.classList.remove('swipe-reset');w.classList.add('swiping');bubble.style.transform='';
   },{passive:true});
   w.addEventListener('touchmove',(e)=>{
-    if(!tracking||e.touches.length!==1||!bubble)return;
-    if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat'){tracking=false;currentDx=0;replyClaimed=false;replyActionLease?.release?.();replyActionLease=null;bubble.style.transform='';resetReplyVisual();w.classList.remove('swiping');return;}
+    if(!tracking||!bubble)return;
+    if(e.touches.length!==1||!replyRowIsCurrent()){cancelReplySwipe();return;}
+    if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat'){cancelReplySwipe();return;}
     const t=e.touches[0];
     const dx=t.clientX-touchStartX;
     const dy=t.clientY-touchStartY;
-    if(Math.abs(dy)>Math.abs(dx)){tracking=false;bubble.style.transform='';w.classList.remove('swiping');return;}
-    if(dx>=0){currentDx=0;bubble.style.transform='';return;}
+    if(Math.abs(dy)>Math.abs(dx)){cancelReplySwipe();return;}
+    if(dx>=0){currentDx=0;bubble.style.transform='';paintReplyVisual(0);return;}
     currentDx=Math.max(-110,dx);
     if(!replyClaimed&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD){
       const claimed=replyActionLease?replyActionLease.claim():true;
-      if(!claimed){tracking=false;currentDx=0;replyActionLease=null;bubble.style.transform='';resetReplyVisual();w.classList.remove('swiping');return;}
+      if(!claimed){cancelReplySwipe();return;}
       replyClaimed=true;
     }
     bubble.style.transform=`translateX(${currentDx}px)`;
@@ -1202,12 +1220,13 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   },{passive:true});
   const finishSwipe=(event)=>{
     if(!bubble)return;
-    const allowed=event.type!=='touchcancel'&&(!window.FPGesture135||FPGesture135.currentLayer(event,event.target)==='chat');
+    const allowed=event.type!=='touchcancel'&&replyRowIsCurrent()&&(!window.FPGesture135||FPGesture135.currentLayer(event,event.target)==='chat');
     const shouldReply=allowed&&tracking&&Math.abs(currentDx)>=SWIPE_REPLY_THRESHOLD&&(!window.FPGesture135||replyClaimed);
     w.classList.remove('swiping');w.classList.add('swipe-reset');
     bubble.style.transform='';resetReplyVisual(true);
-    tracking=false;currentDx=0;replyClaimed=false;replyActionLease?.release?.();replyActionLease=null;
-    setTimeout(()=>w.classList.remove('swipe-reset'),180);
+    releaseReplySwipe();
+    clearTimeout(swipeResetTimer);
+    swipeResetTimer=setTimeout(()=>{w.classList.remove('swipe-reset');swipeResetTimer=null;},180);
     if(shouldReply){setSelectedReply(state.roomId,getMessageReplyMeta(m.id));navigator.vibrate?.(10);}
   };
   w.addEventListener('touchend',finishSwipe);

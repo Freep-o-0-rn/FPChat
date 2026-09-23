@@ -47,8 +47,11 @@
   transition: opacity 140ms ease, visibility 0s linear 140ms;
 }
 .fp-reply-cancel .fp-reply-circle { transition: transform 140ms ease; }
+.msg.swiping > .bubble { transition: none; }
+.msg.swipe-reset > .bubble { transition: transform 180ms ease; }
 @media (prefers-reduced-motion: reduce) {
   .fp-reply-ripple-active .fp-reply-ripple { animation: none; }
   .fp-reply-indicator.fp-reply-cancel,
-  .fp-reply-cancel .fp-reply-circle { transition: none; }
+  .fp-reply-cancel .fp-reply-circle,
+  .msg.swipe-reset > .bubble { transition: none; }
 }

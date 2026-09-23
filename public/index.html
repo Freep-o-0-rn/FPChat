@@ -279,17 +279,24 @@
 
       // Fetch the optional visual in parallel with the existing owner chain.
       // A failed visual asset keeps the old reply indicator functional.
-      const replyVisualReady184 = new Promise(resolve => {
+      const replyVisualScriptReady184 = new Promise(resolve => {
         const visual = document.createElement('script');
         visual.src = `/reply-swipe-visual184.js${buildSuffix}`;
         visual.onload = () => resolve(true);
         visual.onerror = () => resolve(false);
         document.body.appendChild(visual);
       });
-      const replyVisualCss = document.createElement('link');
-      replyVisualCss.rel = 'stylesheet';
-      replyVisualCss.href = `/reply-swipe-visual184.css${buildSuffix}`;
-      document.head.appendChild(replyVisualCss);
+      const replyVisualStyleReady184 = new Promise(resolve => {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = `/reply-swipe-visual184.css${buildSuffix}`;
+        css.onload = () => resolve(true);
+        css.onerror = () => resolve(false);
+        document.head.appendChild(css);
+      });
+      const replyVisualReady184 = Promise.all([replyVisualScriptReady184, replyVisualStyleReady184]).then(loaded => {
+        if (loaded.includes(false)) window.FPReplySwipeVisual184 = null;
+      });
 
       const css = document.createElement('link');
       css.rel = 'stylesheet';
