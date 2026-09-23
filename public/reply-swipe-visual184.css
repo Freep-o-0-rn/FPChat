@@ -29,8 +29,7 @@
   display: block;
   width: 22px;
   height: 22px;
-  font-size: 22px;
-  line-height: 22px;
+  fill: currentColor;
   opacity: var(--fp-reply-icon-opacity, 0);
   transform: scale(var(--fp-reply-icon-scale, 0.5));
 }

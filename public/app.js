@@ -1161,7 +1161,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
       if(!replyVisual){swipeIcon.className='swipe-reply-icon';swipeIcon.textContent='↩';}
       w.appendChild(swipeIcon);
     }
-    if(replyVisual)replyVisualView.update(replyVisual,progress);
+    if(replyVisual)replyVisualView.update(replyVisual,progress,replyClaimed&&progress===1);
     else{
       swipeIcon.style.opacity=progress?String(Math.max(0.12,progress)):'';
       swipeIcon.style.transform=progress?`translateY(-50%) scale(${0.8+progress*0.2})`:'';
