@@ -76,8 +76,7 @@ class FPMediaManager177Class {
   }
 
   async acquireMicrophoneStream({
-    constraints = { audio: true },
-    onPersistentPermissionHint = null
+    constraints = { audio: true }
   } = {}) {
     if (!navigator?.mediaDevices?.getUserMedia) {
       const error = new Error('microphone unsupported');
@@ -94,17 +93,7 @@ class FPMediaManager177Class {
         throw error;
       }
 
-      let previouslyGranted = false;
-      let hintShown = false;
-      try { previouslyGranted = localStorage.getItem('fpchat:microphone-ever-granted') === '1'; } catch {}
-      try { hintShown = sessionStorage.getItem('fpchat:microphone-persistent-hint-shown') === '1'; } catch {}
-      if ((permission === 'prompt' || permission === 'unknown') && previouslyGranted && !hintShown) {
-        try { sessionStorage.setItem('fpchat:microphone-persistent-hint-shown', '1'); } catch {}
-        try { onPersistentPermissionHint?.(); } catch {}
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      try { localStorage.setItem('fpchat:microphone-ever-granted', '1'); } catch {}
       this.#microphonePermissionState = 'granted';
       return stream;
     };
