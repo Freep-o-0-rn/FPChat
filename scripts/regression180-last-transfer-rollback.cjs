@@ -30,6 +30,16 @@ function git(args,options={}){
   return run('git',args,options);
 }
 
+function ownerLoaderBody(source,marker){
+  const markerAt=source.indexOf(marker);
+  assert(markerAt>=0,'owner loader marker missing: '+marker);
+  const functionAt=source.lastIndexOf('function ',markerAt);
+  assert(functionAt>=0,'owner loader function missing for: '+marker);
+  const nextFunction=source.indexOf('\n  function ',markerAt);
+  return source.slice(functionAt,nextFunction>=0?nextFunction:source.length);
+}
+
+
 const sourceHead=git(['rev-parse','HEAD']).stdout.trim();
 assert(sourceHead,'source HEAD missing');
 
@@ -63,8 +73,9 @@ try{
   assert.deepEqual(rollbackFiles,[transferPath],'rollback changed neighboring fixes/files');
 
   const rolledSource=fs.readFileSync(path.join(worktree,transferPath),'utf8');
-  assert(!rolledSource.includes('script.onerror = () => window.FPStartup174?.fail();'),'rollback did not remove only the 180.10 failure connection');
-  assert(rolledSource.includes('script.onload = loadConnectionOwner;'),'rollback damaged the pre-existing Lifecycle170 success transition');
+  const rolledLifecycleLoader=ownerLoaderBody(rolledSource,'lifecycle170.js');
+  assert(!rolledLifecycleLoader.includes('script.onerror = () => window.FPStartup174?.fail();'),'rollback did not remove the 180.10 Lifecycle170 failure connection');
+  assert(rolledLifecycleLoader.includes('script.onload = loadConnectionOwner;'),'rollback damaged the pre-existing Lifecycle170 success transition');
 
   const rolledScenario=run(process.execPath,[targetRegression],{
     cwd:worktree,
@@ -90,7 +101,8 @@ try{
   assert.equal(restoredDiff,'','restored test-copy tree does not match the source HEAD');
 
   const restoredSource=fs.readFileSync(path.join(worktree,transferPath),'utf8');
-  assert(restoredSource.includes('script.onerror = () => window.FPStartup174?.fail();'),'restore did not return the 180.10 failure connection');
+  const restoredLifecycleLoader=ownerLoaderBody(restoredSource,'lifecycle170.js');
+  assert(restoredLifecycleLoader.includes('script.onerror = () => window.FPStartup174?.fail();'),'restore did not return the 180.10 Lifecycle170 failure connection');
 
   const restoredScenario=run(process.execPath,[targetRegression],{
     cwd:worktree,
