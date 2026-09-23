@@ -490,7 +490,7 @@ function showBackExitToast(){
 function handleAndroidBackNavigation(){
   const sidebarOpen=els.sidebar?.classList.contains('open');
   if(sidebarOpen){closeMobileMenu();return true;}
-  if(state.roomId){showChatsList();return true;}
+  if(state.roomId){if(window.fpCommitChatBackTransition?.())return true;showChatsList();return true;}
   if(state.view&&state.view!=='chats'){setView('chats');return true;}
   const now=Date.now();
   if(now-lastBackPressAt<BACK_EXIT_INTERVAL)return false;
