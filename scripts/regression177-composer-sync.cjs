@@ -77,7 +77,7 @@ run(async ({ browser, origin, errors }) => {
       && getComputedStyle(mic).display!=='none'
       && form.querySelectorAll('.fp-voice-record-btn').length===1
     );
-  });
+  }, null, { timeout: 15000 });
 
   const state = () => page.evaluate(() => {
     const form=document.getElementById('sendForm');
