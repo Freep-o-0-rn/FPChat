@@ -14,7 +14,7 @@ assert(update.includes('set "DST=C:\\_BOTS\\FPChat"'),'production destination de
 assert(update.includes('set "BACKUP_ROOT=C:\\_BOTS\\FPChat_backups"'),'production backup default changed');
 assert(update.includes('if defined FPCHAT_UPDATE_DST'),'isolated destination override missing');
 assert(update.includes('if defined FPCHAT_UPDATE_BACKUP_ROOT'),'isolated backup override missing');
-assert(update.includes('set "EXPECTED_BUILD=178.28.1"'),'current build gate changed unexpectedly');
+assert(update.includes('set "EXPECTED_BUILD=180.14"'),'current build gate changed unexpectedly');
 
 assert(update.includes('robocopy "%SRC%" "%STAGE%" /E /XD "%SRC%\\data" "%SRC%\\node_modules" "%SRC%\\.git" /XF .env'),'staging exclusions changed');
 assert(update.includes('call npm ci --omit=dev --no-audit --no-fund'),'staging locked install changed');
