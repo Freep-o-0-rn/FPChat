@@ -39,7 +39,8 @@ run(async ({newClient,errors})=>{
     touch17820(message17820,'touchmove',105,364);
     touch17820(message17820,'touchend',105,364);
   });
-  await page.waitForTimeout(80);
+  // Build 183 commits the existing room exit after its visual transition.
+  await page.waitForFunction(()=>!document.querySelector('.chat-view'));
   let snap=await page.evaluate(()=>({chat:Boolean(document.querySelector('.chat-view')),reply:backScroll17820.reply,context:Boolean(document.querySelector('.message-context-root')),view:state.view}));
   assert.equal(snap.chat,false,'chat back did not leave chat');
   assert.equal(snap.reply,0,'chat back produced a false reply');

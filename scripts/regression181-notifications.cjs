@@ -100,7 +100,9 @@ check('pending chat request click does not require room id',
 check('system chat can focus a specific durable event',
   files.systemChat.includes('data-system-event-id')
   && files.systemChat.includes('focusEventId'));
-check('build version is 181.7', JSON.parse(files.version).build === '181.7');
+const releaseBuild = String(JSON.parse(files.version).build);
+check('release build has a valid cache-bust id', /^\d+(?:\.\d+)*$/.test(releaseBuild));
+check('updater matches current release build', read('update.bat').includes(`set "EXPECTED_BUILD=${releaseBuild}"`));
 
 if (failed) {
   console.error(`Build 181 notification regression failed: ${failed} check(s)`);

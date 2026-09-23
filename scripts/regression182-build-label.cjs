@@ -13,7 +13,7 @@ const settingsUi = read('public/settings-ui131.js');
 const updater = read('update.bat');
 
 const build = String(version.build);
-assert.equal(build, '183.9');
+assert.match(build, /^\d+(?:\.\d+)*$/, 'release build must have a valid cache-bust id');
 assert(buildUi.includes(`const BUILD_LABEL = 'Build ${build}';`), 'main build label is stale');
 assert(buildUi.includes(`?v=${build}`), 'build UI fallback cache suffix is stale');
 assert(settingsUi.includes(`const BUILD = '${build}';`), 'settings fallback build is stale');

@@ -30,10 +30,10 @@ assert(!voice.includes('Настройки веб-сайта → Микрофо�
 assert(!voice.includes('FPChat уже получал доступ к микрофону'), 'long iOS microphone guidance alert returned');
 assert(!voice.includes('onPersistentPermissionHint'), 'voice still wires microphone instruction callbacks');
 
-assert.equal(version.build, '183.9');
-assert(updater.includes('set "EXPECTED_BUILD=183.9"'), 'safe updater build gate does not match Build 183.9');
+assert.match(String(version.build), /^\d+(?:\.\d+)*$/);
+assert(updater.includes(`set "EXPECTED_BUILD=${version.build}"`), 'safe updater build gate does not match version.json');
 
 console.log('PASS Build 182 microphone permission ownership');
 console.log('PASS microphone access stays centralized without extra instructional UI');
 console.log('PASS voice recording relies on browser permission UI only');
-console.log('PASS updater/version gate matches Build 183.9');
+console.log(`PASS updater/version gate matches Build ${version.build}`);

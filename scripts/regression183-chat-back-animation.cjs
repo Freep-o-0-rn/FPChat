@@ -63,11 +63,11 @@ assert(ownership.includes('FPScroll173 / ScrollArbiter'), 'scroll ownership not 
 assert(ownership.includes('RoomContext170 / RoomSessionManager'), 'room ownership not documented');
 assert(!voice.includes('FPChat уже получал доступ к микрофону'), 'obsolete iOS microphone instruction alert returned');
 assert(!voice.includes('Настройки веб-сайта → Микрофон → Разрешить'), 'microphone instruction UI returned');
-assert.equal(String(version.build), '183.9', 'release build mismatch');
-assert(updater.includes('set "EXPECTED_BUILD=183.9"'), 'safe updater gate mismatch');
+assert.match(String(version.build), /^\d+(?:\.\d+)*$/, 'release build mismatch');
+assert(updater.includes(`set "EXPECTED_BUILD=${version.build}"`), 'safe updater gate mismatch');
 
 console.log('PASS Build 183 chat-back uses existing Layer/Gesture owners');
 console.log('PASS drag/cancel remain visual-only and do not mutate room/scroll/store/WS domains');
 console.log('PASS commit waits for animation before existing showChatsList room-leave path');
 console.log('PASS Back button and system Back reuse the same existing swipe executor');
-console.log('PASS obsolete microphone instruction alert is absent and Build 183.9 cache-bust is active');
+console.log(`PASS obsolete microphone instruction alert is absent and Build ${version.build} cache-bust is active`);
