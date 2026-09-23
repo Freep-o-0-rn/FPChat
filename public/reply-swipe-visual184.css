@@ -1,0 +1,9 @@
+.fp-reply-indicator{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;width:36px;height:36px;opacity:1;transition:opacity .12s ease;}
+.fp-reply-hidden{opacity:0;}
+.fp-reply-circle{position:absolute;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.fp-reply-icon{font-size:20px;line-height:1;}
+.fp-reply-ripple{position:absolute;inset:0;border-radius:50%;opacity:0;pointer-events:none;}
+.fp-reply-dot .fp-reply-circle{width:8px;height:8px;}
+.fp-reply-growing .fp-reply-circle{transform:scale(1);}
+.fp-reply-armed .fp-reply-circle{transform:scale(1);}
+.fp-reply-ripple-active .fp-reply-ripple{opacity:.4;}
