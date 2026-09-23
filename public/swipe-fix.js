@@ -184,6 +184,10 @@
     return true;
   };
 
+  // Existing swipe executor exposed for the room Back button/system Back.
+  // It is not a new owner: FPGesture135/FPLayer173 still arbitrate gestures.
+  window.fpCommitChatBackTransition = commitChatBackVisual;
+
   // Settings now use the same mobile gesture model as chats, so the explicit
   // Back button is no longer needed. Keep desktop navigation via the sidebar.
   try {
