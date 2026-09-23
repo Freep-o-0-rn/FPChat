@@ -14,6 +14,9 @@ const css = read('public/styles.css');
 const gesture = read('public/gesture-manager135.js');
 const layer = read('public/layer-manager173.js');
 const ownership = read('docs/Build183_1_Chat_Back_Ownership.md');
+const voice = read('public/voice.js');
+const version = JSON.parse(read('public/version.json'));
+const updater = read('update.bat');
 
 new vm.Script(swipe, { filename: 'public/swipe-fix.js' });
 new vm.Script(app, { filename: 'public/app.js' });
@@ -58,8 +61,13 @@ for (const forbidden of [
 assert(ownership.includes('no new ChatTransitionManager;'), 'ownership document lost no-new-manager invariant');
 assert(ownership.includes('FPScroll173 / ScrollArbiter'), 'scroll ownership not documented');
 assert(ownership.includes('RoomContext170 / RoomSessionManager'), 'room ownership not documented');
+assert(!voice.includes('FPChat уже получал доступ к микрофону'), 'obsolete iOS microphone instruction alert returned');
+assert(!voice.includes('Настройки веб-сайта → Микрофон → Разрешить'), 'microphone instruction UI returned');
+assert.equal(String(version.build), '183.9', 'release build mismatch');
+assert(updater.includes('set "EXPECTED_BUILD=183.9"'), 'safe updater gate mismatch');
 
 console.log('PASS Build 183 chat-back uses existing Layer/Gesture owners');
 console.log('PASS drag/cancel remain visual-only and do not mutate room/scroll/store/WS domains');
 console.log('PASS commit waits for animation before existing showChatsList room-leave path');
 console.log('PASS Back button and system Back reuse the same existing swipe executor');
+console.log('PASS obsolete microphone instruction alert is absent and Build 183.9 cache-bust is active');
