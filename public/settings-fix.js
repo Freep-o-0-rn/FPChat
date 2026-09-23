@@ -3,14 +3,6 @@
   const STYLE_ID = 'fpchat-settings-autosave-style';
   let notificationEnableSequence = 0;
 
-  // Extend the existing settings model without creating a second storage format.
-  const baseNotificationNormalizer = normalizeNotificationSettings;
-  normalizeNotificationSettings = function normalizeNotificationSettingsWithSystemEvents(value) {
-    const normalized = baseNotificationNormalizer(value);
-    const raw = value && typeof value === 'object' ? value : {};
-    return { ...normalized, notifySystemEvents: raw.notifySystemEvents !== false };
-  };
-
   function installSettingsStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
@@ -107,9 +99,8 @@
   }
 
   installSettingsStyles();
-  // app.js from older builds knows only the original notification fields and
-  // therefore drops notifySystemEvents while booting. Read the raw stored value
-  // before writing normalized settings back, so OFF survives reload/PWA restart.
+  // NotificationManager181 extends the existing storage model without creating
+  // a second notification settings format. Preserve an explicit OFF across reloads.
   const persistedNotificationSettings = STORAGE.get(STORAGE.notif) || {};
   state.notif = normalizeNotificationSettings({
     ...state.notif,
@@ -118,7 +109,7 @@
   STORAGE.set(STORAGE.notif, state.notif);
 
   renderSettings = function renderSettingsAutoSave() {
-    els.content.innerHTML = `<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label class='notification-option'><span class='notification-option-text'>Включить уведомления</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Показывать текст сообщения</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nText' ${state.notif.showText?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Скрывать отправителя</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Звук нового сообщения</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Уведомлять о входе и выходе</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSystemEvents' ${state.notif.notifySystemEvents!==false?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;
+    els.content.innerHTML = `<div class='panel'><h2>Настройки</h2><label>Ваш ник</label><input id="nick" value="${safeText(state.nick)}"/><label>Тема</label><select id='theme'><option value='auto'>Авто</option><option value='light'>Светлая</option><option value='dark'>Тёмная</option></select><div class='settings-section notification-settings'><h3>Уведомления</h3><label class='notification-option'><span class='notification-option-text'>Включить уведомления</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nEnabled' ${state.notif.enabled?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Показывать текст сообщения</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nText' ${state.notif.showText?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Скрывать отправителя</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSender' ${state.notif.hideSender?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Звук нового сообщения</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSound' ${state.notif.sound?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><label class='notification-option'><span class='notification-option-text'>Получать системные уведомления</span><span class='toggle-control'><input class='toggle-input' type='checkbox' id='nSystemEvents' ${state.notif.notifySystemEvents!==false?'checked':''}/><span class='toggle-ui' aria-hidden='true'></span></span></label><p id='notificationPermissionStatus' class='settings-hint'></p><button id='requestNotificationsBtn' type='button' class='btn btn-secondary'>Разрешить уведомления</button></div><div class='settings-section'><h3>Установка приложения</h3><p id='installHelpText' class='settings-hint'></p><button id='installPwaBtn' class='btn btn-secondary'>Установить FPChat</button></div><div id='settingsVersion' class='sys'>${settingsVersionInfo}</div><div class='panel-actions'><button id='backBtn' class='btn btn-secondary'>Назад</button></div></div>`;
 
     void refreshSettingsVersionLine();
 

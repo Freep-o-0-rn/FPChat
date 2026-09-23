@@ -255,6 +255,7 @@
       // Edges below document the existing execution chains and the room-entry gate.
       const startupDependencies174 = {
         'app.js':['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js'],
+        'notification-manager181.js':['app.js'],
         'voice.js':['app.js','typing.js'],
         'voice-polish123.js':['voice.js'],
         'message-context.js':['app.js','message-selection.js'],
@@ -262,14 +263,15 @@
         'message-actions.js':['message-context-fix.js'],
         'message-pins.js':['message-actions.js'],
         'message-pins-screen114.js':['message-pins.js'],
-        'room-lifecycle.js':['app.js','settings-fix.js'],
+        'settings-fix.js':['app.js','notification-manager181.js'],
+        'room-lifecycle.js':['app.js','notification-manager181.js','settings-fix.js'],
         'sync-coordinator176.js':['app.js','connection170.js'],
         'room-open170.js':['room-lifecycle.js','room-context170.js','lifecycle170.js','connection170.js','sync-coordinator176.js'],
         'send-manager177.js':['room-open170.js'],
         'text-send170.js':['send-manager177.js'],
         'media-send170.js':['text-send170.js']
       };
-      const preload174 = ['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js','app.js','settings-fix.js','room-lifecycle.js'];
+      const preload174 = ['room-context170.js','lifecycle170.js','network171.js','message-store172.js','dom-lifecycle173.js','layer-manager173.js','work174.js','history174.js','app.js','notification-manager181.js','settings-fix.js','room-lifecycle.js'];
       let resolveOwners174;
       const ownersReady174=new Promise(resolve=>{resolveOwners174=resolve;});
       window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
@@ -404,13 +406,20 @@
           };
           document.body.appendChild(typing);
 
-          const settingsFix = document.createElement('script');
-          settingsFix.src = `/settings-fix.js${buildSuffix}`;
-          settingsFix.onerror = () => {
-            window.FPRoomLifecycle98Ready = 'failed';
-            window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
+          const loadSettings181 = () => {
+            const settingsFix = document.createElement('script');
+            settingsFix.src = `/settings-fix.js${buildSuffix}`;
+            settingsFix.onerror = () => {
+              window.FPRoomLifecycle98Ready = 'failed';
+              window.dispatchEvent(new Event('fpchat:room-lifecycle-ready174'));
+            };
+            document.body.appendChild(settingsFix);
           };
-          document.body.appendChild(settingsFix);
+          const notification181 = document.createElement('script');
+          notification181.src = `/notification-manager181.js${buildSuffix}`;
+          notification181.onload = loadSettings181;
+          notification181.onerror = loadSettings181;
+          document.body.appendChild(notification181);
 
           const chatFix = document.createElement('script');
           chatFix.src = `/chat-fix.js${buildSuffix}`;
