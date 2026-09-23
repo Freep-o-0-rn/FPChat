@@ -45,3 +45,16 @@ jobs:
       - name: Full Build 180 accumulated Windows acceptance
         shell: powershell
         run: npm run test:180:1811
+
+  last-transfer-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Revert and restore last runtime transfer in isolated worktree
+        run: npm run test:180:last-transfer-rollback
