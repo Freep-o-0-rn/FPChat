@@ -146,6 +146,44 @@
     return true;
   };
 
+  let chatBackCommitInFlight = false;
+
+  const runExistingChatListExit = () => {
+    try {
+      if (typeof window.showChatsList === 'function') window.showChatsList();
+      else if (typeof showChatsList === 'function') showChatsList();
+    } catch {}
+    try {
+      history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, '', '/');
+    } catch {}
+  };
+
+  const commitChatBackVisual = () => {
+    if (!isMobile() || !chatIsOpen()) return false;
+    if (chatBackCommitInFlight) return true;
+    if (!prepareChatBackVisual()) return false;
+    const { app, list, content } = chatBackElements();
+    if (!app || !content) return false;
+
+    chatBackCommitInFlight = true;
+    const token = ++chatBackVisualToken;
+    app.classList.add('fp-chat-back-anim');
+    content.style.transform = 'translate3d(105%,0,0)';
+    if (list) list.style.transform = 'translate3d(0,0,0)';
+
+    let finished = false;
+    const finish = () => {
+      if (finished || token !== chatBackVisualToken) return;
+      finished = true;
+      chatBackCommitInFlight = false;
+      clearChatBackVisual();
+      runExistingChatListExit();
+    };
+    content.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 260);
+    return true;
+  };
+
   // Settings now use the same mobile gesture model as chats, so the explicit
   // Back button is no longer needed. Keep desktop navigation via the sidebar.
   try {
@@ -338,10 +376,7 @@
     if (current.mode === "chat") {
       if (!chatIsOpen()) return;
       document.activeElement?.blur?.();
-      if (typeof window.showChatsList === "function") window.showChatsList();
-      try {
-        history.replaceState({ ...history.state, fpchat: true, fpchatGuard: true }, "", "/");
-      } catch {}
+      if (!commitChatBackVisual()) runExistingChatListExit();
       return;
     }
 
