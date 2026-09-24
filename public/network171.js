@@ -98,6 +98,7 @@
     const nextLayer = orderedLayersAfter(priority)[0];
     if (!nextLayer) {
       stats.nativeCalls += 1;
+      window.FPRuntime169?.loading?.step(init?.fpTrace186, 'network-start');
       return nativeFetch(input, init);
     }
 
@@ -474,7 +475,11 @@
     const original=url.pathname.endsWith('/blob');
     const weight=original?stats.mediaBudget.limit:1;
     const byteLimit=original?100*1024*1024+64:4*1024*1024;
-    await acquireMediaSlot(signal,weight);
+    const diagnostic = window.FPRuntime169?.loading, trace = init?.fpTrace186;
+    diagnostic?.step(trace, 'queue-start');
+    try { await acquireMediaSlot(signal,weight); }
+    catch (error) { diagnostic?.fail(trace, 'queue', error); throw error; }
+    diagnostic?.step(trace, 'slot-ready');
     let released=false,reader,streamController,read=0;
     const release=()=>{if(released)return;released=true;signal?.removeEventListener('abort',abort);releaseMediaSlot(weight);};
     const abort=()=>{try{streamController?.error(new DOMException('Media request aborted','AbortError'));}catch{};void reader?.cancel().catch(()=>{});if(!init?.fpMediaLease174)release();};
@@ -483,6 +488,7 @@
     try{
       if(signal?.aborted)throw new DOMException('Media request aborted','AbortError');
       const response=await next(input,init);
+      diagnostic?.step(trace, 'response-ready', response.status);
       if(signal?.aborted)throw new DOMException('Media request aborted','AbortError');
       if(Number(response.headers.get('content-length'))>byteLimit){void response.body?.cancel().catch(()=>{});throw new RangeError('Media body exceeds resource limit');}
       if(!response.body){stats.mediaBudget.completed++;release();return response;}

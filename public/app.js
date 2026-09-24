@@ -265,7 +265,9 @@ function setBootSplashText(title, text) {
 }
 function hideBootSplash() {
   document.getElementById('bootSplash')?.remove();
-  els.appRoot?.classList.remove('hidden-boot');}
+  els.appRoot?.classList.remove('hidden-boot');
+  window.FPBoot152?.mark186?.('core-ready');
+}
 let settingsVersionInfo='Версия: —';
 function setLocalConnectionState(value){state.localConnectionState=value;renderPresenceStatus();}
 function formatLastSeen(lastSeenAt){const d=parseServerTime(lastSeenAt);if(!d)return '';const now=new Date();const startToday=new Date(now.getFullYear(),now.getMonth(),now.getDate());const startTarget=new Date(d.getFullYear(),d.getMonth(),d.getDate());const oneDay=24*60*60*1000;const diff=Math.round((startToday-startTarget)/oneDay);const hhmm=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});if(diff===0)return `был в ${hhmm}`;if(diff===1)return `был вчера в ${hhmm}`;const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yy=String(d.getFullYear()).slice(-2);return `был ${dd}.${mm}.${yy} в ${hhmm}`;}
@@ -298,14 +300,38 @@ function showRecoveryCodeModal(recoveryCode){
 async function encryptText(t,key=state.key){const iv=crypto.getRandomValues(new Uint8Array(12)); const c=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(t)); return {iv:b64.encode(iv),ciphertext:b64.encode(c)};}
 async function decryptText(iv,c,key=state.key){const p=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64.decode(iv)},key,b64.decode(c)); return new TextDecoder().decode(p)}
 async function encryptBlobWithIvPrefix(blob){const iv=crypto.getRandomValues(new Uint8Array(12));const plain=await blob.arrayBuffer();const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},state.key,plain);const out=new Uint8Array(iv.byteLength+cipher.byteLength);out.set(iv,0);out.set(new Uint8Array(cipher),iv.byteLength);return new Blob([out],{type:'application/octet-stream'});}
-async function decryptBlobWithIvPrefix(encryptedBlob,mimeType,key=state.key){const buf=await encryptedBlob.arrayBuffer();const bytes=new Uint8Array(buf);const iv=bytes.slice(0,12);const cipher=bytes.slice(12);const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher);return new Blob([plain],{type:mimeType||'application/octet-stream'});}
+async function decryptBlobWithIvPrefix(encryptedBlob,mimeType,key=state.key,trace=null){
+  const diagnostic=window.FPRuntime169?.loading;
+  diagnostic?.step(trace,'buffer-start');
+  let buf;
+  try{buf=await encryptedBlob.arrayBuffer();}
+  catch(error){diagnostic?.fail(trace,'buffer',error);throw error;}
+  diagnostic?.step(trace,'buffer-ready');
+  const bytes=new Uint8Array(buf),iv=bytes.slice(0,12),cipher=bytes.slice(12);
+  diagnostic?.step(trace,'decrypt-start');
+  let plain;
+  try{plain=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher);}
+  catch(error){diagnostic?.fail(trace,'decrypt',error);throw error;}
+  diagnostic?.step(trace,'decrypt-ready');
+  return new Blob([plain],{type:mimeType||'application/octet-stream'});
+}
 async function readEncryptedMedia174(url,mimeType,key,options={},readBody=response=>response.blob()){
-  return FPNetwork171.consumeMedia(url,options,async response=>{
-    if(!response.ok)throw Error(`Media ${response.status}`);
-    const encrypted=await readBody(response);
-    if(options.signal?.aborted)throw new DOMException('Media cancelled','AbortError');
-    return decryptBlobWithIvPrefix(encrypted,mimeType,key);
-  });
+  const diagnostic=window.FPRuntime169?.loading;
+  const trace=options.fpTrace186||diagnostic?.begin('media',{endpoint:/\/thumb(?:\?|$)/.test(url)?'thumb':'blob',consumer:options.fpConsumer186||'other',parent:options.fpParent186,mediaType:String(mimeType).split('/')[0]});
+  let phase='fetch';
+  try{
+    const plain=await FPNetwork171.consumeMedia(url,{...options,fpTrace186:trace},async response=>{
+      if(!response.ok){diagnostic?.fail(trace,'response',null,response.status);throw Error(`Media ${response.status}`);}
+      phase='body';diagnostic?.step(trace,'body-start');
+      const encrypted=await readBody(response);
+      diagnostic?.step(trace,'body-ready',encrypted.size);
+      if(options.signal?.aborted)throw new DOMException('Media cancelled','AbortError');
+      phase='decrypt';
+      return decryptBlobWithIvPrefix(encrypted,mimeType,key,trace);
+    });
+    if(!options.fpTrace186)diagnostic?.finish(trace,options.signal?.aborted?'cancelled':'ok');
+    return plain;
+  }catch(error){diagnostic?.fail(trace,phase,error);throw error;}
 }
 async function uploadEncryptedMediaXhr(roomId,deviceId,formData,onProgress,{signal=null}={}){
   if(!window.FPNetwork171?.upload)throw Error('Upload owner unavailable');
@@ -666,7 +692,10 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   (data.participants||[]).forEach((item)=>{if(!item?.deviceId)return;state.presence[item.deviceId]={deviceId:item.deviceId,displayName:item.displayName,online:Boolean(item.online),lastSeenAt:item.lastSeenAt||null};});
   localStorage.setItem(STORAGE.lastSelectedRoomId,roomId);
   const view=captureRoomView170();
-  await hydrateHistoryForInitialPosition(roomId,deviceId,data,view).catch(()=>{});
+  const diagnostic186=window.FPRuntime169?.loading,roomTrace186=diagnostic186?.roomToken(view.context);
+  diagnostic186?.step(roomTrace186,'history-start');
+  await hydrateHistoryForInitialPosition(roomId,deviceId,data,view).catch((error)=>{diagnostic186?.fail(roomTrace186,'history',error);});
+  diagnostic186?.step(roomTrace186,'history-ready',data.messages?.length);
   if(!isRoomViewCurrent170(view))return;
   const initialMessages=Array.isArray(data.messages)?data.messages:[];
   const loadedUnreadCount=initialMessages.filter((message)=>message?.sender_device_id!==deviceId&&message?.status!=='read').length;
@@ -698,6 +727,7 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   showContentPane();
   els.content?.classList.add('chat-content');
   els.appRoot?.classList.add('mobile-chat');
+  diagnostic186?.step(roomTrace186,'render-start');
   await renderChatView(initialMessages,deviceId,data.viewState||null);
   if(!isRoomViewCurrent170(view))return;
   chatViewReadyRoomId=roomId;
@@ -841,8 +871,11 @@ function markMessageRead(messageId){const id=Number(messageId);if(!id||!state.ro
 function waitForNextAnimationFrame(){return new Promise((resolve)=>requestAnimationFrame(resolve));}
 const INITIAL_MEDIA_LAYOUT_WAIT_MS=1500;
 async function waitForInitialMediaLayout(box){
+  const diagnostic186=window.FPRuntime169?.loading,trace186=diagnostic186?.roomToken(window.FPRoomContext170?.current?.());
+  diagnostic186?.step(trace186,'layout-wait-start');
   const deadline=Date.now()+INITIAL_MEDIA_LAYOUT_WAIT_MS;
   while(pendingMediaThumbLoads>0&&Date.now()<deadline)await waitForNextAnimationFrame();
+  diagnostic186?.step(trace186,'layout-thumbs-wait-end',pendingMediaThumbLoads);
   for(let i=0;i<2;i++)await waitForNextAnimationFrame();
   if(!box)return;
   const images=[...box.querySelectorAll('.media-thumb')].filter((img)=>img.currentSrc||img.src);
@@ -863,6 +896,7 @@ async function waitForInitialMediaLayout(box){
     ]);
   }
   for(let i=0;i<2;i++)await waitForNextAnimationFrame();
+  diagnostic186?.step(trace186,'layout-wait-end');
 }
 function isCurrentMessagesBox(box){return Boolean(box&&document.getElementById('messages')===box&&activeChatHistory?.roomId===state.roomId);}
 function getFirstUnreadMessageElement(box){return box?.querySelector('.bubble-wrap[data-incoming="1"][data-read="0"]')||null;}
@@ -1098,12 +1132,12 @@ const FPComposer177=Object.freeze({
   }
 });
 window.FPComposer177=FPComposer177;
-async function renderChatView(messages,deviceId,viewState=null){const view=captureRoomView170();resetUnreadDividerSession(state.roomId);messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>{if(window.fpCommitChatBackTransition?.())return;showChatsList();}); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>FPReadState178.admitVisible(entry,box));},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); await FPWork174.each(messages,async m=>{appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext,view.key).catch(()=>"[cannot decrypt]"); if(!isRoomViewCurrent170(view))return; appendMessage(box,m,txt,mine,false);},{current:()=>isRoomViewCurrent170(view)});if(!isRoomViewCurrent170(view))return;if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
+async function renderChatView(messages,deviceId,viewState=null){const view=captureRoomView170();resetUnreadDividerSession(state.roomId);messages=Array.isArray(messages)?messages:[];activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>{if(window.fpCommitChatBackTransition?.())return;showChatsList();}); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>FPReadState178.admitVisible(entry,box));},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); await FPWork174.each(messages,async m=>{appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId; const txt=await decryptText(m.iv,m.ciphertext,view.key).catch(()=>"[cannot decrypt]"); if(!isRoomViewCurrent170(view))return; appendMessage(box,m,txt,mine,false);window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'first-message-mounted');},{current:()=>isRoomViewCurrent170(view)});if(!isRoomViewCurrent170(view))return;window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'text-ready',messages.length);if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
 box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();});
 document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
 renderPresenceStatus();
-const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form); window.FPComposer177?.bind?.(form,view.roomId); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);await loadDraftForCurrentRoom();if(!isRoomViewCurrent170(view))return;syncSendBtn();}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
- async function fetchMediaThumbUrl(media){const view=captureRoomView170();const persisted=STORAGE.get(STORAGE.roomState(view.roomId));if(!persisted?.deviceId||!media?.public_id)return'';try{const dec=await readEncryptedMedia174(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`,'image/webp',view.key,{signal:view.context?.signal});if(!isRoomViewCurrent170(view))return'';return URL.createObjectURL(dec);}catch{return'';}}
+const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form); window.FPComposer177?.bind?.(form,view.roomId); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'draft-start');await loadDraftForCurrentRoom();window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'draft-ready');if(!isRoomViewCurrent170(view))return;syncSendBtn();window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'composer-ready');}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
+ async function fetchMediaThumbUrl(media,trace=null){const view=captureRoomView170();const diagnostic=window.FPRuntime169?.loading;const persisted=STORAGE.get(STORAGE.roomState(view.roomId));if(!persisted?.deviceId||!media?.public_id){diagnostic?.fail(trace,'fetch');return'';}try{const dec=await readEncryptedMedia174(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`,'image/webp',view.key,{signal:view.context?.signal,fpTrace186:trace,fpConsumer186:'chat-thumbnail'});if(!isRoomViewCurrent170(view)){diagnostic?.finish(trace,'cancelled');return'';}const url=URL.createObjectURL(dec);diagnostic?.step(trace,'url-ready');return url;}catch(error){diagnostic?.fail(trace,'fetch',error);return'';}}
 const fetchMediaThumbUrlWithoutTracking=fetchMediaThumbUrl;
 fetchMediaThumbUrl=async function(...args){pendingMediaThumbLoads+=1;try{return await fetchMediaThumbUrlWithoutTracking(...args);}finally{pendingMediaThumbLoads=Math.max(0,pendingMediaThumbLoads-1);}};
 function openMediaViewer(messageMedia,startIndex=0){mediaViewerState={messageMedia,index:startIndex,loaded:new Map()};renderMediaViewer();}
@@ -1254,8 +1288,10 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
       const idx=Number(el.dataset.mediaIndex);
       const item=mediaList[idx];
       const img=el.querySelector('img');
-      const u=await fetchMediaThumbUrl(item);
-      if(u){if(w.dataset.fpEvicted174)URL.revokeObjectURL(u);else img.src=u;}
+      const diagnostic=window.FPRuntime169?.loading,context=window.FPRoomContext170?.current?.();
+      const trace=diagnostic?.begin('media',{endpoint:'thumb',consumer:'chat-thumbnail',parent:diagnostic?.roomToken(context)?.id,mediaType:item?.media_kind});
+      const u=await fetchMediaThumbUrl(item,trace);
+      if(u){if(w.dataset.fpEvicted174){diagnostic?.finish(trace,'cancelled');URL.revokeObjectURL(u);}else{diagnostic?.watchElement(trace,img,context?.signal);img.src=u;}}
       el.addEventListener('click',(e)=>{
         e.preventDefault();e.stopPropagation();
         if(w.dataset.incoming==='1'&&w.dataset.read!=='1')markMessageRead(m.id);
@@ -1304,7 +1340,10 @@ renderChatView=async function renderChatViewWithLazyHistory(messages,deviceId,vi
   loader.setAttribute('role','status');
   loader.setAttribute('aria-live','polite');
   box.insertBefore(loader,box.firstChild||null);
+  const diagnostic186=window.FPRuntime169?.loading,trace186=diagnostic186?.roomToken(view.context);
+  diagnostic186?.step(trace186,'scroll-start');
   const initialScrollMode=await applyInitialMessagesScroll(box,viewState);
+  diagnostic186?.step(trace186,'scroll-ready');
   if(!isRoomViewCurrent170(view)||document.getElementById('messages')!==box)return;
   if(initialScrollMode!=='cancelled'){
     resumeUnreadObservation(box);
@@ -1818,8 +1857,13 @@ pushAppHistoryState();
     els.content.innerHTML='<div class="panel"><p>Не удалось загрузить приложение. Обновите страницу.</p><button class="btn" onclick="location.reload()">Повторить</button></div>';
     hideBootSplash();return;
   }
+  window.FPBoot152?.mark186?.('owners-ready');
+  window.FPBoot152?.mark186?.('service-worker-start');
   await registerServiceWorker();
+  window.FPBoot152?.mark186?.('service-worker-ready');
+  window.FPBoot152?.mark186?.('update-start');
   const updateStarted=await checkAppVersionOnEntry();
+  window.FPBoot152?.mark186?.('update-ready');
   if(updateStarted)return;
   // Build 181: NotificationManager181 loads immediately after app.js and is
   // the only owner that performs notification subscription synchronization.

@@ -19,6 +19,8 @@
 
   const wrapped = async function fpChatOpening129Render() {
     const token = ++generation;
+    const diagnostic186=window.FPRuntime169?.loading,context186=window.FPRoomContext170?.current?.();
+    const trace186=diagnostic186?.roomToken(context186);
     document.documentElement.classList.add('fp-chat-opening129');
     try {
       return await baseRender.apply(this, arguments);
@@ -27,6 +29,10 @@
       requestAnimationFrame(() => {
         if (token !== generation) return;
         document.documentElement.classList.remove('fp-chat-opening129');
+        diagnostic186?.step(trace186,'messages-revealed');
+        if(trace186)requestAnimationFrame(()=>{
+          if(token===generation&&window.FPRoomContext170?.isCurrent?.(context186)&&document.visibilityState==='visible')diagnostic186?.step(trace186,'visible-frame');
+        });
       });
     }
   };

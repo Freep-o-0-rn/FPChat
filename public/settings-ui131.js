@@ -3,7 +3,7 @@
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = '185.1';
+  const BUILD = '186.1';
   let attempts = 0;
 
   const boot = () => {
@@ -322,6 +322,20 @@
 
       const root = mount('О приложении', `<div class="fp-settings131-card"><div class="fp-settings131-about"><div class="fp-settings131-logo">FP</div><b>FPChat</b><span id="fpVersion131">Версия 1.0.0 · Build ${BUILD}</span></div><div id="fpInstallHost131"></div><a class="fp-settings131-link" href="https://github.com/Freep-o-0-rn/FPChat" target="_blank" rel="noopener noreferrer">${icons.github}<span>GitHub проекта</span></a></div>`, renderMain);
       if (install) root.querySelector('#fpInstallHost131').appendChild(install);
+      const loading186 = window.FPRuntime169?.loading;
+      if (loading186) {
+        const diagnostics = document.createElement('div');
+        diagnostics.className = 'fp-settings131-card';
+        diagnostics.innerHTML = '<b>Диагностика загрузки</b><p>Сохраняет время загрузки и типы ошибок текущего запуска. Без содержимого переписки и медиа. Отчёт никуда не отправляется автоматически.</p><button id="fpLoadingExport186" class="btn btn-secondary" type="button">Скачать отчёт загрузки</button><button id="fpLoadingReset186" class="btn btn-secondary" type="button">Очистить замеры</button><p id="fpLoadingStatus186" role="status"></p>';
+        root.querySelector('.fp-settings131-body').appendChild(diagnostics);
+        diagnostics.querySelector('#fpLoadingExport186').onclick = () => {
+          try { loading186.download(); diagnostics.querySelector('#fpLoadingStatus186').textContent = 'Отчёт подготовлен для сохранения.'; }
+          catch { diagnostics.querySelector('#fpLoadingStatus186').textContent = 'Не удалось сохранить отчёт. Попробуйте ещё раз.'; }
+        };
+        diagnostics.querySelector('#fpLoadingReset186').onclick = () => {
+          loading186.reset(); diagnostics.querySelector('#fpLoadingStatus186').textContent = 'Замеры чатов и медиа очищены. Время запуска сохранено.';
+        };
+      }
       fetch('/version.json', { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((data) => {
         if (!data) return;
         const line = root.querySelector('#fpVersion131');

@@ -19,6 +19,7 @@
     const response=await fetch(`/api/rooms/${encodeURIComponent(view.roomId)}/messages?${query}`,{cache:'no-store',signal});
     if(!response.ok)throw Error(`History ${response.status}`);
     const data=await response.json();
+    window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'history-page');
     if(!valid(view))throw new DOMException('Stale room','AbortError');
     if(!Array.isArray(data.messages))throw Error('Invalid history page');
     return data;

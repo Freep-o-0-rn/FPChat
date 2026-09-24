@@ -81,6 +81,7 @@
     try { window.FPViewport136?.sync?.(); } catch {}
     bootTracker?.stop?.();
     gate?.remove();
+    bootTracker?.mark186?.('boot-ready');
     document.documentElement.removeAttribute('data-fp-boot152');
     const readyAt = performance.now();
     window.__fpBootReady169At = readyAt;
@@ -92,7 +93,9 @@
 
     // app.js still owns its original boot sequence. We only delay the visible
     // reveal until that core sequence has already completed behind this gate.
+    bootTracker?.mark186?.('core-wait-start');
     const coreCompleted = await waitFor(coreReady, 9000);
+    bootTracker?.mark186?.('core-wait-end',coreCompleted);
     if (!coreCompleted) {
       release();
       return;
@@ -100,27 +103,35 @@
 
     // Do not change feature ordering. Wait for the already-existing layers to
     // finish installing in their current dependency order.
-    await waitFor(layersReady, 7000);
+    bootTracker?.mark186?.('layers-start');
+    const layersCompleted186 = await waitFor(layersReady, 7000);
+    bootTracker?.mark186?.('layers-end',layersCompleted186);
 
     // Ensure the list surface/safe-area has been applied before it becomes
     // visible, then wait for the existing system-chat refresh to finish once.
     try { window.FPViewport136?.sync?.(); } catch {}
+    bootTracker?.mark186?.('system-start');
     try {
       const refresh = window.FPSystem144?.refresh?.();
       if (refresh && typeof refresh.then === 'function') {
         await Promise.race([refresh.catch(() => null), sleep(2500)]);
       }
     } catch {}
+    bootTracker?.mark186?.('system-end');
 
     // chat-request-system147 performs its own initial synchronization. This is
     // only an observation of that existing request; no second request is made.
     if (window.__fpChatRequestSystem147Installed) {
-      await waitFor(requestSyncFinishedAtLeastOnce, 2500);
+      bootTracker?.mark186?.('requests-start');
+      const requestsCompleted186 = await waitFor(requestSyncFinishedAtLeastOnce, 2500);
+      bootTracker?.mark186?.('requests-end',requestsCompleted186);
     }
 
     // All dynamically appended startup JS/CSS is tracked by index.html. Wait
     // for a short quiet period so late onload children are included as well.
-    await waitForResourceQuiet();
+    bootTracker?.mark186?.('quiet-start');
+    const quietCompleted186 = await waitForResourceQuiet();
+    bootTracker?.mark186?.('quiet-end',quietCompleted186);
 
     // Give MutationObserver/request-preview work one final paint before reveal.
     await sleep(120);

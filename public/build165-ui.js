@@ -1,18 +1,18 @@
-/* Build 185.1: presentation bridge with Build 169-180 owners and Layer/Gesture/Scroll/Viewport ownership. */
+/* Build 186.1: presentation bridge with Build 169-180 owners and Layer/Gesture/Scroll/Viewport ownership. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 185.1';
+  const BUILD_LABEL = 'Build 186.1';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=185.1'; }
-    catch { return '?v=185.1'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=186.1'; }
+    catch { return '?v=186.1'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
-  // Build 169 diagnostics remain passive in Build 185.1.
+  // Build 169 diagnostics remain passive in Build 186.1.
   if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
     const runtime = document.createElement('script');
     runtime.src = `/runtime169.js${storageSuffix}`;
@@ -21,7 +21,7 @@
     document.body.appendChild(runtime);
   }
 
-  // Build 170 ownership primitives remain active under the Build 171 network owner in Build 185.1.
+  // Build 170 ownership primitives remain active under the Build 171 network owner in Build 186.1.
   if (!window.FPRoomContext170 && !document.querySelector('script[data-fp-room-context170]')) {
     const roomContext = document.createElement('script');
     roomContext.src = `/room-context170.js${storageSuffix}`;

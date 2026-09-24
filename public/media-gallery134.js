@@ -98,6 +98,8 @@
     const cached = historyCache.get(roomId);
     if (!force && cached && now - cached.at < HISTORY_CACHE_MS) return cached.promise;
 
+    const diagnostic186=window.FPRuntime169?.loading;
+    const trace186=diagnostic186?.begin('gallery-history');
     const promise = (async () => {
       const persisted = STORAGE.get(STORAGE.roomState(roomId));
       const deviceId = persisted?.deviceId || (typeof activeChatDeviceId !== 'undefined' ? activeChatDeviceId : null);
@@ -111,7 +113,8 @@
         const params = new URLSearchParams({ deviceId: String(deviceId), limit: String(HISTORY_LIMIT) });
         if (before != null) params.set('before', String(before));
         const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}/messages?${params.toString()}`, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`gallery history ${response.status}`);
+        diagnostic186?.step(trace186,'history-page');
+        if (!response.ok) { diagnostic186?.fail(trace186,'history',null,response.status); throw new Error(`gallery history ${response.status}`); }
         const data = await response.json().catch(() => null);
         if (!data || !Array.isArray(data.messages)) throw new Error('gallery history invalid');
 
@@ -144,6 +147,7 @@
         });
       }
       output.sort((a, b) => (a.__fpMessageId - b.__fpMessageId) || (a.__fpMediaOrder - b.__fpMediaOrder));
+      diagnostic186?.finish(trace186);
       return output;
     })();
 
@@ -151,6 +155,7 @@
     try {
       return await promise;
     } catch (error) {
+      diagnostic186?.fail(trace186,'history',error);
       if (historyCache.get(roomId)?.promise === promise) historyCache.delete(roomId);
       throw error;
     }
@@ -298,10 +303,16 @@
     const publicId = String(item.public_id || '');
     container.dataset.publicId = publicId;
     container.innerHTML = '<div class="media-progress-ring">Загрузка...</div>';
-    void loadAsset(viewerState.fpRoomId, item).then((asset) => {
-      if (!container.isConnected || container.dataset.publicId !== publicId) return;
+    const diagnostic186=window.FPRuntime169?.loading;
+    const consumer186=active?'gallery-current':'gallery-neighbor';
+    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob'});
+    diagnostic186?.step(trace186,'asset-start');
+    void loadAsset(viewerState.fpRoomId, item, trace186, consumer186).then((asset) => {
+      diagnostic186?.step(trace186,'asset-ready');
+      if (!container.isConnected || container.dataset.publicId !== publicId) { diagnostic186?.finish(trace186,'cancelled'); return; }
       const live = currentGalleryState();
-      if (!live || live.fpGeneration !== viewerState.fpGeneration) return;
+      if (!live || live.fpGeneration !== viewerState.fpGeneration) { diagnostic186?.finish(trace186,'cancelled'); return; }
+      diagnostic186?.step(trace186,'url-ready');
       if (item.media_kind === 'video') {
         const video = document.createElement('video');
         video.src = asset.url;
@@ -314,16 +325,19 @@
         } else {
           video.muted = true;
         }
+        diagnostic186?.watchElement(trace186,video);
         container.replaceChildren(video);
       } else {
         const image = document.createElement('img');
+        diagnostic186?.watchElement(trace186,image);
         image.src = asset.url;
         image.alt = 'media';
         image.draggable = false;
         container.replaceChildren(image);
         if (active) bindPhoto185(viewerInteraction, image, viewerState, publicId);
       }
-    }).catch(() => {
+    }).catch((error) => {
+      diagnostic186?.fail(trace186,'fetch',error);
       if (!container.isConnected || container.dataset.publicId !== publicId) return;
       container.innerHTML = '<div class="media-error-box"><span>Не удалось загрузить медиа</span><button type="button" class="btn btn-secondary">Повторить</button></div>';
       const retry = container.querySelector('button');
@@ -336,17 +350,22 @@
     });
   }
 
-  async function loadAsset(roomId, item) {
+  async function loadAsset(roomId, item, trace186=null, consumer186='other') {
     const key = mediaKey(roomId, item);
     const cached = assetCache.get(key);
-    if (cached) return cached.promise;
+    const diagnostic186=window.FPRuntime169?.loading;
+    if (cached) { diagnostic186?.cache(trace186,cached.url?'ram-hit':'ram-pending'); return cached.promise; }
 
     const entry = { url: '', promise: null, controller:new AbortController() };
     entry.promise = (async () => {
       const persisted = STORAGE.get(STORAGE.roomState(roomId));
       if (!persisted?.deviceId) throw new Error('gallery device unavailable');
-      const key=await getRoomKey(roomId);
-      const plain=await readEncryptedMedia174(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,item.mime_type || 'application/octet-stream',key,{signal:entry.controller.signal});
+      diagnostic186?.step(trace186,'key-start');
+      let key;
+      try { key=await getRoomKey(roomId); }
+      catch (error) { diagnostic186?.fail(trace186,'key',error); throw error; }
+      diagnostic186?.step(trace186,'key-ready');
+      const plain=await readEncryptedMedia174(`/api/media/${encodeURIComponent(item.public_id)}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,item.mime_type || 'application/octet-stream',key,{signal:entry.controller.signal,fpConsumer186:consumer186,fpParent186:trace186?.id});
       if(entry.controller.signal.aborted||assetCache.get(mediaKey(roomId,item))!==entry)throw new DOMException('Stale gallery asset','AbortError');
       entry.url = URL.createObjectURL(plain);
       return { url: entry.url };

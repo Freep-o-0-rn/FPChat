@@ -186,6 +186,9 @@
       const bootPending = new Set();
       const bootTracked = new WeakSet();
       const bootErrors = [];
+      const bootTimings186 = { 'loader-start': performance.now() };
+      const bootChecks186 = {};
+      const bootPhases186 = new Set(['version-start','version-ready','version-error','owners-ready','service-worker-start','service-worker-ready','update-start','update-ready','core-ready','core-wait-start','core-wait-end','layers-start','layers-end','system-start','system-end','requests-start','requests-end','quiet-start','quiet-end','boot-ready','safety-release']);
       const bootObserver = new MutationObserver((records) => {
         for (const record of records) {
           for (const node of record.addedNodes || []) trackBootResources(node);
@@ -218,6 +221,12 @@
 
       bootObserver.observe(document.documentElement, { childList: true, subtree: true });
       window.FPBoot152 = Object.freeze({
+        mark186: (name, completed) => {
+          if (!bootPhases186.has(name) || bootTimings186[name] !== undefined) return;
+          bootTimings186[name] = performance.now();
+          if (typeof completed === 'boolean') bootChecks186[name] = completed;
+        },
+        timings186: () => ({points:Object.fromEntries(Object.entries(bootTimings186).map(([name, value]) => [name, Math.round(value * 10) / 10])), completed:{...bootChecks186}}),
         pendingCount: () => bootPending.size,
         errors: () => [...bootErrors],
         stop: () => {
@@ -232,6 +241,7 @@
         const gate = document.getElementById('bootHold152');
         const root = document.getElementById('appRoot');
         if (gate && root && !root.classList.contains('hidden-boot')) {
+          window.FPBoot152.mark186('safety-release');
           bootObserver.disconnect();
           bootStatusObserver?.disconnect();
           gate.remove();
@@ -241,6 +251,7 @@
 
       let buildSuffix = '';
       try {
+        window.FPBoot152.mark186('version-start');
         const res = await fetch('/version.json', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
@@ -249,7 +260,8 @@
             buildSuffix = `?v=${encodeURIComponent(buildId)}`;
           }
         }
-      } catch {}
+        window.FPBoot152.mark186('version-ready',res.ok);
+      } catch { window.FPBoot152.mark186('version-error'); }
 
       // Preload fetches early, but never executes scripts out of dependency order.
       // Edges below document the existing execution chains and the room-entry gate.

@@ -23,6 +23,7 @@
   }
 
   function dispatch(stage, context, extra = {}) {
+    window.FPRuntime169?.loading?.roomEvent(stage, context);
     try {
       window.dispatchEvent(new CustomEvent('fpchat:room-open170', {
         detail: {
@@ -40,6 +41,7 @@
   }
 
   function cancelIfLatest(context, reason) {
+    window.FPRuntime169?.loading?.finish(window.FPRuntime169?.loading?.roomToken(context),'cancelled');
     if (isLatest(context)) contexts.cancelTransition(context, reason);
   }
 
@@ -133,26 +135,34 @@
     const deviceId = String(persisted.deviceId || '');
     let key;
     let response;
+    const diagnostic186=window.FPRuntime169?.loading,trace186=diagnostic186?.roomToken(context);
+    let phase186='key';
 
     try {
+      diagnostic186?.step(trace186,'key-start');
       key = await deriveKey(secret);
+      diagnostic186?.step(trace186,'key-ready');
       if (!isLatest(context)) {
         dispatch('stale-after-key', context);
         return;
       }
 
+      phase186='join';diagnostic186?.step(trace186,'join-start');
       response = await fetch(`/api/rooms/${roomId}/join`, {
         method: 'POST',
         signal: context.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ displayName: state.nick, deviceId })
       });
+      diagnostic186?.step(trace186,'join-headers');
+      if(!response.ok)diagnostic186?.fail(trace186,'join',null,response.status);
 
       if (!isLatest(context)) {
         dispatch('stale-after-join', context);
         return;
       }
-    } catch {
+    } catch (error) {
+      diagnostic186?.fail(trace186,phase186,error);
       if (!isLatest(context)) {
         dispatch('stale-after-error', context);
         return;
@@ -190,12 +200,14 @@
     }
 
     const data = await response.json().catch(() => null);
+    diagnostic186?.step(trace186,'join-ready');
     if (!isLatest(context)) {
       dispatch('stale-after-json', context);
       return;
     }
 
     if (!data || !Array.isArray(data.messages)) {
+      diagnostic186?.fail(trace186,'join');
       cancelIfLatest(context, 'invalid-join-payload');
       alert('Не удалось загрузить чат.');
       setView('chats');

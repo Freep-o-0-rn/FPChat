@@ -145,7 +145,9 @@
     "test:184:browser": "node ./scripts/regression184-reply-swipe-browser.cjs",
     "test:184": "node ./scripts/regression182-build-label.cjs && npm run test:183 && npm run test:181:notifications && npm run test:178:message-gesture-arbitration && node ./scripts/regression178-back-scroll-browser.cjs && npm run test:184:browser",
     "test:185:browser": "node ./scripts/regression185-photo-zoom-browser.cjs",
-    "test:185": "npm run test:177:media-viewer-lifecycle && npm run test:178:layer-contract && npm run test:178:gesture-layer-lifecycle && npm run test:178:drawer-room-gesture && npm run test:184 && npm run test:185:browser"
+    "test:185": "npm run test:177:media-viewer-lifecycle && npm run test:178:layer-contract && npm run test:178:gesture-layer-lifecycle && npm run test:178:drawer-room-gesture && npm run test:184 && npm run test:185:browser",
+    "test:186:browser": "node ./scripts/regression186-loading-browser.cjs",
+    "test:186": "npm run test:186:browser && npm run test:185 && npm run test:177:resource-slots && npm run test:177:cache-clear"
   },
   "license": "MIT",
   "dependencies": {

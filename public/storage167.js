@@ -144,21 +144,29 @@
 
   window.fetch = async function fpStorage167Fetch(input, init) {
     const info = requestInfo(input, init);
-    if (!info || !cacheSupported()) return baseFetch(input, init);
+    const diagnostic = window.FPRuntime169?.loading, trace = init?.fpTrace186;
+    if (!info || !cacheSupported()) { diagnostic?.cache(trace, 'unavailable'); return baseFetch(input, init); }
 
+    diagnostic?.step(trace, 'cache-start');
     try {
       const cache = await caches.open(CACHE_NAME);
       const meta = metaMap()[info.url];
       if (isExpired(meta)) {
+        diagnostic?.cache(trace, 'expired');
         await cache.delete(info.request);
         const all = metaMap();
         delete all[info.url];
         safeJsonWrite(META_KEY, all);
       } else {
         const cached = await cache.match(info.request);
-        if (cached) return cached;
+        if (cached) {
+          diagnostic?.cache(trace, 'hit'); diagnostic?.step(trace, 'cache-ready');
+          return cached;
+        }
+        diagnostic?.cache(trace, 'miss');
       }
-    } catch {}
+    } catch { diagnostic?.cache(trace, 'error'); }
+    diagnostic?.step(trace, 'cache-ready');
 
     const response = await baseFetch(input, init);
     if (response?.ok) void storeResponse(info, response);

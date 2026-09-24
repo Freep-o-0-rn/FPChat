@@ -85,14 +85,14 @@ assert(context.includes('manager.closeViewer(viewer, closeViewerBackToContextWor
 assert(!functionSource(context, 'closeViewerBackToContext').includes('mediaViewerState = null;'),
   'context close command still mutates viewer state independently');
 
-// Build 185 explicitly authorizes two changes: mountSlot binds active-photo
-// geometry after load; navigateGallery serializes/cancels owned transitions.
-// Behavioral coverage: regression185-photo-zoom-browser.cjs. I/O, cache, saves
-// and the compatibility viewer remain fingerprinted against the old baseline.
+// Build 185 adds photo binding/navigation. Build 186 adds explicit passive
+// observations to mountSlot/loadAsset, covered by regression186-loading-browser
+// and the unchanged photo-zoom suite. Transport/cache order and cleanup are
+// unchanged; saves and the compatibility viewer keep their original guards.
 const FROZEN = Object.freeze({
   gallery: {
-    mountSlot: 'ec4c9914dc27a2b9',
-    loadAsset: 'c2c481d707cef73e',
+    mountSlot: '28317ae624b001d9',
+    loadAsset: '5d4db0f6e8f07849',
     dropAsset: '73c987110d973502',
     pruneAssetCache: 'd22f05b91e20c181',
     navigateGallery: '4c04706e7e9c706f'
@@ -126,6 +126,6 @@ for (const [name, expected] of Object.entries(FROZEN.legacyApp)) {
 }
 
 console.log('PASS MediaManager177 owns only media-viewer open/close identity delegation');
-console.log('PASS viewer I/O/save guards preserved; Build 185 photo binding and navigation contract pinned');
+console.log('PASS viewer I/O/save guards preserved; photo binding/navigation and passive 186 observations pinned');
 console.log('PASS message-context independent close entry delegates to the viewer owner');
 console.log('PASS existing photo/video save and download mechanisms are unchanged');
