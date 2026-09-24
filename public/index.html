@@ -182,13 +182,13 @@
       }
 
       // Track only resources dynamically appended during the existing startup
-      // chain. boot-ready152 waits for a short zero-pending quiet period.
+      // chain. boot-ready152 checks zero pending again after two frames.
       const bootPending = new Set();
       const bootTracked = new WeakSet();
       const bootErrors = [];
       const bootTimings186 = { 'loader-start': performance.now() };
       const bootChecks186 = {};
-      const bootPhases186 = new Set(['version-start','version-ready','version-error','owners-ready','service-worker-start','service-worker-ready','update-start','update-ready','core-ready','core-wait-start','core-wait-end','layers-start','layers-end','system-start','system-end','requests-start','requests-end','quiet-start','quiet-end','boot-ready','safety-release']);
+      const bootPhases186 = new Set(['version-start','version-ready','version-error','owners-ready','service-worker-start','service-worker-ready','update-start','update-ready','core-ready','core-wait-start','core-wait-end','layers-start','layers-end','system-start','system-end','requests-start','requests-end','quiet-start','quiet-end','assets-start','assets-end','boot-ready','safety-release']);
       const bootObserver = new MutationObserver((records) => {
         for (const record of records) {
           for (const node of record.addedNodes || []) trackBootResources(node);
@@ -413,6 +413,14 @@
       };
       const loadAppAfterWork = async () => {
         await replyVisualReady184;
+        // Build 186.3: fetch the known late-owner chain while app.js starts.
+        // These hints never execute code; existing onload edges keep ownership
+        // and failure handling in room-context170 / text-send170 unchanged.
+        for (const name of ['connection170.js','sync-coordinator176.js','room-open170.js','send-manager177.js','text-send170.js','media-send170.js']) {
+          const hint = document.createElement('link');
+          hint.rel = 'preload'; hint.as = 'script'; hint.href = `/${name}${buildSuffix}`;
+          document.head.appendChild(hint);
+        }
         const script = document.createElement('script');
         script.src = `/app.js${buildSuffix}`;
         script.defer = true;

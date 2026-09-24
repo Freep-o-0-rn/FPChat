@@ -41,6 +41,7 @@ assert.deepEqual(preloaded,[
   'work174.js',
   'history174.js',
   'app.js',
+  'notification-manager181.js',
   'settings-fix.js',
   'room-lifecycle.js'
 ],'180.8 early preload order changed');

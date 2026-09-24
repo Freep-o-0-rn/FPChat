@@ -46,7 +46,7 @@ for(const token of [
   'window.FPBoot152 = Object.freeze({',
   'const coreCompleted = await waitFor(coreReady, 9000);',
   'await waitFor(layersReady, 7000);',
-  'await waitForResourceQuiet();',
+  'await waitForStartupAssets();',
   "window.dispatchEvent(new CustomEvent('fpchat:boot-ready'"
 ]) {
   assert((index+'\n'+boot).includes(token),'existing boot compatibility contract changed/missing: '+token);

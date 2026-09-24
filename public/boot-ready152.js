@@ -1,4 +1,5 @@
-/* Build 152: keep the cold-start splash visible until the existing client layers are ready. */
+/* Build 186.3: reveal after existing owners/layers and startup assets settle.
+   System/request data refresh remains with its existing background owners. */
 (() => {
   if (window.__fpBootReady152Installed) return;
   window.__fpBootReady152Installed = true;
@@ -44,31 +45,19 @@
     try { return Boolean(test()); } catch { return false; }
   }
 
-  function requestSyncFinishedAtLeastOnce() {
-    try {
-      return performance.getEntriesByType('resource').some((entry) => {
-        const url = new URL(entry.name, location.href);
-        return url.origin === location.origin && url.pathname === '/api/chat-requests/mine';
-      });
-    } catch {
-      return false;
-    }
-  }
-
-  async function waitForResourceQuiet(timeoutMs = 4000, quietMs = 180) {
+  async function waitForStartupAssets(timeoutMs = 4000) {
     const started = performance.now();
-    let quietSince = 0;
     while (performance.now() - started < timeoutMs) {
-      const pending = Number(bootTracker?.pendingCount?.() || 0);
-      if (pending === 0) {
-        if (!quietSince) quietSince = performance.now();
-        if (performance.now() - quietSince >= quietMs) return true;
+      if (Number(bootTracker?.pendingCount?.() || 0) === 0) {
+        // onload children and MutationObservers must settle before revealing.
+        // Recheck after two frames instead of adding a fixed quiet + sleep delay.
+        await nextPaint();
+        if (Number(bootTracker?.pendingCount?.() || 0) === 0) return true;
       } else {
-        quietSince = 0;
+        await sleep(40);
       }
-      await sleep(40);
     }
-    return Number(bootTracker?.pendingCount?.() || 0) === 0;
+    return false;
   }
 
   async function nextPaint() {
@@ -107,35 +96,12 @@
     const layersCompleted186 = await waitFor(layersReady, 7000);
     bootTracker?.mark186?.('layers-end',layersCompleted186);
 
-    // Ensure the list surface/safe-area has been applied before it becomes
-    // visible, then wait for the existing system-chat refresh to finish once.
+    // Keep the same interface readiness boundary. Network data is refreshed by
+    // system-chat144 / chat-request-system147; it must not block the whole UI.
     try { window.FPViewport136?.sync?.(); } catch {}
-    bootTracker?.mark186?.('system-start');
-    try {
-      const refresh = window.FPSystem144?.refresh?.();
-      if (refresh && typeof refresh.then === 'function') {
-        await Promise.race([refresh.catch(() => null), sleep(2500)]);
-      }
-    } catch {}
-    bootTracker?.mark186?.('system-end');
-
-    // chat-request-system147 performs its own initial synchronization. This is
-    // only an observation of that existing request; no second request is made.
-    if (window.__fpChatRequestSystem147Installed) {
-      bootTracker?.mark186?.('requests-start');
-      const requestsCompleted186 = await waitFor(requestSyncFinishedAtLeastOnce, 2500);
-      bootTracker?.mark186?.('requests-end',requestsCompleted186);
-    }
-
-    // All dynamically appended startup JS/CSS is tracked by index.html. Wait
-    // for a short quiet period so late onload children are included as well.
-    bootTracker?.mark186?.('quiet-start');
-    const quietCompleted186 = await waitForResourceQuiet();
-    bootTracker?.mark186?.('quiet-end',quietCompleted186);
-
-    // Give MutationObserver/request-preview work one final paint before reveal.
-    await sleep(120);
-    await nextPaint();
+    bootTracker?.mark186?.('assets-start');
+    const assetsCompleted186 = await waitForStartupAssets();
+    bootTracker?.mark186?.('assets-end',assetsCompleted186);
     release();
   }
 

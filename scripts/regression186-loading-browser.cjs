@@ -16,7 +16,7 @@ run(async ({newClient, temp, root, errors}) => {
   assert.ok(boot.points['core-ready'] <= boot.points['boot-ready']);
   assert.equal(boot.completed['core-wait-end'], true);
   assert.equal(boot.completed['layers-end'], true);
-  assert.equal(boot.completed['quiet-end'], true);
+  assert.equal(boot.completed['assets-end'], true);
   assert.ok((await report()).startupResources.js.count>0);
   pass('boot stages retain their real order and readiness outcomes');
 
@@ -180,7 +180,7 @@ run(async ({newClient, temp, root, errors}) => {
   await page.locator('#fpLoadingExport186').click();
   const download=await downloadPromise;
   const downloaded=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
-  assert.equal(downloaded.build,'186.2'); assert.equal(downloaded.records.length,240);
+  assert.equal(downloaded.build,'186.3'); assert.equal(downloaded.records.length,240);
   await page.locator('#fpLoadingReset186').click();
   assert.equal((await report()).records.length,0); assert.ok((await report()).boot.points['boot-ready']>0);
   pass('bounded journal, phone-accessible JSON export and reset preserve startup evidence');
@@ -194,6 +194,6 @@ run(async ({newClient, temp, root, errors}) => {
   await timeoutPage.close();
   pass('an optional-layer timeout is reported as incomplete, not falsely ready');
 
-  console.log(JSON.stringify({suite:'186.2 loading',passed,environment:'Linux Chromium; isolated synthetic encrypted WebP; not physical mobile acceptance',cold,warm,errors}));
+  console.log(JSON.stringify({suite:'186.3 loading',passed,environment:'Linux Chromium; isolated synthetic encrypted WebP; not physical mobile acceptance',cold,warm,errors}));
   assert.deepEqual(errors,[]);
 }).catch(error=>{console.error(error);process.exitCode=1;});
