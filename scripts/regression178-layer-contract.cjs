@@ -87,11 +87,15 @@ assert(pins.includes("overlay.className = 'fp-pins114-action-overlay';")&&pins.i
 
 assert(gallery.includes('openMediaViewer = function openMediaViewer134'),'viewer open controller changed');
 assert(gallery.includes('function closeGallery(viewer = currentGalleryState())'),'viewer close controller changed');
-assert(gallery.includes("window.addEventListener('pointercancel', (event) => finish(event, true)"),'viewer pointer cancel changed');
+// Build 185: the viewer opts into grouped pointers; the arbiter delivers
+// cancellation before releasing the claim. No second viewer end listener.
+assert(gesture.includes("window.addEventListener('pointercancel', (event) => endSession('pointer', event)"), 'arbiter pointer cancellation missing');
+assert(gallery.includes('onPointerEnd: finishGesture185'), 'viewer end/cancel delegation missing');
+assert(gallery.includes('if (cancelled || !isLive185(z)) { cancelGesture185(z); return; }'), 'viewer cancellation can commit navigation');
 assert(gallery.includes("window.addEventListener('touchcancel', end"),'viewer touch cancel changed');
 
 assert(gesture.includes('function claimAction(owner, event)'),'gesture claim action missing');
-assert(gesture.includes('function watchAction(owner, event, cancel)'),'gesture watcher missing');
+assert(/function watchAction\(owner, event, cancel(?:, options = \{\})?\)/.test(gesture),'gesture watcher missing');
 assert(gesture.includes("cancelActions(session, 'claimed', owner);"),'competing gesture cancellation changed');
 assert(gesture.includes("cancelActions(session, 'layer');"),'upper-layer promotion cancellation changed');
 

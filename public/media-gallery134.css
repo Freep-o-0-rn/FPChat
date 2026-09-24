@@ -89,6 +89,20 @@
   -webkit-user-drag: none;
 }
 
+/* Build 185: only the active photo owns zoom geometry, never the track/stage. */
+.fp-gallery134 .media-viewer-content img.fp-photo-zoom185 {
+  transform-origin: center center;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-gallery134-track.fp-gallery134-anim,
+  .fp-gallery134-stage.fp-gallery134-stage-reset,
+  .fp-gallery134-stage.fp-gallery134-stage-close {
+    transition: none;
+  }
+}
+
 .fp-gallery134 .media-viewer-content video {
   touch-action: manipulation;
 }

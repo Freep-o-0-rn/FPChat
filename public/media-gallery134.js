@@ -13,6 +13,8 @@
   const VERTICAL_FAST_DISTANCE_PX = 48;
   const VERTICAL_FAST_VELOCITY = 0.62;
   const ANIMATION_MS = 180;
+  const MAX_PHOTO_SCALE = 4;
+  let viewerInteraction = null;
 
   let bootAttempts = 0;
   let galleryGeneration = 0;
@@ -64,6 +66,7 @@
     installPointerGestures();
     installTouchGuard();
     installKeyboardNavigation();
+    installViewerLifecycle185();
   };
 
   function openViewerWorker177(viewer) {
@@ -170,7 +173,7 @@
 
       v.messageMedia = items;
       v.index = nextIndex;
-      if (!pointerGesture) renderMediaViewer134();
+      renderMediaViewer134();
     } catch (error) {
       console.warn('Failed to build room media gallery', error);
       const v = currentGalleryState();
@@ -187,6 +190,7 @@
     const root = document.getElementById('mediaViewerRoot') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'mediaViewerRoot' }));
     const v = typeof mediaViewerState !== 'undefined' ? mediaViewerState : null;
     if (!v) {
+      disposeInteraction185(viewerInteraction);
       root.innerHTML = '';
       pointerGesture = null;
       touchGuard = null;
@@ -196,6 +200,7 @@
     if (!v.fpGallery134) {
       const source = Array.isArray(v.messageMedia) ? v.messageMedia.filter(isGalleryMedia) : [];
       if (!source.length) {
+        disposeInteraction185(viewerInteraction);
         root.innerHTML = '';
         return;
       }
@@ -212,11 +217,21 @@
 
     const stateNow = currentGalleryState();
     if (!stateNow?.messageMedia?.length) {
+      disposeInteraction185(viewerInteraction);
       mediaViewerState = null;
       root.innerHTML = '';
       return;
     }
     stateNow.index = Math.max(0, Math.min(stateNow.messageMedia.length - 1, Number(stateNow.index) || 0));
+
+    const interaction = interactionFor185(stateNow);
+    if (pointerGesture?.interaction === interaction || interaction.transition) {
+      interaction.renderPending = true;
+      const counter = interaction.overlay?.querySelector('.fp-gallery134-counter');
+      if (counter) counter.textContent = `${stateNow.index + 1} / ${stateNow.messageMedia.length}`;
+      return;
+    }
+    unbindPhoto185(interaction);
 
     const canPrev = stateNow.index > 0;
     const canNext = stateNow.index < stateNow.messageMedia.length - 1;
@@ -235,6 +250,7 @@
     </div>`;
 
     const overlay = root.querySelector('.fp-gallery134');
+    interaction.overlay = overlay;
     const stage = overlay.querySelector('.fp-gallery134-stage');
     const track = overlay.querySelector('.fp-gallery134-track');
     track.style.transform = 'translate3d(-100%,0,0)';
@@ -305,6 +321,7 @@
         image.alt = 'media';
         image.draggable = false;
         container.replaceChildren(image);
+        if (active) bindPhoto185(viewerInteraction, image, viewerState, publicId);
       }
     }).catch(() => {
       if (!container.isConnected || container.dataset.publicId !== publicId) return;
@@ -362,7 +379,7 @@
 
   function closeGalleryWorker177(viewer) {
     if (!viewer || mediaViewerState !== viewer) return false;
-    pointerGesture = null;
+    disposeInteraction185(viewerInteraction);
     touchGuard = null;
     mediaViewerState = null;
     renderMediaViewer134();
@@ -379,159 +396,362 @@
   async function navigateGallery(direction, animate) {
     const v = currentGalleryState();
     const overlay = currentOverlay();
-    if (!v || !overlay) return false;
+    const z = viewerInteraction;
+    if (!v || !overlay || !isLive185(z) || pointerGesture || z.transition) return false;
     const nextIndex = v.index + direction;
     if (nextIndex < 0 || nextIndex >= v.messageMedia.length) {
       resetHorizontalVisual(overlay, true);
       return false;
     }
-
+    const targetId = String(v.messageMedia[nextIndex].public_id);
     const track = overlay.querySelector('.fp-gallery134-track');
     if (!track) return false;
     if (animate) {
       track.classList.add('fp-gallery134-anim');
       track.style.transform = direction > 0 ? 'translate3d(-200%,0,0)' : 'translate3d(0,0,0)';
-      await delay(ANIMATION_MS);
+      if (!await transition185(z, ANIMATION_MS)) return false;
     }
-    const live = currentGalleryState();
-    if (!live || live !== v) return false;
-    live.index = nextIndex;
+    if (!isLive185(z) || currentOverlay() !== overlay) return false;
+    const index = v.messageMedia.findIndex(item => String(item.public_id) === targetId);
+    if (index < 0) { renderMediaViewer134(); return false; }
+    v.index = index;
     renderMediaViewer134();
     return true;
   }
 
-  function installPointerGestures() {
-    window.addEventListener('pointerdown', (event) => {
-      const overlay = event.target?.closest?.('.media-viewer-overlay.fp-gallery134');
-      if (!overlay || event.pointerType === 'mouse' || event.button !== 0) return;
-      try {
-        const manager = window.FPGesture135;
-        if (manager && manager.currentLayer(event, event.target) !== 'viewer') return;
-      } catch { return; }
-      if (event.target?.closest?.('.media-viewer-close,.media-viewer-nav,.media-error-box button')) return;
-      const stage = overlay.querySelector('.fp-gallery134-stage');
-      const track = overlay.querySelector('.fp-gallery134-track');
-      if (!stage || !track) return;
-      pointerGesture = {
-        pointerId: event.pointerId,
-        overlay,
-        stage,
-        track,
-        startX: event.clientX,
-        startY: event.clientY,
-        lastX: event.clientX,
-        lastY: event.clientY,
-        startedAt: performance.now(),
-        axis: 'pending',
-        moved: false,
-      };
-    }, { capture: true, passive: true });
+  function isLive185(z) {
+    return Boolean(z && !z.disposed && viewerInteraction === z && currentGalleryState() === z.viewer
+      && String(z.viewer.messageMedia[z.viewer.index]?.public_id || '') === z.key);
+  }
 
-    window.addEventListener('pointermove', (event) => {
-      const gesture = pointerGesture;
-      if (!gesture || event.pointerId !== gesture.pointerId) return;
-      gesture.lastX = event.clientX;
-      gesture.lastY = event.clientY;
-      const dx = event.clientX - gesture.startX;
-      const dy = event.clientY - gesture.startY;
-      const ax = Math.abs(dx);
-      const ay = Math.abs(dy);
+  function interactionFor185(viewer) {
+    const key = String(viewer.messageMedia[viewer.index]?.public_id || '');
+    if (viewerInteraction?.viewer === viewer && viewerInteraction.key === key) return viewerInteraction;
+    disposeInteraction185(viewerInteraction);
+    const z = { viewer, key, scale: 1, x: 0, y: 0, ready: false, raf: 0,
+      image: null, overlay: null, observer: null, imageCleanup: null,
+      transition: null, renderPending: false, disposed: false };
+    viewerInteraction = z;
+    window.FPMediaManager177?.ownViewerCleanup?.(viewer, () => disposeInteraction185(z));
+    return z;
+  }
 
-      if (gesture.axis === 'pending') {
+  function unbindPhoto185(z) {
+    cancelAnimationFrame(z.raf);
+    z.raf = 0;
+    z.observer?.disconnect();
+    z.observer = null;
+    z.imageCleanup?.();
+    z.imageCleanup = null;
+    if (z.image) { z.image.style.transform = ''; z.image.style.willChange = ''; }
+    z.image = null;
+    z.ready = false;
+  }
+
+  function disposeInteraction185(z) {
+    if (!z || z.disposed) return;
+    z.disposed = true;
+    cancelGesture185(z);
+    cancelTransition185(z);
+    unbindPhoto185(z);
+    z.overlay = null;
+    if (viewerInteraction === z) viewerInteraction = null;
+  }
+
+  function bindPhoto185(z, image, viewer, key) {
+    if (!isLive185(z) || z.viewer !== viewer || z.key !== key || !image.isConnected) return;
+    unbindPhoto185(z);
+    z.image = image;
+    image.classList.add('fp-photo-zoom185');
+    const ready = () => { if (isLive185(z) && z.image === image) measurePhoto185(z); };
+    image.addEventListener('load', ready);
+    z.imageCleanup = () => image.removeEventListener('load', ready);
+    if (typeof ResizeObserver === 'function') {
+      z.observer = new ResizeObserver(ready);
+      z.observer.observe(image);
+      z.observer.observe(z.overlay.querySelector('.fp-gallery134-stage'));
+    }
+    ready();
+  }
+
+  function measurePhoto185(z) {
+    if (!isLive185(z) || !z.image?.isConnected || !z.image.naturalWidth) return;
+    // A late image load must not undo a navigation/dismiss already committed
+    // on pointerup. The destination render (or cancellation) remeasures it.
+    if (z.transition) return;
+    const stage = z.overlay.querySelector('.fp-gallery134-stage');
+    // Layout sizes exclude our transform. Read only on load/resize, never move.
+    const width = z.image.offsetWidth, height = z.image.offsetHeight;
+    const style = getComputedStyle(z.image.parentElement);
+    const vw = stage.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const vh = stage.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    if (!(width > 0 && height > 0 && vw > 0 && vh > 0)) { z.ready = false; return; }
+    if (z.ready && width === z.width && height === z.height && vw === z.vw && vh === z.vh) return;
+    cancelGesture185(z);
+    cancelTransition185(z);
+    if (z.width && z.height) { z.x *= width / z.width; z.y *= height / z.height; }
+    const rect = stage.getBoundingClientRect();
+    Object.assign(z, { width, height, vw, vh, cx: rect.left + rect.width / 2,
+      cy: rect.top + rect.height / 2, ready: true });
+    clampPhoto185(z);
+    queuePhoto185(z);
+  }
+
+  function clampPhoto185(z) {
+    z.scale = Math.max(1, Math.min(MAX_PHOTO_SCALE, z.scale));
+    const lx = Math.max(0, (z.width * z.scale - z.vw) / 2);
+    const ly = Math.max(0, (z.height * z.scale - z.vh) / 2);
+    z.x = Math.max(-lx, Math.min(lx, z.x));
+    z.y = Math.max(-ly, Math.min(ly, z.y));
+  }
+
+  function queuePhoto185(z) {
+    if (z.raf || !isLive185(z) || !z.ready) return;
+    z.raf = requestAnimationFrame(() => {
+      z.raf = 0;
+      if (!isLive185(z) || !z.image?.isConnected) return;
+      z.image.style.transform = `translate3d(${z.x}px,${z.y}px,0) scale(${z.scale})`;
+    });
+  }
+
+  function cancelTransition185(z) {
+    if (!z?.transition) return;
+    const pending = z.transition;
+    z.transition = null;
+    clearTimeout(pending.timer);
+    resetHorizontalVisual(z.overlay, false);
+    resetVerticalVisual(z.overlay, false);
+    pending.resolve(false);
+    flushRender185(z);
+    queueMicrotask(() => { if (isLive185(z)) measurePhoto185(z); });
+  }
+
+  function transition185(z, ms) {
+    return new Promise(resolve => {
+      const pending = { resolve, timer: 0 };
+      z.transition = pending;
+      const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
+      pending.timer = setTimeout(() => {
+        if (z.transition !== pending) return;
+        z.transition = null;
+        resolve(isLive185(z));
+      }, duration);
+    });
+  }
+
+  function flushRender185(z) {
+    if (!z?.renderPending || z.disposed) return;
+    queueMicrotask(() => {
+      if (!isLive185(z) || pointerGesture || z.transition || !z.renderPending) return;
+      z.renderPending = false;
+      renderMediaViewer134();
+    });
+  }
+
+  function releaseCaptures185(g) {
+    for (const id of g.pointers.keys()) {
+      try { if (g.stage.hasPointerCapture(id)) g.stage.releasePointerCapture(id); } catch {}
+    }
+  }
+
+  function cancelGesture185(z) {
+    const g = pointerGesture;
+    if (!g || g.interaction !== z) return;
+    pointerGesture = null;
+    g.lease?.release();
+    releaseCaptures185(g);
+    g.pointers.clear();
+    if (z.image) z.image.style.willChange = '';
+    if (g.moved || g.multi) suppressClickUntil = Date.now() + 420;
+    resetHorizontalVisual(g.overlay, false);
+    resetVerticalVisual(g.overlay, false);
+    flushRender185(z);
+  }
+
+  function rebaseGesture185(g) {
+    const z = g.interaction;
+    if (g.pointers.size >= 2) {
+      g.multi = true;
+      g.moved = true;
+      resetHorizontalVisual(g.overlay, false);
+      resetVerticalVisual(g.overlay, false);
+      if (!z.ready) { g.mode = 'drain'; return; }
+      g.pair = [...g.pointers.keys()].slice(0, 2);
+      const a = g.pointers.get(g.pair[0]), b = g.pointers.get(g.pair[1]);
+      const cx = (a.x + b.x) / 2 - z.cx, cy = (a.y + b.y) / 2 - z.cy;
+      g.anchor = { distance: Math.hypot(a.x - b.x, a.y - b.y), scale: z.scale,
+        qx: (cx - z.x) / z.scale, qy: (cy - z.y) / z.scale };
+      g.mode = 'pinch';
+    } else if (g.pointers.size === 1) {
+      const p = g.pointers.values().next().value;
+      g.anchor = { px: p.x, py: p.y, x: z.x, y: z.y };
+      g.mode = z.ready && z.scale > 1 ? 'pan' : (g.multi ? 'drain' : 'swipe');
+    }
+  }
+
+  function moveGesture185(g, event) {
+    const z = g.interaction;
+    if (!isLive185(z) || !g.lease?.active()) { cancelGesture185(z); return; }
+    const p = g.pointers.get(event.pointerId);
+    if (!p) return;
+    p.x = event.clientX; p.y = event.clientY;
+    g.lastX = p.x; g.lastY = p.y;
+    if (g.mode === 'pinch') {
+      const a = g.pointers.get(g.pair[0]), b = g.pointers.get(g.pair[1]);
+      if (g.anchor.distance < 1) { rebaseGesture185(g); return; }
+      z.scale = Math.max(1, Math.min(MAX_PHOTO_SCALE, g.anchor.scale * Math.hypot(a.x - b.x, a.y - b.y) / g.anchor.distance));
+      z.x = (a.x + b.x) / 2 - z.cx - z.scale * g.anchor.qx;
+      z.y = (a.y + b.y) / 2 - z.cy - z.scale * g.anchor.qy;
+      clampPhoto185(z);
+      queuePhoto185(z);
+    } else if (g.mode === 'pan') {
+      z.x = g.anchor.x + p.x - g.anchor.px;
+      z.y = g.anchor.y + p.y - g.anchor.py;
+      clampPhoto185(z);
+      queuePhoto185(z);
+      if (Math.hypot(p.x - g.anchor.px, p.y - g.anchor.py) >= AXIS_LOCK_PX) g.moved = true;
+    } else if (g.mode === 'swipe') {
+      const dx = p.x - g.startX, dy = p.y - g.startY;
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      if (g.axis === 'pending') {
         if (Math.max(ax, ay) < AXIS_LOCK_PX) return;
-        if (ax > ay * 1.08) gesture.axis = 'horizontal';
-        else if (ay > ax * 1.08) gesture.axis = 'vertical';
+        if (ax > ay * 1.08) g.axis = 'horizontal';
+        else if (ay > ax * 1.08) g.axis = 'vertical';
         else return;
       }
-
-      gesture.moved = true;
-      if (event.cancelable) event.preventDefault();
-      event.stopPropagation();
-      const v = currentGalleryState();
-      if (!v) return;
-
-      if (gesture.axis === 'horizontal') {
-        gesture.stage.style.transform = '';
-        gesture.stage.style.opacity = '';
-        const atStart = v.index <= 0 && dx > 0;
-        const atEnd = v.index >= v.messageMedia.length - 1 && dx < 0;
-        const effectiveDx = (atStart || atEnd) ? dx * .22 : dx;
-        gesture.track.classList.remove('fp-gallery134-anim');
-        gesture.track.style.transform = `translate3d(calc(-100% + ${effectiveDx}px),0,0)`;
-        return;
+      g.moved = true;
+      if (g.axis === 'horizontal') {
+        const v = z.viewer;
+        const atEdge = (v.index <= 0 && dx > 0) || (v.index >= v.messageMedia.length - 1 && dx < 0);
+        g.track.classList.remove('fp-gallery134-anim');
+        g.track.style.transform = `translate3d(calc(-100% + ${atEdge ? dx * .22 : dx}px),0,0)`;
+      } else {
+        const progress = Math.min(1, ay / Math.max(150, window.innerHeight * .28));
+        g.stage.classList.remove('fp-gallery134-stage-reset');
+        g.stage.style.transform = `translate3d(0, ${dy * .9}px, 0) scale(${1 - .055 * progress})`;
+        g.stage.style.opacity = String(1 - .34 * progress);
       }
+    }
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
+  }
 
-      gesture.track.classList.remove('fp-gallery134-anim');
-      gesture.track.style.transform = 'translate3d(-100%,0,0)';
-      const progress = Math.min(1, ay / Math.max(150, window.innerHeight * .28));
-      gesture.stage.classList.remove('fp-gallery134-stage-reset');
-      gesture.stage.style.transform = `translate3d(0, ${dy * .9}px, 0) scale(${1 - .055 * progress})`;
-      gesture.stage.style.opacity = String(1 - .34 * progress);
+  function finishGesture185(event, cancelled) {
+    const g = pointerGesture;
+    if (!g || !g.pointers.has(event.pointerId)) return;
+    const z = g.interaction;
+    if (cancelled || !isLive185(z)) { cancelGesture185(z); return; }
+    g.pointers.delete(event.pointerId);
+    try { if (g.stage.hasPointerCapture(event.pointerId)) g.stage.releasePointerCapture(event.pointerId); } catch {}
+    if (g.pointers.size) {
+      if (!g.pair?.every(id => g.pointers.has(id))) rebaseGesture185(g);
+      return;
+    }
+    pointerGesture = null;
+    g.lease?.release();
+    if (z.image) z.image.style.willChange = '';
+    if (g.moved || g.multi) { suppressClickUntil = Date.now() + 420; event.stopPropagation(); }
+    if (g.multi || g.mode !== 'swipe' || g.axis === 'pending') {
+      resetHorizontalVisual(g.overlay, true);
+      resetVerticalVisual(g.overlay, true);
+      flushRender185(z);
+      return;
+    }
+    const dx = g.lastX - g.startX, dy = g.lastY - g.startY;
+    const dt = Math.max(1, performance.now() - g.startedAt);
+    if (g.axis === 'horizontal') {
+      const enough = Math.abs(dx) >= HORIZONTAL_DISTANCE_PX || (Math.abs(dx) >= HORIZONTAL_FAST_DISTANCE_PX && Math.abs(dx) / dt >= HORIZONTAL_FAST_VELOCITY);
+      if (enough) void navigateGallery(dx < 0 ? 1 : -1, true);
+      else resetHorizontalVisual(g.overlay, true);
+    } else {
+      const enough = Math.abs(dy) >= VERTICAL_CLOSE_DISTANCE_PX || (Math.abs(dy) >= VERTICAL_FAST_DISTANCE_PX && Math.abs(dy) / dt >= VERTICAL_FAST_VELOCITY);
+      if (enough) {
+        g.stage.classList.add('fp-gallery134-stage-close');
+        g.stage.style.transform = `translate3d(0, ${dy < 0 ? -112 : 112}vh, 0) scale(.94)`;
+        g.stage.style.opacity = '0';
+        navigator.vibrate?.(8);
+        void transition185(z, 155).then(valid => { if (valid) closeGallery(z.viewer); });
+      } else resetVerticalVisual(g.overlay, true);
+    }
+    flushRender185(z);
+  }
+
+  function installPointerGestures() {
+    window.addEventListener('pointerdown', event => {
+      const overlay = event.target?.closest?.('.media-viewer-overlay.fp-gallery134');
+      const z = viewerInteraction;
+      if (!overlay || !isLive185(z) || z.transition || event.pointerType === 'mouse' || event.button !== 0) return;
+      const arbiter = window.FPGesture135;
+      if (!arbiter || arbiter.currentLayer(event, event.target) !== 'viewer') return;
+      if (event.target?.closest?.('button,video,input,a')) return;
+      if (!event.target?.closest?.('.fp-gallery134-stage')) return;
+      if (pointerGesture && pointerGesture.interaction !== z) return;
+      let g = pointerGesture;
+      if (!g) {
+        const stage = overlay.querySelector('.fp-gallery134-stage');
+        const track = overlay.querySelector('.fp-gallery134-track');
+        g = { interaction: z, overlay, stage, track, pointers: new Map(), pair: null,
+          startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY,
+          startedAt: performance.now(), axis: 'pending', moved: false, multi: false, mode: 'swipe' };
+        g.lease = arbiter.watchAction('viewer:interaction', event, () => cancelGesture185(z),
+          { multiPointer: true, onPointerEnd: finishGesture185 });
+        if (!g.lease?.claim()) { g.lease?.release(); return; }
+        pointerGesture = g;
+        resetHorizontalVisual(overlay, false);
+        resetVerticalVisual(overlay, false);
+      } else if (!g.lease.active()) return;
+      g.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      // A third contact must not change the established pinch anchor.
+      if (g.pointers.size <= 2) rebaseGesture185(g);
+      if (z.image) z.image.style.willChange = 'transform';
+      try { g.stage.setPointerCapture(event.pointerId); } catch {}
+    }, { capture: true, passive: true });
+
+    window.addEventListener('pointermove', event => {
+      if (pointerGesture) moveGesture185(pointerGesture, event);
     }, { capture: true, passive: false });
-
-    const finish = (event, cancelled) => {
-      const gesture = pointerGesture;
-      if (!gesture || event.pointerId !== gesture.pointerId) return;
-      pointerGesture = null;
-      const dx = gesture.lastX - gesture.startX;
-      const dy = gesture.lastY - gesture.startY;
-      const dt = Math.max(1, performance.now() - gesture.startedAt);
-      if (gesture.moved) {
-        suppressClickUntil = Date.now() + 420;
-        event.stopPropagation();
-      }
-
-      if (cancelled || gesture.axis === 'pending') {
-        resetHorizontalVisual(gesture.overlay, true);
-        resetVerticalVisual(gesture.overlay, true);
-        return;
-      }
-
-      if (gesture.axis === 'horizontal') {
-        const velocity = Math.abs(dx) / dt;
-        const enough = Math.abs(dx) >= HORIZONTAL_DISTANCE_PX || (Math.abs(dx) >= HORIZONTAL_FAST_DISTANCE_PX && velocity >= HORIZONTAL_FAST_VELOCITY);
-        if (!enough) {
-          resetHorizontalVisual(gesture.overlay, true);
-          return;
-        }
-        const direction = dx < 0 ? 1 : -1;
-        void navigateGallery(direction, true);
-        return;
-      }
-
-      const velocity = Math.abs(dy) / dt;
-      const shouldClose = Math.abs(dy) >= VERTICAL_CLOSE_DISTANCE_PX || (Math.abs(dy) >= VERTICAL_FAST_DISTANCE_PX && velocity >= VERTICAL_FAST_VELOCITY);
-      if (!shouldClose) {
-        resetVerticalVisual(gesture.overlay, true);
-        return;
-      }
-      const direction = dy < 0 ? -1 : 1;
-      const stage = gesture.overlay.querySelector('.fp-gallery134-stage');
-      if (!stage) return closeGallery();
-      stage.classList.add('fp-gallery134-stage-close');
-      stage.style.transform = `translate3d(0, ${direction * 112}vh, 0) scale(.94)`;
-      stage.style.opacity = '0';
-      navigator.vibrate?.(8);
-      setTimeout(() => {
-        if (currentOverlay() === gesture.overlay) closeGallery();
-      }, 155);
-    };
-
-    window.addEventListener('pointerup', (event) => finish(event, false), { capture: true, passive: true });
-    window.addEventListener('pointercancel', (event) => finish(event, true), { capture: true, passive: true });
-
-    window.addEventListener('click', (event) => {
-      if (Date.now() >= suppressClickUntil) return;
+    // Normal up/cancel arrives through the arbiter before it tears down its lease.
+    window.addEventListener('lostpointercapture', event => {
+      if (pointerGesture?.pointers.has(event.pointerId)) cancelGesture185(pointerGesture.interaction);
+    }, { capture: true, passive: true });
+    window.addEventListener('click', event => {
+      if (Date.now() >= suppressClickUntil || event.target?.closest?.('button,video,input,a')) return;
       if (!event.target?.closest?.('.media-viewer-overlay.fp-gallery134')) return;
       event.preventDefault();
       event.stopPropagation();
     }, true);
   }
 
+  function installViewerLifecycle185() {
+    window.FPLifecycle170?.subscribe(event => {
+      const z = viewerInteraction;
+      if (!z) return;
+      if (['blur', 'pagehide', 'background'].includes(event.lastType)) {
+        cancelGesture185(z);
+        cancelTransition185(z);
+        cancelAnimationFrame(z.raf);
+        z.raf = 0;
+        touchGuard = null;
+      } else if (['foreground', 'pageshow'].includes(event.lastType)) {
+        measurePhoto185(z);
+        queuePhoto185(z);
+        flushRender185(z);
+      }
+    });
+    window.FPDOM173?.on('viewer', 'unmounted', ({ node }) => {
+      const z = viewerInteraction;
+      if (z?.overlay === node && !node.isConnected) disposeInteraction185(z);
+    });
+    window.FPRuntime?.registerOwner?.('media-gallery185', {
+      role: 'viewer-interaction-executor', mode: 'active-owner',
+      owns: 'photo transform + local geometry + gesture execution; admission FPGesture135; lifetime FPMediaManager177'
+    });
+  }
+
   function installTouchGuard() {
     window.addEventListener('touchstart', (event) => {
       const overlay = event.target?.closest?.('.media-viewer-overlay.fp-gallery134');
-      if (!overlay || event.touches?.length !== 1) {
+      if (!overlay || event.target?.closest?.('button,video,input,a') || event.touches?.length !== 1) {
         touchGuard = null;
         return;
       }
@@ -540,6 +760,11 @@
     }, { capture: true, passive: true });
 
     window.addEventListener('touchmove', (event) => {
+      if (pointerGesture?.multi) {
+        if (event.cancelable) event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (!touchGuard || event.touches?.length !== 1 || !currentOverlay()) return;
       const touch = event.touches[0];
       if (!touchGuard.moved && Math.hypot(touch.clientX - touchGuard.x, touch.clientY - touchGuard.y) >= AXIS_LOCK_PX) touchGuard.moved = true;
@@ -576,22 +801,18 @@
   function resetHorizontalVisual(overlay, animate) {
     const track = overlay?.querySelector('.fp-gallery134-track');
     if (!track) return;
-    if (animate) track.classList.add('fp-gallery134-anim');
+    track.classList.toggle('fp-gallery134-anim', Boolean(animate));
     track.style.transform = 'translate3d(-100%,0,0)';
-    if (animate) setTimeout(() => track.classList.remove('fp-gallery134-anim'), ANIMATION_MS + 30);
   }
 
   function resetVerticalVisual(overlay, animate) {
     const stage = overlay?.querySelector('.fp-gallery134-stage');
     if (!stage) return;
     stage.classList.remove('fp-gallery134-stage-close');
-    if (animate) stage.classList.add('fp-gallery134-stage-reset');
+    stage.classList.toggle('fp-gallery134-stage-reset', Boolean(animate));
     stage.style.transform = '';
     stage.style.opacity = '';
-    if (animate) setTimeout(() => stage.classList.remove('fp-gallery134-stage-reset'), ANIMATION_MS + 30);
   }
-
-  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   boot();
 })();

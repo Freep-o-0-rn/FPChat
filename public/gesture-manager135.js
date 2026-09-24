@@ -132,6 +132,7 @@
 
   function claimAction(owner, event) {
     const session = currentSession(event);
+    if (session?.cancelled) return false;
     if (!session || session.ended || (session.action && session.action !== owner)) return false;
     session.action = owner;
     cancelActions(session, 'claimed', owner);
@@ -139,16 +140,30 @@
     return true;
   }
 
-  function watchAction(owner, event, cancel) {
+  function watchAction(owner, event, cancel, options = {}) {
     const session = currentSession(event);
-    if (!session || session.ended || typeof cancel !== 'function') return null;
+    if (!session || session.ended || session.cancelled || typeof cancel !== 'function') return null;
     if (session.action && session.action !== owner) { cancel('claimed'); return null; }
     session.actions.set(owner, cancel);
+    // Build 185: explicit viewer-only opt-in. Other recognizers retain their
+    // single-contact start/end semantics. The arbiter stores IDs, not geometry.
+    if (options.multiPointer && session.kind === 'pointer' && session.layer === 'viewer') {
+      session.multiPointer = true;
+      session.pointerEnd = { owner, run: options.onPointerEnd };
+    }
     return {
       claim: () => currentSession(event) === session
         && session.actions.get(owner) === cancel
         && claimAction(owner, event),
-      release: () => { if (session.actions.get(owner) === cancel) session.actions.delete(owner); }
+      active: () => currentSession(event) === session && !session.cancelled
+        && !session.ended && session.actions.get(owner) === cancel,
+      release: () => {
+        if (session.actions.get(owner) !== cancel) return;
+        session.actions.delete(owner);
+        if (session.pointerEnd?.owner === owner) session.pointerEnd = null;
+        // Drain remaining fingers even if the viewer closes/replaces its DOM.
+        if (session.multiPointer && session.pointers.size) session.cancelled = true;
+      }
     };
   }
 
@@ -182,6 +197,8 @@
       action: null,
       actions: new Map(),
       ended: false,
+      cancelled: false,
+      pointers: new Set(kind === 'pointer' ? [event.pointerId] : []),
       target
     };
     pushRecent('start', session);
@@ -198,6 +215,20 @@
   function endSession(kind, event) {
     const session = kind === 'touch' ? touchSession : pointerSession;
     if (!session) return;
+    if (kind === 'touch' && session.layer === 'viewer' && event.touches?.length) return;
+    if (kind === 'pointer' && session.multiPointer) {
+      if (!session.pointers.delete(event.pointerId)) return;
+      const cancelled = event.type === 'pointercancel';
+      const finish = session.pointerEnd;
+      if (!session.cancelled && finish && session.actions.has(finish.owner)) {
+        // Finish before teardown in this same listener: a microtask can run
+        // between native event listeners and would otherwise cancel too early.
+        try { finish.run?.(event, cancelled); }
+        catch (error) { cancelActions(session, 'error'); console.error('[FPGesture135] viewer finish failed', error); }
+      }
+      if (cancelled) { session.cancelled = true; cancelActions(session, 'cancel'); }
+      if (session.pointers.size) return;
+    }
     promote(session, event?.target);
     session.ended = true;
     cancelActions(session, String(event?.type).endsWith('cancel') ? 'cancel' : 'end');
@@ -238,6 +269,7 @@
   }
 
   function touchStart(event) {
+    if (touchSession?.layer === 'viewer' && !touchSession.ended) return;
     cancelActions(touchSession, 'restart');
     if (event.touches?.length !== 1) {
       touchSession = null;
@@ -255,6 +287,10 @@
 
   function pointerStart(event) {
     if (event.pointerType === 'mouse' || (event.button != null && event.button !== 0)) return;
+    if (pointerSession?.multiPointer && !pointerSession.ended) {
+      pointerSession.pointers.add(event.pointerId);
+      return;
+    }
     cancelActions(pointerSession, 'restart');
     pointerSession = makeSession('pointer', event);
   }
@@ -304,7 +340,7 @@
       owner: 'FPGesture135',
       layerSource: window.FPLayer173 ? 'FPLayer173' : 'legacy-dom-fallback',
       touch: touchSession ? { id: touchSession.id, layer: touchSession.layer, action: touchSession.action, pendingActions: touchSession.actions.size } : null,
-      pointer: pointerSession ? { id: pointerSession.id, layer: pointerSession.layer, action: pointerSession.action, pendingActions: pointerSession.actions.size } : null,
+      pointer: pointerSession ? { id: pointerSession.id, layer: pointerSession.layer, action: pointerSession.action, pendingActions: pointerSession.actions.size, pointers: pointerSession.pointers.size, multiPointer: Boolean(pointerSession.multiPointer), cancelled: pointerSession.cancelled } : null,
       topLayer: detectLayer(),
       recent: recent.slice()
     })

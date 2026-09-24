@@ -52,6 +52,7 @@ class FPMediaManager177Class {
   #previewThumbnailObjectUrls = new Set();
   #voiceUiByForm = new WeakMap();
   #activeViewer = null;
+  #viewerCleanups = new WeakMap();
   #microphoneRequestPromise = null;
   #microphonePermissionState = 'unknown';
 
@@ -190,9 +191,11 @@ class FPMediaManager177Class {
 
   openViewer(viewer, openWorker) {
     if (!viewer || typeof openWorker !== 'function') return false;
+    if (this.#activeViewer && this.#activeViewer !== viewer) this.#releaseViewerCleanup(this.#activeViewer);
     this.#activeViewer = viewer;
     const result = openWorker(viewer);
     if (result === false) {
+      this.#releaseViewerCleanup(viewer);
       if (this.#activeViewer === viewer) this.#activeViewer = null;
       return false;
     }
@@ -204,6 +207,7 @@ class FPMediaManager177Class {
     if (!target || target !== this.#activeViewer || typeof closeWorker !== 'function') return false;
     const result = closeWorker(target);
     if (result === false) return false;
+    this.#releaseViewerCleanup(target);
     if (this.#activeViewer === target) this.#activeViewer = null;
     return true;
   }
@@ -214,6 +218,19 @@ class FPMediaManager177Class {
 
   isViewerActive(viewer) {
     return Boolean(viewer && viewer === this.#activeViewer);
+  }
+
+  ownViewerCleanup(viewer, cleanup) {
+    if (viewer !== this.#activeViewer || typeof cleanup !== 'function') return false;
+    this.#releaseViewerCleanup(viewer);
+    this.#viewerCleanups.set(viewer, cleanup);
+    return true;
+  }
+
+  #releaseViewerCleanup(viewer) {
+    const cleanup = this.#viewerCleanups.get(viewer);
+    this.#viewerCleanups.delete(viewer);
+    try { cleanup?.(); } catch (error) { console.error('Viewer cleanup failed', error); }
   }
 
   current() {
