@@ -149,16 +149,25 @@
 
     diagnostic?.step(trace, 'cache-start');
     try {
+      diagnostic?.step(trace, 'cache-open-start');
       const cache = await caches.open(CACHE_NAME);
+      diagnostic?.step(trace, 'cache-open-ready');
+      diagnostic?.step(trace, 'cache-meta-start');
       const meta = metaMap()[info.url];
-      if (isExpired(meta)) {
+      const expired = isExpired(meta);
+      diagnostic?.step(trace, 'cache-meta-ready');
+      if (expired) {
         diagnostic?.cache(trace, 'expired');
+        diagnostic?.step(trace, 'cache-delete-start');
         await cache.delete(info.request);
         const all = metaMap();
         delete all[info.url];
         safeJsonWrite(META_KEY, all);
+        diagnostic?.step(trace, 'cache-delete-ready');
       } else {
+        diagnostic?.step(trace, 'cache-match-start');
         const cached = await cache.match(info.request);
+        diagnostic?.step(trace, 'cache-match-ready');
         if (cached) {
           diagnostic?.cache(trace, 'hit'); diagnostic?.step(trace, 'cache-ready');
           return cached;

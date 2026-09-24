@@ -8,6 +8,10 @@
   const META_KEY = 'fpchat:storage:cache-meta167';
   const MEDIA_PATH_RE = /^\/api\/media\/([^/]+)\/(blob|thumb)$/;
   const mediaIndex = new Map();
+  // Build 186.2: one trailing batch for history rendering, one repair in flight.
+  let repairTimer = 0;
+  let repairTask = null;
+  let repairRequested = false;
 
   function normalizeKind(value) {
     const kind = String(value || '').toLowerCase();
@@ -33,14 +37,24 @@
     for (const item of list) {
       const publicId = String(item?.public_id || '').trim();
       if (!publicId) continue;
-      mediaIndex.set(publicId, {
+      const previous = mediaIndex.get(publicId);
+      const next = {
         kind: normalizeKind(item?.media_kind),
-        bytes: Math.max(0, Number(item?.encrypted_size_bytes || item?.size_bytes || 0) || 0),
-        thumbBytes: Math.max(0, Number(item?.thumb_encrypted_size_bytes || item?.thumb_size_bytes || 0) || 0)
-      });
+        bytes: Math.max(0, Number(item?.encrypted_size_bytes || item?.size_bytes || previous?.bytes || 0) || 0),
+        thumbBytes: Math.max(0, Number(item?.thumb_encrypted_size_bytes || item?.thumb_size_bytes || previous?.thumbBytes || 0) || 0)
+      };
+      if (previous && previous.kind === next.kind && previous.bytes === next.bytes && previous.thumbBytes === next.thumbBytes) continue;
+      mediaIndex.set(publicId, next);
       changed = true;
     }
-    if (changed) void repairExistingEntries();
+    if (changed) scheduleRepair();
+  }
+
+  function scheduleRepair() {
+    repairRequested = true;
+    if (repairTask) return;
+    clearTimeout(repairTimer);
+    repairTimer = setTimeout(() => { repairTimer = 0; void repairExistingEntries(); }, 100);
   }
 
   function requestInfo(input, init) {
@@ -90,14 +104,38 @@
     } catch {}
   }
 
-  async function repairExistingEntries() {
+  function repairExistingEntries() {
+    clearTimeout(repairTimer);
+    repairTimer = 0;
+    repairRequested = true;
+    if (repairTask) return repairTask;
+    repairTask = (async () => {
+      while (repairRequested && !clearing()) {
+        repairRequested = false;
+        await repairPass();
+      }
+    })().finally(() => { repairTask = null; });
+    return repairTask;
+  }
+
+  async function repairPass() {
     if (typeof caches === 'undefined' || clearing()) return;
+    const diagnostic = window.FPRuntime169?.loading;
+    const trace = diagnostic?.begin('cache-repair');
     try {
+      diagnostic?.step(trace, 'cache-open-start');
       const cache = await caches.open(CACHE_NAME);
+      diagnostic?.step(trace, 'cache-open-ready');
+      if (clearing()) { diagnostic?.finish(trace, 'cancelled'); return; }
+      diagnostic?.step(trace, 'cache-keys-start');
       const requests = await cache.keys();
-      if (!requests.length || clearing()) return;
+      diagnostic?.step(trace, 'cache-keys-ready', requests.length);
+      if (clearing()) { diagnostic?.finish(trace, 'cancelled'); return; }
+      diagnostic?.step(trace, 'cache-meta-start');
       const meta = readMeta();
-      let changed = false;
+      diagnostic?.step(trace, 'cache-meta-ready');
+      diagnostic?.step(trace, 'cache-repair-start');
+      let changed = 0;
 
       for (const request of requests) {
         const info = requestInfo(request);
@@ -116,7 +154,7 @@
             bytes: nextBytes,
             cachedAt: Math.max(0, Number(current.cachedAt || 0) || Date.now())
           };
-          changed = true;
+          changed++;
         }
       }
 
@@ -124,7 +162,9 @@
         writeMeta(meta);
         window.dispatchEvent(new CustomEvent('fpchat:storage-changed'));
       }
-    } catch {}
+      diagnostic?.step(trace, 'cache-repair-ready', changed);
+      diagnostic?.finish(trace);
+    } catch (error) { diagnostic?.fail(trace, 'cache-repair', error); }
   }
 
   const baseFetch = window.fetch.bind(window);

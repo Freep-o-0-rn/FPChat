@@ -46,8 +46,13 @@ run(async ({newClient, errors}) => {
   });
   // Hold the real gallery hydration response until fingers are down.
   let completeHydration;
+  let hydrationRequested = false;
+  // Background voice/history reads may share this route. Release all held
+  // replies together; a later request must not overwrite the gallery resolver.
+  const hydrationGate = new Promise(resolve => {completeHydration = resolve;});
   await page.route('**/api/rooms/*/messages?*', async route => {
-    await new Promise(resolve => {completeHydration = resolve;});
+    hydrationRequested = true;
+    await hydrationGate;
     const items = await page.evaluate(()=>[{public_id:'zoom185-prefix',media_kind:'image',mime_type:'image/svg+xml'},...zoom185.items]);
     await route.fulfill({json:{messages:[{id:185,media:items}],hasMore:false,nextCursor:null}});
   });
@@ -71,7 +76,7 @@ run(async ({newClient, errors}) => {
   await pointer('pointerdown',2,230,430);
   assert.equal((await snap()).pointer.id,session,'second finger restarted the arbiter');
   await page.evaluate(()=>{zoom185.node = document.querySelector('[data-slot="current"] img');});
-  assert.ok(completeHydration,'gallery hydration was not requested');
+  assert.ok(hydrationRequested,'gallery hydration was not requested');
   completeHydration();
   await page.waitForFunction(()=>mediaViewerState.messageMedia.length===4);
   await page.unroute('**/api/rooms/*/messages?*');

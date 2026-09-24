@@ -1287,6 +1287,8 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
     w.querySelectorAll('.media-tile').forEach(async(el)=>{
       const idx=Number(el.dataset.mediaIndex);
       const item=mediaList[idx];
+      // Voice decorates this temporary tile after append; it has no image thumbnail.
+      if(item?.media_kind==='audio')return;
       const img=el.querySelector('img');
       const diagnostic=window.FPRuntime169?.loading,context=window.FPRoomContext170?.current?.();
       const trace=diagnostic?.begin('media',{endpoint:'thumb',consumer:'chat-thumbnail',parent:diagnostic?.roomToken(context)?.id,mediaType:item?.media_kind});
