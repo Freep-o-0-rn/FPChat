@@ -186,6 +186,19 @@
       const bootPending = new Set();
       const bootTracked = new WeakSet();
       const bootErrors = [];
+      // Build 186.4: bounded diagnostics of this loader's existing JS/CSS.
+      // No URLs, query strings, user identifiers or arbitrary filenames exported.
+      const bootAssetNames186 = new Set('app.js boot-ready152.js build165-ui.js chat-fix.css chat-fix.js chat-opening129.js chat-request-actions146.js chat-request-cooldown160.js chat-request-owner147.js chat-request-system147.js connection170.js dom-lifecycle173.js gesture-manager135.js global-search156.js history174.js layer-manager173.js lifecycle170.js media-gallery134.css media-gallery134.js media-send170.js message-actions.css message-actions.js message-context-fix.css message-context-fix.js message-context.css message-context.js message-pins-screen114.css message-pins-screen114.js message-pins-screen115.css message-pins-screen115.js message-pins.css message-pins.js message-selection.css message-selection.js message-store172.js network171.js notification-manager181.js reply-swipe-visual184.css reply-swipe-visual184.js room-context170.js room-lifecycle.css room-lifecycle.js room-menu-touch151.js room-open170.js runtime169.js send-manager177.js settings-fix.js settings-ui131.css settings-ui131.js storage167-cache-fix.js storage167-clear-guard.js storage167.js storage168.js styles.css sw.js swipe-fix.js sync-coordinator176.js system-chat144.js system-ui148.js text-send170.js typing.css typing.js ui-hotfix128.js user-blocks165.js username-profile140.js username-search143.js viewport-fix.js viewport-layout136.js voice-cancel125.js voice-pins127.css voice-pins127.js voice-polish123.css voice-polish123.js voice.css voice.js work174.js'.split(' '));
+      const bootAssetLimit186 = 160, bootAssets186 = [];
+      let bootAssetsDropped186 = 0, bootAssetsStoppedAt186 = null;
+      const bootRound186 = value => Math.round(value * 10) / 10;
+      function assetName186(element, isScript) {
+        try {
+          const url = new URL(isScript ? element.src : element.href, location.href);
+          const name = url.pathname.slice(1);
+          return url.origin === location.origin && bootAssetNames186.has(name) ? name : 'other';
+        } catch { return 'other'; }
+      }
       const bootTimings186 = { 'loader-start': performance.now() };
       const bootChecks186 = {};
       const bootPhases186 = new Set(['version-start','version-ready','version-error','owners-ready','service-worker-start','service-worker-ready','update-start','update-ready','core-ready','core-wait-start','core-wait-end','layers-start','layers-end','system-start','system-end','requests-start','requests-end','quiet-start','quiet-end','assets-start','assets-end','boot-ready','safety-release']);
@@ -202,11 +215,24 @@
         if (!isScript && !isStyle) return;
         bootTracked.add(element);
         bootPending.add(element);
+        let asset186 = null;
+        if (bootAssetsStoppedAt186 === null) {
+          if (bootAssets186.length < bootAssetLimit186) {
+            asset186 = {name:assetName186(element, isScript), kind:isScript ? 'js' : 'css',
+              startMs:bootRound186(performance.now()), endMs:null, status:'pending',
+              pendingAtAssetsStart:bootTimings186['assets-start'] !== undefined};
+            bootAssets186.push(asset186);
+          } else bootAssetsDropped186++;
+        }
         let settled = false;
         const finish = (failed) => {
           if (settled) return;
           settled = true;
           bootPending.delete(element);
+          if (asset186 && bootAssetsStoppedAt186 === null) {
+            asset186.endMs = bootRound186(performance.now());
+            asset186.status = failed ? 'error' : 'loaded';
+          }
           if (failed) bootErrors.push(isScript ? element.src : element.href);
         };
         element.addEventListener('load', () => finish(false), { once: true });
@@ -224,12 +250,16 @@
         mark186: (name, completed) => {
           if (!bootPhases186.has(name) || bootTimings186[name] !== undefined) return;
           bootTimings186[name] = performance.now();
+          if (name === 'assets-start') {
+            for (const asset of bootAssets186) if (asset.status === 'pending') asset.pendingAtAssetsStart = true;
+          }
           if (typeof completed === 'boolean') bootChecks186[name] = completed;
         },
-        timings186: () => ({points:Object.fromEntries(Object.entries(bootTimings186).map(([name, value]) => [name, Math.round(value * 10) / 10])), completed:{...bootChecks186}}),
+        timings186: () => ({points:Object.fromEntries(Object.entries(bootTimings186).map(([name, value]) => [name, Math.round(value * 10) / 10])), completed:{...bootChecks186}, assets:{limit:bootAssetLimit186, dropped:bootAssetsDropped186, stoppedAtMs:bootAssetsStoppedAt186, records:bootAssets186.map(asset => ({...asset}))}}),
         pendingCount: () => bootPending.size,
         errors: () => [...bootErrors],
         stop: () => {
+          if (bootAssetsStoppedAt186 === null) bootAssetsStoppedAt186 = bootRound186(performance.now());
           bootObserver.disconnect();
           bootStatusObserver?.disconnect();
         }
@@ -242,8 +272,7 @@
         const root = document.getElementById('appRoot');
         if (gate && root && !root.classList.contains('hidden-boot')) {
           window.FPBoot152.mark186('safety-release');
-          bootObserver.disconnect();
-          bootStatusObserver?.disconnect();
+          window.FPBoot152.stop();
           gate.remove();
           console.warn('[FPChat] Build 153 boot gate released by safety timeout.');
         }

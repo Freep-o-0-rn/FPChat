@@ -118,15 +118,36 @@
     return repairTask;
   }
 
+  async function waitForMediaIdle() {
+    // Build 186.4: do not start a full Cache.keys scan during foreground reads,
+    // queued reads, decryption leases or pending physical cache writes.
+    // A running browser Cache.keys operation cannot be preempted; recheck after
+    // caches.open too, since a new read may have arrived while it was pending.
+    while (!clearing() && window.FPNetwork171?.hasPendingMedia?.()) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return !clearing();
+  }
+
   async function repairPass() {
     if (typeof caches === 'undefined' || clearing()) return;
     const diagnostic = window.FPRuntime169?.loading;
     const trace = diagnostic?.begin('cache-repair');
     try {
+      diagnostic?.step(trace, 'maintenance-wait-start');
+      const admitted = await waitForMediaIdle();
+      diagnostic?.step(trace, 'maintenance-wait-end');
+      if (!admitted) { diagnostic?.finish(trace, 'cancelled'); return; }
       diagnostic?.step(trace, 'cache-open-start');
       const cache = await caches.open(CACHE_NAME);
       diagnostic?.step(trace, 'cache-open-ready');
-      if (clearing()) { diagnostic?.finish(trace, 'cancelled'); return; }
+      diagnostic?.step(trace, 'cache-keys-wait-start');
+      const scanAdmitted = await waitForMediaIdle();
+      diagnostic?.step(trace, 'cache-keys-wait-end');
+      if (!scanAdmitted) { diagnostic?.finish(trace, 'cancelled'); return; }
+      // Metadata received while deferred is included in this scan. Requests
+      // arriving after enumeration starts still get the existing follow-up pass.
+      repairRequested = false;
       diagnostic?.step(trace, 'cache-keys-start');
       const requests = await cache.keys();
       diagnostic?.step(trace, 'cache-keys-ready', requests.length);

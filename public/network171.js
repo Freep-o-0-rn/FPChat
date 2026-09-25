@@ -618,6 +618,12 @@
     }
   }
 
+  // Build 186.4: maintenance observes the existing read/queue/write owner.
+  // This does not reserve slots or delay user media behind background work.
+  function hasPendingMedia() {
+    return stats.mediaBudget.active > 0 || mediaWaiters.length > 0 || mediaCacheWrites.size > 0;
+  }
+
   function snapshot() {
     return {
       owner: 'FPNetwork171',
@@ -671,6 +677,7 @@
     use,
     snapshot,
     waitForMediaCacheIdle,
+    hasPendingMedia,
     hasLayer,
     expectedLayers: Object.freeze(Object.values(LEGACY_SPECS).map((item) => ({ ...item }))),
     mediaCacheName: MEDIA_CACHE_NAME

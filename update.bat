@@ -24,7 +24,7 @@ set "NODE_MAJOR="
 set "STAGE="
 set "STAMP="
 set "APP_PORT=3010"
-set "EXPECTED_BUILD=186.3"
+set "EXPECTED_BUILD=186.4"
 set "SOURCE_BUILD="
 
 rem Prefer the folder that contains this updater. This keeps working when

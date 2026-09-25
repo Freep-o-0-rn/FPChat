@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {run}=require('./browser-harness174.cjs');
 
 run(async({browser,origin,errors})=>{
-  let passed=0;const pass=name=>{passed++;console.log('PASS 186.3 '+name);};
+  let passed=0;const pass=name=>{passed++;console.log('PASS 186.4 '+name);};
   const start=async(prepare,url='/')=>{
     const page=await browser.newPage({viewport:{width:390,height:844}});
     page.on('pageerror',e=>errors.push(e.message));page.on('dialog',dialog=>dialog.dismiss());
@@ -36,6 +36,9 @@ run(async({browser,origin,errors})=>{
   assert.equal(state.boot.points['quiet-start'],undefined);
   assert.equal(state.boot.points['system-start'],undefined);
   await normal.locator('#emptyCreateBtn').click();await normal.waitForSelector('#createBtn');
+  assert(state.boot.assets.records.some(r=>r.name==='connection170.js'&&r.status==='loaded'));
+  assert(state.boot.assets.records.every(r=>r.endMs!==null&&r.endMs>=r.startMs));
+  assert(state.boot.assets.stoppedAtMs<=state.boot.points['boot-ready']);
   pass('preload preserves owner execution order; reveal is once, styled and interactive');
 
   let releaseData;const dataGate=new Promise(resolve=>{releaseData=resolve;});let pendingData=0;
@@ -55,13 +58,19 @@ run(async({browser,origin,errors})=>{
   const styled=await start(async page=>page.route('**/settings-ui131.css?*',async route=>{cssRequested=true;await cssGate;return route.continue();}));
   await styled.waitForFunction(()=>window.__fpSettings131Installed&&window.__fpMediaGallery134Installed&&window.__fpSystemUi148Installed&&!document.getElementById('appRoot').classList.contains('hidden-boot'));
   assert(cssRequested);assert.equal(await styled.locator('#bootHold152').count(),1);
+  await styled.waitForFunction(()=>FPBoot152.timings186().points['assets-start']!==undefined);
   releaseCss();await ready(styled);
   assert.equal(await styled.evaluate(()=>FPBoot152.timings186().completed['assets-end']),true);
+  const cssBoot=await styled.evaluate(()=>FPRuntime169.loading.report().boot);
+  const css=cssBoot.assets.records.find(r=>r.name==='settings-ui131.css');
+  assert.equal(css.pendingAtAssetsStart,true);assert.equal(css.status,'loaded');
+  assert(css.endMs>=cssBoot.points['assets-start']);
   pass('a pending stylesheet still holds the splash until the resource settles');await styled.close();
 
   const failed=await start(async page=>page.route('**/storage168.js?*',route=>route.abort('failed')));
   await ready(failed);assert(await failed.evaluate(()=>FPBoot152.errors().some(url=>url.includes('storage168.js'))));
   assert.equal(await failed.evaluate(()=>bootAudit1863.releases[0].owners),true);
+  assert.equal(await failed.evaluate(()=>FPBoot152.timings186().assets.records.find(r=>r.name==='storage168.js').status),'error');
   pass('failed optional asset settles without blocking the installed owners');await failed.close();
 
   const ownerFailure=await start(async page=>page.route('**/connection170.js?*',route=>route.abort('failed')));
@@ -93,6 +102,43 @@ run(async({browser,origin,errors})=>{
   assert.equal(await invited.evaluate(()=>bootAudit1863.releases[0].room),fixture.roomId);
   pass('direct invite still joins through the existing owner before reveal');await invited.close();
 
+  let releaseLateCss;const lateGate=new Promise(resolve=>{releaseLateCss=resolve;});
+  const timedAssets=await start(async page=>page.route('**/settings-ui131.css?*',async route=>{await lateGate;return route.continue();}));
+  await ready(timedAssets);
+  const timedBoot=await timedAssets.evaluate(()=>FPBoot152.timings186());
+  assert.equal(timedBoot.completed['assets-end'],false);
+  assert.equal(timedBoot.assets.records.find(r=>r.name==='settings-ui131.css').status,'pending');
+  assert(timedBoot.points['assets-end']-timedBoot.points['assets-start']>=3900);
+  releaseLateCss();await timedAssets.waitForFunction(()=>FPBoot152.pendingCount()===0);
+  assert.deepEqual(await timedAssets.evaluate(()=>FPBoot152.timings186().assets),timedBoot.assets);
+  pass('asset timeout exports pending names and freezes evidence even when the stylesheet finishes later');
+  await timedAssets.close();
+
+  let releasePrivateCss;const privateGate=new Promise(resolve=>{releasePrivateCss=resolve;});
+  const privacy=await start(async page=>{
+    await page.route('**/settings-ui131.css?*',async route=>{await privateGate;return route.continue();});
+    await page.route('**/private-asset-1864*',route=>route.fulfill({contentType:'text/css',body:'/* fixture */'}));
+  });
+  await privacy.waitForFunction(()=>window.FPBoot152?.timings186().points['assets-start']!==undefined);
+  await privacy.evaluate(async()=>{
+    const promises=[];
+    for(let i=0;i<170;i++){
+      const css=document.createElement('link');css.rel='stylesheet';
+      css.href='/private-asset-1864-'+i+'.css?secret=private-query#private-fragment';
+      promises.push(new Promise(resolve=>{css.onload=css.onerror=resolve;}));document.head.appendChild(css);
+    }
+    await Promise.all(promises);
+  });
+  releasePrivateCss();await ready(privacy);
+  const privateReport=await privacy.evaluate(()=>FPRuntime169.loading.report());
+  assert.equal(privateReport.boot.assets.records.length,160);assert(privateReport.boot.assets.dropped>0);
+  assert(privateReport.boot.assets.records.some(r=>r.name==='other'));
+  for(const secret of ['private-asset-1864','private-query','private-fragment',origin])assert(!JSON.stringify(privateReport).includes(secret));
+  await privacy.evaluate(()=>FPRuntime169.loading.reset());
+  assert.deepEqual(await privacy.evaluate(()=>FPRuntime169.loading.report().boot.assets),privateReport.boot.assets);
+  pass('asset journal is bounded, strips unknown names/queries/fragments and survives measurement reset');
+  await privacy.close();
+
   // Existing update ownership and boot-status mirroring are retained.
   await normal.evaluate(()=>localStorage.setItem(APP_BUILD_KEY,'1'));
   // Hold getRegistrations used by applyAppUpdate, without replacing that worker.
@@ -111,5 +157,5 @@ run(async({browser,origin,errors})=>{
   pass('real update retains its splash/reload path and clears the update marker');
   await normal.close();
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({suite:'186.3 startup',passed,environment:'isolated Linux Chromium; physical mobile startup still requires acceptance'}));
+  console.log(JSON.stringify({suite:'186.4 startup',passed,environment:'isolated Linux Chromium; physical mobile startup still requires acceptance'}));
 }).catch(error=>{console.error(error);process.exitCode=1;});

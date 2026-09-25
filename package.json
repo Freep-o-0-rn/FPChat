@@ -147,10 +147,11 @@
     "test:185:browser": "node ./scripts/regression185-photo-zoom-browser.cjs",
     "test:185": "npm run test:177:media-viewer-lifecycle && npm run test:178:layer-contract && npm run test:178:gesture-layer-lifecycle && npm run test:178:drawer-room-gesture && npm run test:184 && npm run test:185:browser",
     "test:186:browser": "node ./scripts/regression186-loading-browser.cjs",
-    "test:186": "npm run test:186:startup && npm run test:186:media-cache && npm run test:186:browser && npm run test:185 && npm run test:177:resource-slots && npm run test:177:cache-owner && npm run test:177:cache-clear",
+    "test:186": "npm run test:186:startup && npm run test:186:maintenance && npm run test:186:media-cache && npm run test:186:browser && npm run test:185 && npm run test:177:resource-slots && npm run test:177:cache-owner && npm run test:177:cache-clear",
     "test:186:media-cache": "node ./scripts/regression186-media-cache-browser.cjs",
     "test:186:startup": "node ./scripts/regression180-startup-graph.cjs && node ./scripts/regression180-app-coordinator-decision.cjs && node ./scripts/regression180-init-coordination.cjs && node ./scripts/regression186-startup-browser.cjs",
-    "bench:186:startup": "node ./scripts/benchmark186-startup.cjs"
+    "bench:186:startup": "node ./scripts/benchmark186-startup.cjs",
+    "test:186:maintenance": "node ./scripts/regression186-maintenance-browser.cjs"
   },
   "license": "MIT",
   "dependencies": {
