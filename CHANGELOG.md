@@ -2,9 +2,11 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `176` — `build/176-development`, архитектурный перенос lifecycle/room/connection/sync и накопительная автоматическая регрессия завершены; приёмка физических устройств открыта.
+**Сборка разработки:** `186.5` — `build/186-development`; текущая серия оптимизации загрузки и media I/O ещё дорабатывается.
 
-**Стабильная сборка в main:** `168`
+**Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
+
+**Стабильная сборка в main:** `183.9`
 
 **Начало истории:** март 2026  
 **Формат:** крупный этап → диапазон сборок → ключевые подтверждённые изменения.  
@@ -20,6 +22,16 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
+| 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
+| 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
+| 23.09.2026 | **Build 184.6–184.1** | Telegram-style Reply Swipe UI без смены владельца жестов |
+| 23.09.2026 | **Build 183.9–183.1** | Анимация возврата из чата к списку; текущая стабильная точка `main` |
+| 23.09.2026 | **Build 182.6–182.1** | Владение microphone permission/MediaStream и стабилизация voice UX |
+| 23.09.2026 | **Build 181.9–181.1** | NotificationManager/NotificationService и push для персональных системных событий |
+| 23.09.2026 | **Build 180.14–180.1** | Финальная архитектурная приёмка 169–180, updater/launcher/rollback и startup ownership |
+| 22.09.2026 | **Build 179.9–179.1** | Явная server composition, encrypted image persistence/cleanup и history DB ownership |
+| 22.09.2026 | **Build 178.28.1–178.1** | MessageStore/render/read/layer/gesture/scroll/viewport ownership |
+| 22.09.2026 | **Build 177.26–177.1** | Composer/SendManager/MediaManager, cache и media resource ownership |
 | 21.09.2026 | **Build 176** | LifecycleManager, RoomSessionManager, ConnectionManager и SyncCoordinator без замены существующих workers |
 | 21.09.2026 | **Build 175** | Send/mic, исключение ложного long press при drawer и canonical ID после ACK |
 | 20.09.2026 | **Build 174** | Точечный render, порционная работа, dependency-safe startup и ограниченное окно истории |
@@ -36,6 +48,168 @@
 
 > [!NOTE]
 > В ранней истории использовались обозначения `Alpha` и `Beta`, а номера иногда откатывались или использовались повторно. Например, **Beta 50** из мая и современный **Build 50** из сентября — это разные этапы разработки.
+
+---
+
+# ⚡ Build 186 — диагностика и оптимизация загрузки
+
+**24–25 сентября 2026 · ветка `build/186-development` · текущая сборка сервера: `186.5`**
+
+> [!IMPORTANT]
+> Build 186 сейчас используется на сервере как рабочая стабильная контрольная точка, но серия **ещё не завершена** и в `main` не слита. Текущий `main` остаётся на Build 183.9.
+
+### Build 186.5 — preload storage-цепочки
+
+- После готовности критических владельцев добавлен low-priority preload для `storage167.js`, `storage167-clear-guard.js`, `storage167-cache-fix.js` и `storage168.js`.
+- Preload только заранее получает файлы: порядок исполнения по существующей onload-цепочке и stop-on-error сохранён, нового загрузчика или менеджера нет.
+- В синтетическом сравнении Chromium с одинаковым CPU/network throttling медиана подготовки снизилась с 1546.0 до 1261.7 мс, а ожидание assets — примерно с 272–290 до 19–27 мс. Это не результат физического телефона.
+- Полный `npm run test:186` и отдельный `test:186:storage-preload` проходят; физическая приёмка продолжается.
+- [Отчёт Build 186.5](docs/Build186_5_StoragePreload.md).
+
+### Build 186.4 — приоритет пользовательского media I/O
+
+- Фоновый repair media cache больше не начинает тяжёлые `Cache.keys()` поверх уже активных/ожидающих media-операций; используется состояние существующего `FPNetwork171`, без новой очереди.
+- В загрузочный отчёт добавлен ограниченный журнал стартовых JS/CSS с безопасными именами, статусом и признаком ожидания на момент `assets-start`.
+- Сохранены текущие cache metadata, clear guard, media leases и порядок startup.
+- [Отчёт Build 186.4](docs/Build186_4_Maintenance.md).
+
+### Build 186.3 — ускорение подготовки приложения
+
+- Шесть поздних скриптов владельцев заранее загружаются через preload, но исполняются в прежнем dependency-порядке.
+- Splash больше не ждёт дополнительный system refresh и завершение запроса списка заявок; убраны фиксированные ожидания тишины 180 мс и дополнительная задержка 120 мс.
+- В локальном контролируемом сравнении медиана подготовки снизилась примерно на 285 мс (~15%); результат не переносится автоматически на iPhone/Android.
+- [Отчёт Build 186.3](docs/Build186_3_Startup.md).
+
+### Build 186.2 — voice thumbnail и обслуживание media cache
+
+- Renderer больше не создаёт бессмысленные `audio/thumb` запросы для голосовых сообщений; voice playback остаётся у существующего voice worker.
+- Исправление metadata media cache объединяется в один отложенный repair-проход, сохраняет единственного физического cache owner и корректно учитывает clear guard.
+- Диагностика разделяет `cacheOpen`, `cacheMeta`, `cacheMatch`, `cacheDelete`, `cacheKeys` и `cacheRepair`, не экспортируя секреты/URL/media IDs.
+- [Отчёт Build 186.2](docs/Build186_2_MediaCache.md).
+
+### Build 186.1 — пассивная диагностика загрузки
+
+- В `FPRuntime169.loading` добавлены измерения boot, открытия комнаты, media queue/cache/network/decrypt, viewer и gallery-history.
+- Экспорт ограничен последними 240 операциями и не содержит текстов сообщений, room/device/media/message ID, ключей, recovery-кодов, URL и тел запросов.
+- Диагностика не подменяет существующих владельцев и не вводит глобальные fetch/timer hooks; задача 186.1 — измерить реальную причину задержек после 185, а не заранее объявить источник проблемы.
+- [Описание Build 186.1](docs/Build186_LoadingDiagnostics.md).
+
+---
+
+# 🔍 Build 185 — pinch-to-zoom фото
+
+**24 сентября 2026 · Build 185.1 · ветка `build/185-development`**
+
+- В существующем mixed photo/video viewer добавлено масштабирование активной фотографии двумя пальцами от 1× до 4× вокруг midpoint и последующий pan одним пальцем.
+- Пока фото увеличено, pan не переключает галерею и не закрывает viewer. Возврат к 1× поглощает текущую touch-sequence; gallery swipe снова доступен со следующего жеста.
+- Владельцы не размножались: `FPGesture135` отвечает за pointer-session/action lease, `FPLayer173` — за слой, `FPMediaManager177` — за lifetime viewer, а existing gallery controller — за распознавание pinch/pan/swipe и transform.
+- Добавлены cleanup для pointer capture, ResizeObserver, RAF и late-load races; видео сохраняет native controls и не перехватывается photo zoom.
+- `npm run test:185` прошёл все 16 zoom-групп плюс накопительные проверки 184. Физический Safari/PWA и Android требуют отдельной проверки.
+- [Полный отчёт Build 185.1](docs/Build185_PhotoZoom.md).
+
+---
+
+# 🎨 Build 184 — Telegram-style Reply Swipe UI
+
+**23 сентября 2026 · Build 184.1–184.6 · ветка `build/184-development`**
+
+- Существующий reply-handler и `FPGesture135` сохранены владельцами жеста и порога; добавлен только визуальный исполнитель `FPReplySwipeVisual184`.
+- Индикатор появляется только при реальном swipe: точка 8 px → круг 36 px → SVG-стрелка → один ripple при armed. Порог reply остался **52 px**.
+- Короткий свайп, возврат ниже порога, `touchcancel`, multitouch, vertical movement, смена комнаты/слоя, blur и удаление строки корректно сбрасывают визуал без изменения reply/draft.
+- При ошибке загрузки нового JS/CSS остаётся прежний индикатор и рабочая reply-механика.
+- `npm run test:184` включает 26 новых browser-сценариев и накопительные проверки chat-back/gesture/notification/microphone.
+- [Отчёт Build 184.6](docs/Build184_ReplySwipeUI.md).
+
+---
+
+# 📱 Build 183 — анимация возврата из чата
+
+**23 сентября 2026 · Build 183.1–183.9**
+
+- Добавлена Telegram-подобная room → chat-list анимация поверх существующих `FPLayer173`, `FPGesture135` и `swipe-fix.js`; новый Navigation/Transition manager не создавался.
+- При drag меняются только визуальные transforms. Cancel возвращает тот же чат без teardown, reconnect, rerender и изменения scroll/unread/composer.
+- Commit сначала завершает анимацию, затем вызывает существующий `showChatsList()/leaveActiveChat()`. Header Back и Android/system Back используют тот же executor с прежним fallback.
+- Зафиксированы race guards, physical acceptance matrix и cache-bust для iPhone PWA; устаревшая длинная подсказка микрофона удалена из исполняемого UI.
+- **Build 183.9 — текущая стабильная контрольная точка в `main`.**
+- [Контракт](docs/Build183_1_Chat_Back_Ownership.md) · [приёмка](docs/Build183_8_Chat_Back_Acceptance.md) · [release candidate](docs/Build183_9_Release_Candidate.md).
+
+---
+
+# 🎙 Build 182 — microphone permission и MediaStream ownership
+
+**23 сентября 2026 · Build 182.1–182.6**
+
+- Существующий MediaManager стал единственным владельцем microphone permission state, одного in-flight запроса, получения и освобождения `MediaStream`; voice recording делегирует ему доступ к микрофону.
+- При `granted` запись стартует без лишнего FPChat pre-dialog, при `denied` повторный media request не выполняется, а пользователь получает инструкцию открыть разрешение браузера/сайта.
+- FPChat не пытается «сохранить» browser/OS permission в localStorage и не удерживает microphone stream между записями или после закрытия приложения.
+- Добавлен одноразовый session hint для случая, когда браузер снова сообщает `prompt` после ранее успешного доступа.
+- [Приёмка Build 182.3](docs/Build182_3_Microphone_Acceptance.md).
+
+---
+
+# 🔔 Build 181 — системные push-уведомления
+
+**23 сентября 2026 · Build 181.1–181.9**
+
+- Клиентское владение notification settings/permission/subscription перенесено в `NotificationManager181`; удалён старый глобальный `window.fetch` patch для `notifySystemEvents`.
+- Серверная отправка Web Push вынесена в `NotificationService181`; существующие room message/join/leave push сохранили прежний путь.
+- Добавлена device-level PushSubscription для персональных системных событий, прежде всего chat request received/accepted/rejected/expired.
+- После durable `SystemEventStore.add()` сервис повторно читает запись и использует dedupe `system_event_id + device_id`, чтобы не отправлять событие из откатившейся транзакции и не дублировать push.
+- Нажатие personal system push открывает System Chat и нужный `systemEventId`, а не pending room; секреты invite/recovery/encryption в payload не включаются.
+- [Приёмка Build 181.7](docs/Build181_7_Notification_Acceptance.md).
+
+---
+
+# ✅ Build 180 — финальная архитектурная приёмка 169–180
+
+**23 сентября 2026 · Build 180.1–180.14**
+
+- Закреплена canonical block truth и устранены обходы block owner в invite flow.
+- Изолированно проверены Windows updater/launcher: один серверный процесс, сохранение данных/окружения и восстановление полного snapshot после неудачного update.
+- Зафиксирован accepted startup graph; отдельный AppCoordinator признан лишним, существующий `FPStartup174` остаётся координатором запуска.
+- Выполнен single-owner audit реальных writers/listeners/timers, а не только названий manager-классов.
+- Накопительная автоматическая приёмка: **109 PASS, 1 EXPECTED_FAIL, 0 FAIL**, плюс Windows acceptance и отдельный rollback последнего runtime-transfer.
+- Build 180.14 оформлен как release candidate; физическая матрица на реальных устройствах в отчёте оставалась отдельным этапом.
+- [Release decision 180.14](docs/Build180_14_Release_Decision_Report.md) · [общая архитектурная приёмка 169–180](docs/FPChat_Final_Architecture_Acceptance_169-180.md).
+
+---
+
+# ⚙️ Build 179 — явная server composition и DB/media ownership
+
+**22 сентября 2026 · Build 179.1–179.9**
+
+- Проведена инвентаризация server bootstrap patches/installers; production loader interception удалён, а `node server.js` стал явным production entry.
+- Явно подключены существующие message actions/pins, block stores/guards, presence, typing, username, system events, storage stats, chat requests и voice installers без создания параллельных реализаций.
+- Вынесены и проверены владельцы encrypted image persistence и cleanup.
+- History DB read path диагностирован и закреплён за одной принятой transaction boundary без второго DB pool.
+- [Архитектурная приёмка 169–180](docs/FPChat_Final_Architecture_Acceptance_169-180.md).
+
+---
+
+# 🧭 Build 178 — store/render/read/gesture/scroll ownership
+
+**22 сентября 2026 · Build 178.1–178.28.1**
+
+- Закреплены входящий путь `MessageStore172`, message status truth и reply dependency unload/return.
+- Приняты HistoryManager page load, saved anchor, reply/pin jump и bounded DOM; chat-list и incoming message mount проходят через утверждённых render-владельцев.
+- Введён `FPReadState178` для visible-read admission/flush и сохранён корректный unread divider.
+- Уточнены layer/overlay contracts, arbitration drawer/long-press/reply, back gestures и vertical scroll.
+- Проведена карта всех message-scroll/geometry writers; сохранён `FPScroll173` как владелец scroll, защищены prepend во время user scroll, unread restore и keyboard/orientation header behavior.
+- [Архитектурная приёмка 169–180](docs/FPChat_Final_Architecture_Acceptance_169-180.md).
+
+---
+
+# 🧩 Build 177 — composer, send, media и resource ownership
+
+**22 сентября 2026 · Build 177.1–177.26**
+
+- Подтверждён единый `FPNetwork171` для fetch/XHR, физической записи/удаления управляемого media cache и существующего weighted media budget: один encrypted original или до четырёх thumbnails.
+- Cache clear проведён через существующие `FPStorage167` + clear guard + `FPNetwork171`, без второго cache writer.
+- Composer поэтапно получил единые точки bind/sync для normal/draft/reply/edit mode с привязкой к RoomContext.
+- Добавлен статeless `FPSendManager177`: text/media/ready-voice entry points делегируют ему запуск **существующих** executors без новой очереди, retry store или synthetic IDs.
+- `FPMediaManager177` оборачивает lifecycle preview, thumbnail ObjectURL, voice UI и media viewer; запись голоса и media workers не переписаны.
+- Финальные 177.26 hotfix исправили освобождение incoming media prefetch slots и auto-promote принятого chat request.
+- [Media resource contract](docs/Build177_ResourceArbiterContract.md) · [cache ownership](docs/Build177_CacheOwnership.md) · [send entry points](docs/Build177_SendEntryPoints.md).
 
 ---
 
