@@ -108,7 +108,8 @@
         displayName: status.peer.displayName || '',
         online: status.presenceVisible === false ? false : Boolean(status.peer.online),
         lastSeenAt: status.presenceVisible === false ? null : (status.peer.lastSeenAt || null),
-        statusUnavailable: status.presenceVisible === false
+        presenceState: status.presenceVisible === false ? 'unavailable' : (status.peer.presenceState || null),
+        statusUnavailable: status.presenceVisible === false || status.peer.statusUnavailable === true
       };
     }
 
