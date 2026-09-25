@@ -152,7 +152,9 @@
     "test:186:startup": "node ./scripts/regression180-startup-graph.cjs && node ./scripts/regression180-app-coordinator-decision.cjs && node ./scripts/regression180-init-coordination.cjs && node ./scripts/regression186-startup-browser.cjs",
     "bench:186:startup": "node ./scripts/benchmark186-startup.cjs",
     "test:186:maintenance": "node ./scripts/regression186-maintenance-browser.cjs",
-    "test:186:storage-preload": "node ./scripts/regression186-storage-preload-browser.cjs"
+    "test:186:storage-preload": "node ./scripts/regression186-storage-preload-browser.cjs",
+    "test:187:presence-privacy": "node ./scripts/regression187-presence-privacy.cjs",
+    "test:187": "npm run test:187:presence-privacy && npm run test:180:block-contract && npm run test:179:explicit-participant-presence && npm run test:179:explicit-presence-broadcaster && npm run test:186"
   },
   "license": "MIT",
   "dependencies": {
