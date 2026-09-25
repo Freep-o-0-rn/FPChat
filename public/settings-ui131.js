@@ -125,6 +125,14 @@
           <span class="fp-privacy155-copy"><b>Разрешить запросы на новый чат</b><small>Другие пользователи смогут отправлять вам запросы на новый приватный чат.</small></span>
           <span class="fp-privacy155-switch"><input id="fpPrivacyRequests155" type="checkbox" checked disabled><span class="fp-privacy155-track"></span></span>
         </label>
+        <label class="fp-privacy155-option" for="fpPrivacyOnline187">
+          <span class="fp-privacy155-copy"><b>Показывать статус онлайн/оффлайн</b><small>Если выключено, собеседник увидит только приблизительное время последней активности.</small></span>
+          <span class="fp-privacy155-switch"><input id="fpPrivacyOnline187" type="checkbox" checked disabled><span class="fp-privacy155-track"></span></span>
+        </label>
+        <label class="fp-privacy155-option" for="fpPrivacyLastSeen187">
+          <span class="fp-privacy155-copy"><b>Показывать точное время посещения</b><small>Если выключено, вместо точного времени будет показано: недавно, на этой неделе, в этом месяце или давно.</small></span>
+          <span class="fp-privacy155-switch"><input id="fpPrivacyLastSeen187" type="checkbox" checked disabled><span class="fp-privacy155-track"></span></span>
+        </label>
       </div>
       <div class="fp-settings131-group fp-privacy162-nav">
         ${row('blacklist', 'blocked', 'Чёрный список', 'Заблокированные пользователи')}
@@ -133,6 +141,8 @@
 
       const search = root.querySelector('#fpPrivacySearch155');
       const requests = root.querySelector('#fpPrivacyRequests155');
+      const online = root.querySelector('#fpPrivacyOnline187');
+      const lastSeen = root.querySelector('#fpPrivacyLastSeen187');
       const status = root.querySelector('#fpPrivacyStatus155');
       const deviceId = settingsDeviceId();
       let statusTimer = 0;
@@ -142,6 +152,8 @@
       const setBusy = (value) => {
         search.disabled = value;
         requests.disabled = value;
+        online.disabled = value;
+        lastSeen.disabled = value;
       };
       const setStatus = (text, kind = '') => {
         clearTimeout(statusTimer);
@@ -151,6 +163,8 @@
       const applyPrivacy = (data) => {
         search.checked = data?.allowUsernameSearch !== false;
         requests.checked = data?.allowChatRequests !== false;
+        online.checked = data?.showOnlineStatus !== false;
+        lastSeen.checked = data?.showLastSeenExact !== false;
       };
 
       async function saveToggle(input, field) {
@@ -181,6 +195,8 @@
 
       search.addEventListener('change', () => saveToggle(search, 'allowUsernameSearch'));
       requests.addEventListener('change', () => saveToggle(requests, 'allowChatRequests'));
+      online.addEventListener('change', () => saveToggle(online, 'showOnlineStatus'));
+      lastSeen.addEventListener('change', () => saveToggle(lastSeen, 'showLastSeenExact'));
 
       (async () => {
         if (!deviceId) {
