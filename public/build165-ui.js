@@ -3,7 +3,7 @@
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 186.5';
+  const BUILD_LABEL = 'Build 187.1';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
     try { return new URL(currentScript?.src || '', window.location.href).search || '?v=186.5'; }
