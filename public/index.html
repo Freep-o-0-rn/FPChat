@@ -318,6 +318,19 @@
       window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
       window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});
 
+      // Build 186.5: fetch the storage tail after critical owners are ready.
+      // Hints do not execute code. build165-ui keeps its storage -> clear guard
+      // -> cache fix -> accounting onload chain, including existing failures.
+      ownersReady174.then(ready => {
+        if (!ready) return;
+        for (const name of ['storage167.js','storage167-clear-guard.js','storage167-cache-fix.js','storage168.js']) {
+          const hint = document.createElement('link');
+          hint.rel = 'preload'; hint.as = 'script'; hint.href = `/${name}${buildSuffix}`;
+          hint.fetchPriority = 'low';
+          document.head.appendChild(hint);
+        }
+      });
+
       // Fetch the optional visual in parallel with the existing owner chain.
       // A failed visual asset keeps the old reply indicator functional.
       const replyVisualScriptReady184 = new Promise(resolve => {

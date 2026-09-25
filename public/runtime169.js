@@ -409,7 +409,7 @@
     };
   }
 
-  // Build 186.4: bounded, explicit observations. No transport/timer/crypto
+  // Build 186.5: bounded, explicit observations. No transport/timer/crypto
   // monkey patches, request bodies, URL keys, content or persistent telemetry.
   const loading186 = (() => {
     const LIMIT = 240;
@@ -533,7 +533,7 @@
         group.count++; group.transferBytes += resource.transferSize; group.encodedBodyBytes += resource.encodedBodySize;
       }
       return {
-        schema:1, build:'186.4', mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
+        schema:1, build:'186.5', mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
         coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'hooks from runtime installation; ordinary-entry; direct-entry-starts-after-join', media:'common readEncryptedMedia174 path including voice/save reads; no independent I/O or voice/save playback readiness', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image load, active video loadeddata, neighbor video loadedmetadata and frame opportunity; not native decode duration or actual paint', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
         boot, startupResources,
         viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio},
@@ -544,7 +544,7 @@
     function reset() { for (const id of watches.keys()) cleanup(id); records.clear(); dropped = 0; }
     function download() {
       const url = URL.createObjectURL(new Blob([JSON.stringify(report(), null, 2)], {type:'application/json'}));
-      const link = document.createElement('a'); link.href = url; link.download = 'FPChat-186.4-loading.json';
+      const link = document.createElement('a'); link.href = url; link.download = 'FPChat-186.5-loading.json';
       document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
     return Object.freeze({begin, step, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
