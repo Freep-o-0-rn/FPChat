@@ -11,10 +11,11 @@ const { createDb } = require('./src/db');
 const { installMessageActionsServer } = require('./src/message-actions-server');
 const { installMessagePinsServer } = require('./src/message-pins-server');
 const { installTypingServer } = require('./src/typing-server');
-const { installUsernameServer } = require('./src/username-server');
+const { installUsernameServer, ensureUserPrivacySchema } = require('./src/username-server');
 const { installSystemEventsServer, ensureSystemEventsSchema, subscribeSystemEventInserted } = require('./src/system-events-server');
 const { installStorageStats168 } = require('./src/storage-stats168');
-const { installUserBlocks165Server } = require('./src/user-blocks165');
+const { installUserBlocks165Server, createUserBlocks165 } = require('./src/user-blocks165');
+const { createPresencePrivacy187 } = require('./src/presence-privacy187');
 const { installUserBlockEventActions165 } = require('./src/user-block-event-actions165');
 const { installChatRequestsServer } = require('./src/chat-requests-server147');
 const { installVoiceServer } = require('./src/voice-server');
@@ -40,7 +41,9 @@ if (pushEnabled) {
 }
 
 const db = createDb(DATABASE_PATH);
-const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);
+ensureUserPrivacySchema(db);
+const fpPresencePrivacy187 = createPresencePrivacy187(db);
+const fpUserBlocks165 = createUserBlocks165(db, { presenceProjector: fpPresencePrivacy187.project });
 const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db, { userBlocks: fpUserBlocks165 });
 const UPLOAD_DIR = process.env.FPCHAT_UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -742,15 +745,38 @@ function broadcastRoomState(room) {
   if (!room) return;
   sendToRoomParticipants(room.public_id, { type: 'room:state', roomId: room.public_id, status: String(room.status || ROOM_OPEN).toLowerCase(), closedAt: toIsoUtc(room.closed_at) });
 }
-function broadcastPresenceUpdate(roomPublicId, payload) {
+function broadcastPresenceUpdate(roomPublicId, payload, { force = false } = {}) {
   const room = q.findRoomByPublicId.get(roomPublicId);
   if (!room || !payload?.deviceId) return;
-  const event = { type: 'presence:update', roomId: roomPublicId, ...payload };
+  const subject = q.findParticipant.get(room.id, payload.deviceId);
+  if (!subject) return;
+
+  // PRIVATE does not emit raw online/offline transitions. A privacy-setting change
+  // uses force=true so the peer receives the new projected state immediately.
+  if (!force && fpPresencePrivacy187.settingsFor(subject.device_id).showOnlineStatus === false) return;
+
   for (const participant of q.listParticipantsByRoom.all(room.id)) {
     if (!fpUserBlocks165.canViewerSeePresence(participant.device_id, payload.deviceId)) continue;
     const sockets = socketsByDevice.get(participant.device_id);
     if (!sockets) continue;
+    const projected = fpUserBlocks165.participantPresenceDto(subject, participant.device_id, toIsoUtc);
+    const event = { type: 'presence:update', roomId: roomPublicId, ...projected };
     for (const client of sockets) sendWsJson(client, event);
+  }
+}
+
+function broadcastPresenceForSubject(deviceId) {
+  const id = String(deviceId || '').trim();
+  if (!id) return;
+  for (const participant of q.listParticipantRoomsByDevice.all(id)) {
+    const subject = q.findParticipant.get(participant.room_id, id);
+    if (!subject) continue;
+    broadcastPresenceUpdate(participant.room_public_id, {
+      deviceId: subject.device_id,
+      displayName: subject.display_name,
+      online: Boolean(subject.online),
+      lastSeenAt: toIsoUtc(subject.last_seen_at)
+    }, { force: true });
   }
 }
 function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
@@ -1277,7 +1303,8 @@ installTypingServer({
 });
 installUsernameServer({
   app,
-  db
+  db,
+  onPrivacyChanged: broadcastPresenceForSubject
 });
 installSystemEventsServer({
   app,
