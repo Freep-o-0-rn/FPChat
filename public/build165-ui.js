@@ -6,8 +6,8 @@
   const BUILD_LABEL = 'Build 187.1';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=186.5'; }
-    catch { return '?v=186.5'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=187.1'; }
+    catch { return '?v=187.1'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
