@@ -745,7 +745,8 @@ function broadcastRoomState(room) {
   if (!room) return;
   sendToRoomParticipants(room.public_id, { type: 'room:state', roomId: room.public_id, status: String(room.status || ROOM_OPEN).toLowerCase(), closedAt: toIsoUtc(room.closed_at) });
 }
-function broadcastPresenceUpdate(roomPublicId, payload, { force = false } = {}) {
+function broadcastPresenceUpdate(roomPublicId, payload) {
+  const force = payload?.forcePrivacy === true;
   const room = q.findRoomByPublicId.get(roomPublicId);
   if (!room || !payload?.deviceId) return;
   const subject = q.findParticipant.get(room.id, payload.deviceId);
@@ -775,8 +776,9 @@ function broadcastPresenceForSubject(deviceId) {
       deviceId: subject.device_id,
       displayName: subject.display_name,
       online: Boolean(subject.online),
-      lastSeenAt: toIsoUtc(subject.last_seen_at)
-    }, { force: true });
+      lastSeenAt: toIsoUtc(subject.last_seen_at),
+      forcePrivacy: true
+    });
   }
 }
 function hasVisibleRoomSocketForDevice(deviceId, roomPublicId) {
