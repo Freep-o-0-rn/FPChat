@@ -47,7 +47,7 @@ function cleanName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 64);
 }
 
-function createUserBlocks165(db) {
+function createUserBlocks165(db, { presenceProjector = null } = {}) {
   if (!db) throw new Error('user blocks database is required');
   ensureUserBlocks165Schema(db);
 
@@ -180,14 +180,28 @@ function createUserBlocks165(db) {
     return !q.blockPair.get(subject, viewer);
   }
 
-  function participantPresenceDto(item, viewerId, toIsoUtc) {
+  function defaultPresenceProjection(item, hidden, toIsoUtc) {
+    return {
+      online: hidden ? false : Boolean(item.online),
+      lastSeenAt: hidden ? null : (typeof toIsoUtc === 'function' ? toIsoUtc(item.last_seen_at) : item.last_seen_at || null),
+      ...(hidden ? { statusUnavailable: true, presenceState: 'unavailable' } : {})
+    };
+  }
+
+  function projectPresence(item, viewerId, toIsoUtc) {
     const hidden = item?.device_id !== viewerId && !canViewerSeePresence(viewerId, item?.device_id);
+    if (typeof presenceProjector === 'function') {
+      const projected = presenceProjector(item, viewerId, { hidden, toIsoUtc });
+      if (projected && typeof projected === 'object') return projected;
+    }
+    return defaultPresenceProjection(item, hidden, toIsoUtc);
+  }
+
+  function participantPresenceDto(item, viewerId, toIsoUtc) {
     return {
       deviceId: item.device_id,
       displayName: item.display_name,
-      online: hidden ? false : Boolean(item.online),
-      lastSeenAt: hidden ? null : (typeof toIsoUtc === 'function' ? toIsoUtc(item.last_seen_at) : item.last_seen_at || null),
-      ...(hidden ? { statusUnavailable: true } : {})
+      ...projectPresence(item, viewerId, toIsoUtc)
     };
   }
 
@@ -267,6 +281,7 @@ function createUserBlocks165(db) {
     const rel = relationship(viewer, peer.device_id);
     const identity = currentIdentity(peer.device_id, peer.display_name);
     const presenceVisible = canViewerSeePresence(viewer, peer.device_id);
+    const projectedPresence = projectPresence(peer, viewer, toIsoUtc);
     return {
       ok: true,
       roomPublicId,
@@ -275,8 +290,7 @@ function createUserBlocks165(db) {
         deviceId: peer.device_id,
         displayName: identity.displayName,
         username: identity.username,
-        online: presenceVisible ? Boolean(peer.online) : false,
-        lastSeenAt: presenceVisible ? (typeof toIsoUtc === 'function' ? toIsoUtc(peer.last_seen_at) : peer.last_seen_at || null) : null
+        ...projectedPresence
       },
       blockedByMe: Boolean(rel.blockedByMe),
       blockId: rel.blockedByMe?.public_id || null,
