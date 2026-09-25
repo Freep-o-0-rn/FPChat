@@ -52,19 +52,30 @@ function ensureUserPrivacySchema(db) {
       device_id TEXT PRIMARY KEY,
       allow_username_search INTEGER NOT NULL DEFAULT 1,
       allow_chat_requests INTEGER NOT NULL DEFAULT 1,
+      show_online_status INTEGER NOT NULL DEFAULT 1,
+      show_last_seen_exact INTEGER NOT NULL DEFAULT 1,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  const columns = db.prepare('PRAGMA table_info(user_privacy_settings)').all();
+  if (!columns.some((column) => column.name === 'show_online_status')) {
+    db.exec('ALTER TABLE user_privacy_settings ADD COLUMN show_online_status INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!columns.some((column) => column.name === 'show_last_seen_exact')) {
+    db.exec('ALTER TABLE user_privacy_settings ADD COLUMN show_last_seen_exact INTEGER NOT NULL DEFAULT 1');
+  }
 }
 
 function privacyDto(row) {
   return {
     allowUsernameSearch: row ? Number(row.allow_username_search) !== 0 : true,
-    allowChatRequests: row ? Number(row.allow_chat_requests) !== 0 : true
+    allowChatRequests: row ? Number(row.allow_chat_requests) !== 0 : true,
+    showOnlineStatus: row ? Number(row.show_online_status) !== 0 : true,
+    showLastSeenExact: row ? Number(row.show_last_seen_exact) !== 0 : true
   };
 }
 
-function installUsernameServer({ app, db }) {
+function installUsernameServer({ app, db, onPrivacyChanged = null }) {
   if (!app || !db) throw new Error('username server dependencies are missing');
   if (app.__fpUsername140Installed) return;
   app.__fpUsername140Installed = true;
@@ -102,16 +113,19 @@ function installUsernameServer({ app, db }) {
         updated_at=datetime('now')
     `),
     privacyByDevice: db.prepare(`
-      SELECT allow_username_search, allow_chat_requests
+      SELECT allow_username_search, allow_chat_requests, show_online_status, show_last_seen_exact
       FROM user_privacy_settings
       WHERE device_id=?
     `),
     upsertPrivacy: db.prepare(`
-      INSERT INTO user_privacy_settings (device_id, allow_username_search, allow_chat_requests, updated_at)
-      VALUES (?, ?, ?, datetime('now'))
+      INSERT INTO user_privacy_settings
+        (device_id, allow_username_search, allow_chat_requests, show_online_status, show_last_seen_exact, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
       ON CONFLICT(device_id) DO UPDATE SET
         allow_username_search=excluded.allow_username_search,
         allow_chat_requests=excluded.allow_chat_requests,
+        show_online_status=excluded.show_online_status,
+        show_last_seen_exact=excluded.show_last_seen_exact,
         updated_at=datetime('now')
     `),
     upsertPublic: db.prepare(`
@@ -190,16 +204,33 @@ function installUsernameServer({ app, db }) {
 
     const hasSearch = typeof req.body?.allowUsernameSearch === 'boolean';
     const hasRequests = typeof req.body?.allowChatRequests === 'boolean';
-    if (!hasSearch && !hasRequests) {
+    const hasOnline = typeof req.body?.showOnlineStatus === 'boolean';
+    const hasLastSeen = typeof req.body?.showLastSeenExact === 'boolean';
+    if (!hasSearch && !hasRequests && !hasOnline && !hasLastSeen) {
       return res.status(400).json({ ok: false, code: 'PRIVACY_FIELDS_REQUIRED', error: 'privacy boolean required' });
     }
 
     const current = privacyDto(q.privacyByDevice.get(deviceId));
     const next = {
       allowUsernameSearch: hasSearch ? req.body.allowUsernameSearch : current.allowUsernameSearch,
-      allowChatRequests: hasRequests ? req.body.allowChatRequests : current.allowChatRequests
+      allowChatRequests: hasRequests ? req.body.allowChatRequests : current.allowChatRequests,
+      showOnlineStatus: hasOnline ? req.body.showOnlineStatus : current.showOnlineStatus,
+      showLastSeenExact: hasLastSeen ? req.body.showLastSeenExact : current.showLastSeenExact
     };
-    q.upsertPrivacy.run(deviceId, next.allowUsernameSearch ? 1 : 0, next.allowChatRequests ? 1 : 0);
+    q.upsertPrivacy.run(
+      deviceId,
+      next.allowUsernameSearch ? 1 : 0,
+      next.allowChatRequests ? 1 : 0,
+      next.showOnlineStatus ? 1 : 0,
+      next.showLastSeenExact ? 1 : 0
+    );
+    const presenceChanged =
+      next.showOnlineStatus !== current.showOnlineStatus ||
+      next.showLastSeenExact !== current.showLastSeenExact;
+    if (presenceChanged && typeof onPrivacyChanged === 'function') {
+      try { onPrivacyChanged(deviceId, next, current); }
+      catch (error) { console.error('Presence privacy refresh failed', error); }
+    }
     return res.json({ ok: true, ...next });
   });
 
