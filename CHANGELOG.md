@@ -57,6 +57,20 @@
 
 **26 сентября 2026 · Build 188.8 · ветка `build/188-reactions-development` · база: Build 187.1**
 
+### Build 188.8 — desktop/race audit hardening
+
+- Desktop quick reactions and full picker no longer rely only on bubbling `click`: primary mouse `pointerup` performs the feature action first, while `click` remains keyboard/fallback and is deduplicated.
+- Legacy `message-context-fix.js` remains owner of outside-click close behavior; its only Build 188 change is the narrow quick/picker allow-list.
+- Fixed response-loss race: if server commit + authoritative `reaction:update` already prove the requested own-state but the HTTP response is lost, the client reconciles with WS instead of reporting a false failure. No retry is introduced.
+- Fixed delete-for-self contract: queued unsent reaction mutations are cancelled, an already-running request is allowed to settle, and local reaction RAM is released afterward. Delete-for-all still destroys/cancels the reaction domain.
+- Fixed Reaction Details tab race: tab switch now aborts the previous request and advances `requestGeneration`; a late response from the previous tab cannot enter the new tab.
+- Duplicate/older authoritative reaction revisions no longer mark current Reaction Details stale.
+- Failed profile handoff no longer closes Reaction Details before the existing profile owner confirms opening.
+- Added <=340px quick/picker sizing so the 7 quick reactions + expand button cannot be clipped on 320px-class screens.
+- `message-actions.js` now receives the same 188.8 acceptance revision cache-bust because its delete-for-self reaction lifecycle changed without changing the build number.
+- Added `regression1888-desktop-races.cjs` and included it in `npm run test:188.8`.
+- [Desktop/race audit](docs/Build188_8_Physical_Acceptance_Audit.md).
+
 ### Build 188.8 — physical acceptance fixes
 
 - При первой физической приёмке на iPhone обнаружена точная ошибка quick-catalog: server DTO сериализовал отсутствие `quickOrder` как `null`, а client filter считал `Number(null) === 0` валидным integer.
