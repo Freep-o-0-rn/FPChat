@@ -129,6 +129,11 @@ assert(index.includes('renderer.onload = loadReactionPicker188;'), 'reaction ren
 assert(index.includes('picker.onload = loadReactionDetails188;'), 'picker/details order changed');
 assert(index.includes('details.onload = loadReactionInteraction188;'), 'details/interaction order changed');
 assert(index.includes('details.onerror = loadReactionInteraction188;'), 'Reaction Details optional fallback missing');
+assert(index.includes("let reactionBuildSuffix188 = '';"), 'same-build reaction asset revision suffix missing');
+assert(index.includes('reactionBuildSuffix188 || buildSuffix'), 'reaction assets are not revision-busted inside Build 188.8');
+assert(picker.includes("toggle.addEventListener('pointerup'"), 'picker touch activation is not hardened for iOS');
+assert(interaction.includes('FPReactionRenderer188?.patchMounted?.(info.roomId, info.messageId)'), 'quick/picker optimistic state is not explicitly painted');
+assert(interaction.includes("code = error?.name === 'AbortError'"), 'active-room reaction cancellation code is hidden during acceptance');
 
 // Release identity.
 assert.equal(version.build, '188.8', 'version.json is not Build 188.8');
