@@ -420,6 +420,16 @@
     window.FPReactionPicker188?.syncSelection?.(strip, mine);
   }
 
+  function admitPickerToggle(event) {
+    const arbiter = window.FPGesture135;
+    if (!arbiter) return true;
+    if (arbiter.currentLayer(event, event?.target) !== 'context') return false;
+    if (event?.type === 'pointerdown' && event.pointerType && event.pointerType !== 'mouse') {
+      return arbiter.claimAction?.('reaction-picker-toggle', event) === true;
+    }
+    return true;
+  }
+
   function decorateContext(contextState, { menu, clone, sourceRect, closeContext } = {}) {
     const manager = window.FPReactionManager188;
     const roomId = String(state?.roomId || '').trim();
@@ -486,6 +496,7 @@
           clone,
           catalog: available,
           getMineIds: () => mineIds(roomId, messageId),
+          admitToggle: admitPickerToggle,
           onExpandedChange: (expanded) => {
             if (expanded) stats.pickerOpens += 1;
             // Full reactions are an interaction-manager state. The action menu is
