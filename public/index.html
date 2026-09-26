@@ -279,6 +279,7 @@
       }, 15000);
 
       let buildSuffix = '';
+      let reactionBuildSuffix188 = '';
       try {
         window.FPBoot152.mark186('version-start');
         const res = await fetch('/version.json', { cache: 'no-store' });
@@ -287,6 +288,12 @@
           const buildId = String(data?.build ?? '').trim();
           if (/^\d+(?:\.\d+)*$/.test(buildId)) {
             buildSuffix = `?v=${encodeURIComponent(buildId)}`;
+          }
+          const reactionRevision = String(data?.updatedAt ?? '').trim();
+          if (reactionRevision) {
+            reactionBuildSuffix188 = buildSuffix
+              ? `${buildSuffix}&r=${encodeURIComponent(reactionRevision)}`
+              : `?r=${encodeURIComponent(reactionRevision)}`;
           }
         }
         window.FPBoot152.mark186('version-ready',res.ok);
@@ -323,7 +330,7 @@
       const loadReactionInteraction188 = () => {
         if (window.FPReactionInteractionManager188 || document.querySelector('script[data-fp-reaction-interaction188]')) return;
         const interaction = document.createElement('script');
-        interaction.src = `/reaction-interaction188.js${buildSuffix}`;
+        interaction.src = `/reaction-interaction188.js${reactionBuildSuffix188 || buildSuffix}`;
         interaction.dataset.fpReactionInteraction188 = '1';
         interaction.async = true;
         document.body.appendChild(interaction);
@@ -332,7 +339,7 @@
         if (window.FPReactionDetails188) { loadReactionInteraction188(); return; }
         if (document.querySelector('script[data-fp-reaction-details188]')) return;
         const details = document.createElement('script');
-        details.src = `/reaction-details188.js${buildSuffix}`;
+        details.src = `/reaction-details188.js${reactionBuildSuffix188 || buildSuffix}`;
         details.dataset.fpReactionDetails188 = '1';
         details.async = true;
         details.onload = loadReactionInteraction188;
@@ -344,7 +351,7 @@
         if (window.FPReactionPicker188) { loadReactionDetails188(); return; }
         if (document.querySelector('script[data-fp-reaction-picker188]')) return;
         const picker = document.createElement('script');
-        picker.src = `/reaction-picker188.js${buildSuffix}`;
+        picker.src = `/reaction-picker188.js${reactionBuildSuffix188 || buildSuffix}`;
         picker.dataset.fpReactionPicker188 = '1';
         picker.async = true;
         picker.onload = loadReactionDetails188;
@@ -356,7 +363,7 @@
         if (window.FPReactionRenderer188) { loadReactionPicker188(); return; }
         if (document.querySelector('script[data-fp-reaction-renderer188]')) return;
         const renderer = document.createElement('script');
-        renderer.src = `/reaction-renderer188.js${buildSuffix}`;
+        renderer.src = `/reaction-renderer188.js${reactionBuildSuffix188 || buildSuffix}`;
         renderer.dataset.fpReactionRenderer188 = '1';
         renderer.async = true;
         renderer.onload = loadReactionPicker188;
@@ -366,14 +373,14 @@
         if (window.FPReactionManager188) { loadReactionRenderer188(); return; }
         if (document.querySelector('script[data-fp-reaction-manager188]')) return;
         const arbiter = document.createElement('script');
-        arbiter.src = `/reaction-arbiter188.js${buildSuffix}`;
+        arbiter.src = `/reaction-arbiter188.js${reactionBuildSuffix188 || buildSuffix}`;
         arbiter.dataset.fpReactionArbiter188 = '1';
         arbiter.async = true;
         arbiter.onload = () => {
           if (window.FPReactionManager188) { loadReactionRenderer188(); return; }
           if (document.querySelector('script[data-fp-reaction-manager188]')) return;
           const manager = document.createElement('script');
-          manager.src = `/reaction-manager188.js${buildSuffix}`;
+          manager.src = `/reaction-manager188.js${reactionBuildSuffix188 || buildSuffix}`;
           manager.dataset.fpReactionManager188 = '1';
           manager.async = true;
           manager.onload = loadReactionRenderer188;
