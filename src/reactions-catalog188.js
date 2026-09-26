@@ -62,7 +62,14 @@ function publicCatalog() {
     version: catalog.version,
     maxPerParticipantPerMessage: catalog.maxPerParticipantPerMessage,
     quickLimit: catalog.quickLimit,
-    reactions: catalog.reactions.map((item) => ({ ...item }))
+    reactions: catalog.reactions.map((item) => ({
+      id: item.id,
+      type: item.type,
+      value: item.value,
+      category: item.category,
+      enabled: item.enabled,
+      ...(item.quickOrder != null ? { quickOrder: item.quickOrder } : {})
+    }))
   };
 }
 
