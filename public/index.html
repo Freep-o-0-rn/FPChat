@@ -188,7 +188,7 @@
       const bootErrors = [];
       // Build 186.4: bounded diagnostics of this loader's existing JS/CSS.
       // No URLs, query strings, user identifiers or arbitrary filenames exported.
-      const bootAssetNames186 = new Set('app.js boot-ready152.js build165-ui.js chat-fix.css chat-fix.js chat-opening129.js chat-request-actions146.js chat-request-cooldown160.js chat-request-owner147.js chat-request-system147.js connection170.js dom-lifecycle173.js gesture-manager135.js global-search156.js history174.js layer-manager173.js lifecycle170.js media-gallery134.css media-gallery134.js media-send170.js message-actions.css message-actions.js message-context-fix.css message-context-fix.js message-context.css message-context.js message-pins-screen114.css message-pins-screen114.js message-pins-screen115.css message-pins-screen115.js message-pins.css message-pins.js message-selection.css message-selection.js message-store172.js network171.js notification-manager181.js reply-swipe-visual184.css reply-swipe-visual184.js room-context170.js room-lifecycle.css room-lifecycle.js room-menu-touch151.js room-open170.js runtime169.js send-manager177.js settings-fix.js settings-ui131.css settings-ui131.js storage167-cache-fix.js storage167-clear-guard.js storage167.js storage168.js styles.css sw.js swipe-fix.js sync-coordinator176.js system-chat144.js system-ui148.js text-send170.js typing.css typing.js ui-hotfix128.js user-blocks165.js username-profile140.js username-search143.js viewport-fix.js viewport-layout136.js voice-cancel125.js voice-pins127.css voice-pins127.js voice-polish123.css voice-polish123.js voice.css voice.js work174.js reaction-arbiter188.js reaction-manager188.js reaction-renderer188.js reaction-picker188.js reaction-interaction188.js'.split(' '));
+      const bootAssetNames186 = new Set('app.js boot-ready152.js build165-ui.js chat-fix.css chat-fix.js chat-opening129.js chat-request-actions146.js chat-request-cooldown160.js chat-request-owner147.js chat-request-system147.js connection170.js dom-lifecycle173.js gesture-manager135.js global-search156.js history174.js layer-manager173.js lifecycle170.js media-gallery134.css media-gallery134.js media-send170.js message-actions.css message-actions.js message-context-fix.css message-context-fix.js message-context.css message-context.js message-pins-screen114.css message-pins-screen114.js message-pins-screen115.css message-pins-screen115.js message-pins.css message-pins.js message-selection.css message-selection.js message-store172.js network171.js notification-manager181.js reply-swipe-visual184.css reply-swipe-visual184.js room-context170.js room-lifecycle.css room-lifecycle.js room-menu-touch151.js room-open170.js runtime169.js send-manager177.js settings-fix.js settings-ui131.css settings-ui131.js storage167-cache-fix.js storage167-clear-guard.js storage167.js storage168.js styles.css sw.js swipe-fix.js sync-coordinator176.js system-chat144.js system-ui148.js text-send170.js typing.css typing.js ui-hotfix128.js user-blocks165.js username-profile140.js username-search143.js viewport-fix.js viewport-layout136.js voice-cancel125.js voice-pins127.css voice-pins127.js voice-polish123.css voice-polish123.js voice.css voice.js work174.js reaction-arbiter188.js reaction-manager188.js reaction-renderer188.js reaction-picker188.js reaction-details188.js reaction-interaction188.js'.split(' '));
       const bootAssetLimit186 = 160, bootAssets186 = [];
       let bootAssetsDropped186 = 0, bootAssetsStoppedAt186 = null;
       const bootRound186 = value => Math.round(value * 10) / 10;
@@ -328,16 +328,28 @@
         interaction.async = true;
         document.body.appendChild(interaction);
       };
+      const loadReactionDetails188 = () => {
+        if (window.FPReactionDetails188) { loadReactionInteraction188(); return; }
+        if (document.querySelector('script[data-fp-reaction-details188]')) return;
+        const details = document.createElement('script');
+        details.src = `/reaction-details188.js${buildSuffix}`;
+        details.dataset.fpReactionDetails188 = '1';
+        details.async = true;
+        details.onload = loadReactionInteraction188;
+        // Details is optional. Interaction keeps the Build 188.4 context fallback.
+        details.onerror = loadReactionInteraction188;
+        document.body.appendChild(details);
+      };
       const loadReactionPicker188 = () => {
-        if (window.FPReactionPicker188) { loadReactionInteraction188(); return; }
+        if (window.FPReactionPicker188) { loadReactionDetails188(); return; }
         if (document.querySelector('script[data-fp-reaction-picker188]')) return;
         const picker = document.createElement('script');
         picker.src = `/reaction-picker188.js${buildSuffix}`;
         picker.dataset.fpReactionPicker188 = '1';
         picker.async = true;
-        picker.onload = loadReactionInteraction188;
-        // Picker is optional. If it fails, Build 188.4 quick reactions still load.
-        picker.onerror = loadReactionInteraction188;
+        picker.onload = loadReactionDetails188;
+        // Picker is optional. Details/quick reactions still load without it.
+        picker.onerror = loadReactionDetails188;
         document.body.appendChild(picker);
       };
       const loadReactionRenderer188 = () => {
