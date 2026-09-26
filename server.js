@@ -160,7 +160,8 @@ const fpMessageReactions188 = createMessageReactions188({
   isRoomOpen,
   roomStatePayload,
   userBlocks: fpUserBlocks165,
-  toIsoUtc
+  toIsoUtc,
+  getOnlineParticipantCount: countOnlineRoomParticipants188
 });
 
 function randomToken(length) {
@@ -823,6 +824,17 @@ function hasVisibleSocketForDevice(deviceId) {
   if (!sockets) return false;
   for (const client of sockets) if (client.readyState === WebSocket.OPEN && client.visible === true) return true;
   return false;
+}
+
+function countOnlineRoomParticipants188(roomId) {
+  const id = Number(roomId);
+  if (!Number.isSafeInteger(id) || id <= 0) return 0;
+  let count = 0;
+  for (const participant of q.listParticipantsByRoom.all(id)) {
+    // One device = one participant. Multiple tabs/sockets never increase the count.
+    if (hasVisibleSocketForDevice(participant.device_id)) count += 1;
+  }
+  return count;
 }
 function syncDevicePresence(deviceId) {
   if (!deviceId) return;
