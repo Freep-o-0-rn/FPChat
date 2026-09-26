@@ -586,7 +586,7 @@
             messageContext.src = `/message-context.js${buildSuffix}`;
             messageContext.onload = () => {
               const messageContextFix = document.createElement('script');
-              messageContextFix.src = `/message-context-fix.js${buildSuffix}`;
+              messageContextFix.src = `/message-context-fix.js${reactionBuildSuffix188 || buildSuffix}`;
               messageContextFix.onload = () => {
                 const messageActions = document.createElement('script');
                 messageActions.src = `/message-actions.js${buildSuffix}`;
