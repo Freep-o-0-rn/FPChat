@@ -18,6 +18,8 @@
     rightClicks: 0,
     quickOpens: 0,
     quickClicks: 0,
+    pickerOpens: 0,
+    pickerSelections: 0,
     mutationsFailed: 0,
     detailsFallbacks: 0
   };
@@ -93,6 +95,12 @@
           margin-right:8px;
         }
         .message-context-cluster.incoming .${QUICK_CLASS}{margin-left:8px}
+        .fp-reaction-quick-button188{
+          width:34px;
+          height:36px;
+          flex-basis:34px;
+          font-size:22px;
+        }
       }
       @media (prefers-reduced-motion:reduce){
         .fp-reaction-quick-button188{transition:none}
@@ -294,14 +302,19 @@
     openDetailsOrFallback(info, { x: event.clientX, y: event.clientY }, 'mouse');
   }, true);
 
-  function updateQuickSelection(strip, roomId, messageId) {
+  function mineIds(roomId, messageId) {
     const row = window.FPReactionManager188?.get?.(roomId, messageId);
-    const mine = new Set((row?.myReactions || []).map((item) => String(item.reactionId || '')));
+    return new Set((row?.myReactions || []).map((item) => String(item.reactionId || '')));
+  }
+
+  function updateQuickSelection(strip, roomId, messageId) {
+    const mine = mineIds(roomId, messageId);
     strip.querySelectorAll('.fp-reaction-quick-button188[data-reaction-id]').forEach((button) => {
       const selected = mine.has(String(button.dataset.reactionId || ''));
       button.classList.toggle('is-mine', selected);
       button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
+    window.FPReactionPicker188?.syncSelection?.(strip, mine);
   }
 
   function decorateContext(contextState, { clone, sourceRect, closeContext } = {}) {
@@ -327,7 +340,10 @@
     contextState.cluster.style.paddingTop = `${Math.max(12, currentPadding - reserve)}px`;
     stats.quickOpens += 1;
 
-    void manager.getQuickReactions().then((reactions) => {
+    void Promise.all([
+      manager.getQuickReactions(),
+      manager.getAvailableReactions()
+    ]).then(([reactions, available]) => {
       if (!strip.isConnected || !contextState.root?.isConnected) return;
       strip.replaceChildren();
       for (const reaction of reactions || []) {
@@ -358,6 +374,37 @@
         });
         strip.appendChild(button);
       }
+
+      const picker = window.FPReactionPicker188;
+      if (picker?.attach) {
+        picker.attach({
+          strip,
+          clone,
+          catalog: available,
+          getMineIds: () => mineIds(roomId, messageId),
+          onExpandedChange: (expanded) => {
+            if (expanded) stats.pickerOpens += 1;
+          },
+          onSelect: (reaction) => {
+            const info = {
+              roomId,
+              messageId,
+              reactionId: String(reaction?.id || ''),
+              message: original,
+              pill: null
+            };
+            stats.pickerSelections += 1;
+            void toggle(info, {
+              reactionId: String(reaction?.id || ''),
+              type: String(reaction?.type || 'emoji'),
+              value: String(reaction?.value || ''),
+              enabled: reaction?.enabled !== false
+            }).catch((error) => reportMutationFailure(error, info));
+            closeContext?.();
+          }
+        });
+      }
+
       updateQuickSelection(strip, roomId, messageId);
     }).catch(() => {
       if (!strip.isConnected) return;
@@ -400,7 +447,7 @@
       gestureAdmission: 'FPGesture135',
       longPressMs: LONG_PRESS_MS,
       moveCancelPx: MOVE_CANCEL_PX,
-      owns: 'reaction pill tap/long-press/right-click + quick reaction strip',
+      owns: 'reaction pill tap/long-press/right-click + quick reaction strip + picker selection delegation',
       mutationOwner: 'FPReactionManager188 + FPReactionArbiter188',
       layerOwner: 'FPLayer173/message-context'
     });
