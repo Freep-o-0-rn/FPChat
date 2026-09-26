@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.5` — `build/188-reactions-development`; Telegram-style reactions, полный каталог реакций поверх Build 188.4.
+**Сборка разработки:** `188.6` — `build/188-reactions-development`; Telegram-style reactions, Reaction Details поверх Build 188.5.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.5–188.1** | Reactions: foundation, bounded history/RAM, compact pills, quick reactions и раскрываемый полный каталог |
+| 26.09.2026 | **Build 188.6–188.1** | Reactions: foundation, bounded history/RAM, pills, quick/full picker и lazy Reaction Details |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,27 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.5 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.6 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.6 — Reaction Details
+
+- Long press / ПКМ по существующему reaction pill теперь открывает `FPReactionDetails188` вместо временного fallback на обычный message-context.
+- Details использует существующий modal-contract: `aria-modal="true"` → `FPLayer173`; отдельный LayerManager не создаётся.
+- Вкладки: `Все` + отдельные reaction tabs с текущими count.
+- В `Все` один участник отображается ровно одной строкой; строка содержит его текущий набор реакций.
+- Порядок `Все`: по времени **последней всё ещё активной реакции** пользователя DESC. Удаление реакции само по себе не создаёт новую активность и не подделывает timestamp оставшихся реакций.
+- В конкретной вкладке, например ❤️, выше пользователь, который последним поставил именно ❤️.
+- Reactor list загружается **по 30 строк** через keyset cursor, без OFFSET и без загрузки всех участников группы.
+- Для защиты от гонок каждый lazy-page привязан к `reactionRevision`; если между страницами reaction-state изменился, сервер возвращает `409 REACTION_DETAILS_STALE` вместо смешивания разных snapshot.
+- При живых reaction updates открытый Details не делает auto-refetch на каждую реакцию: показывает `Обновить`, чтобы не создавать request storm в больших группах.
+- На сервере Details page использует фиксированное число set-based SQL запросов; profile/block projection не делает N+1 запросов по участникам.
+- Строка участника использует текущий display name, профильный круг/инициалы и будущий avatar slot.
+- Открытие профиля делегируется существующему public-profile UI через additive `FPUsernameSearch143.openProfile(...)`.
+- Profile action показывается только если профиль разрешён текущими настройками: учитывается `allow_username_search`; профиль также не отдаётся зрителю, которого пользователь заблокировал. Свой скрытый профиль остаётся доступен самому пользователю.
+- Details использует `FPNetwork171`, привязан к `FPRoomContext170`, не создаёт второй WebSocket, persistent cache, observer или polling.
+- Если optional Details asset не загрузился, сохраняется безопасный fallback Build 188.4 на обычный message-context.
+- Добавлен `test:188.6`.
+- [Контракт Build 188.6](docs/Build188_6_ReactionDetails.md).
 
 ### Build 188.5 — full reaction catalog picker
 
