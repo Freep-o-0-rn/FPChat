@@ -47,8 +47,11 @@
         white-space:nowrap;
         cursor:pointer;
         touch-action:manipulation;
-        pointer-events:auto;
+        pointer-events:none;
         transition:background .12s ease,border-color .12s ease,color .12s ease;
+      }
+      :root.fp-reaction-interaction188-ready .${PILL}{
+        pointer-events:auto;
       }
       .${PILL}:focus-visible{
         outline:2px solid var(--accent);
