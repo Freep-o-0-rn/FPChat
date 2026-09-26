@@ -7,11 +7,14 @@ const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g,
 
 const picker = read('public/reaction-picker188.js');
 const interaction = read('public/reaction-interaction188.js');
+const manager = read('public/reaction-manager188.js');
 const index = read('public/index.html');
 const catalog = JSON.parse(read('public/reactions-catalog188.json'));
+const { publicCatalog } = require(path.join(root, 'src/reactions-catalog188.js'));
 
 new Function(picker);
 new Function(interaction);
+new Function(manager);
 
 assert(picker.includes("parentOwner: 'FPReactionInteractionManager188'"), 'picker is not a worker under ReactionInteractionManager');
 assert(picker.includes("layer: 'existing message-context only'"), 'picker introduced a separate UI layer');
@@ -45,6 +48,8 @@ assert(interaction.includes('picker?.attach'), 'interaction owner does not attac
 assert(interaction.includes('window.FPReactionPicker188?.syncSelection?.(strip, mine);'), 'picker selection does not follow authoritative/optimistic reaction changes');
 assert(interaction.includes('void toggle(info,'), 'picker selection bypasses shared reaction mutation path');
 assert(interaction.includes('closeContext?.();'), 'reaction selection no longer closes message context');
+assert(manager.includes('item?.quickOrder == null'), 'client quick filter again accepts null quickOrder');
+assert(manager.includes('.slice(0, quickLimit)'), 'client quick strip is no longer capped to quickLimit');
 
 assert(index.includes('reaction-picker188.js'), 'picker asset missing from known boot assets');
 assert(index.includes('renderer.onload = loadReactionPicker188;'), 'picker is not ordered after renderer');
@@ -57,8 +62,16 @@ assert(Number.isSafeInteger(catalog.version) && catalog.version > 0, 'catalog ve
 assert(Number.isSafeInteger(catalog.quickLimit) && catalog.quickLimit > 0, 'catalog quickLimit invalid');
 assert(Array.isArray(catalog.reactions), 'catalog reactions missing');
 const enabled = catalog.reactions.filter((item) => item?.enabled !== false);
-const quick = enabled.filter((item) => Number.isSafeInteger(Number(item.quickOrder)));
+const quick = enabled.filter((item) => item?.quickOrder != null && Number.isSafeInteger(Number(item.quickOrder)));
 assert.equal(quick.length, catalog.quickLimit, 'quick reaction slots do not match quickLimit');
+
+const publicPayload = publicCatalog();
+const publicQuick = publicPayload.reactions.filter((item) => item.quickOrder != null);
+assert.equal(publicQuick.length, publicPayload.quickLimit, 'public catalog leaked non-quick reactions into quick slots');
+assert(publicPayload.reactions
+  .filter((item) => !catalog.reactions.find((raw) => raw.id === item.id)?.quickOrder)
+  .every((item) => !Object.prototype.hasOwnProperty.call(item, 'quickOrder')),
+  'public catalog serializes missing quickOrder as null/zero-compatible data');
 assert(enabled.length > quick.length, 'full catalog does not contain reactions beyond quick strip');
 assert.equal(new Set(catalog.reactions.map((item) => item.id)).size, catalog.reactions.length, 'reaction catalog ids are duplicated');
 assert(enabled.every((item) => typeof item.category === 'string' && item.category.length > 0), 'enabled reaction lacks category metadata');
