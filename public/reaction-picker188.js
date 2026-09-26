@@ -168,6 +168,13 @@
         .fp-reaction-picker-grid188{grid-template-columns:repeat(6,minmax(0,1fr))}
         .${ITEM_CLASS}{font-size:24px}
       }
+      @media (max-width:340px){
+        .${TOGGLE_CLASS}{
+          width:31px;
+          height:34px;
+          flex-basis:31px;
+        }
+      }
       @media (prefers-reduced-motion:reduce){
         .${TOGGLE_CLASS},
         .fp-reaction-picker-chevron188,
