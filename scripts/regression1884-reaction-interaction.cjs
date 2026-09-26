@@ -38,6 +38,9 @@ assert(managerSource.includes("operation: mine ? 'remove' : 'add'"), 'tap is not
 assert(managerSource.includes("method = op === 'add' ? 'PUT' : 'DELETE'"), 'server mutation protocol is no longer explicit ADD/REMOVE');
 assert(managerSource.includes('cancelPendingRoom(roomId'), 'room transition cancellation hook missing');
 assert(managerSource.includes('cancelPendingMessage(roomId'), 'message deletion cancellation hook missing');
+assert(managerSource.includes('const roomContext = contextOwner?.current?.() || null;'), 'reaction mutation does not capture RoomContext at enqueue time');
+assert(managerSource.includes('roomContext,'), 'pending reaction entry does not retain captured RoomContext');
+assert(managerSource.includes('const context = entry?.roomContext || null;'), 'network abort bridge uses a later room context instead of the captured one');
 assert(!managerSource.includes('setInterval('), 'reaction mutation manager introduced polling');
 assert(!managerSource.includes('localStorage.'), 'reaction mutations became persistent');
 assert(!managerSource.includes('indexedDB'), 'reaction mutations became persistent');
