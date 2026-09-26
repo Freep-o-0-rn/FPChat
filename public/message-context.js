@@ -683,25 +683,20 @@
       point
     };
     const menu = buildMenu(nextState);
-    const menuHeight = mediaKind === 'image' ? 154 : 106;
-    const spaceBelow = window.innerHeight - sourceRect.bottom;
-    const spaceAbove = sourceRect.top;
-    const menuBefore = spaceBelow < menuHeight + 18 && spaceAbove > menuHeight + 18;
 
+    // Build 189.9: fixed Telegram-like composition.
+    // Reactions are inserted above the selected message by the reaction manager,
+    // while message actions always stay below the selected message. Geometry is
+    // owned by FPContextLayout189, so DOM order no longer follows source position.
     const topPadding = Math.max(12, Math.min(sourceRect.top, window.innerHeight * 0.62));
     cluster.style.paddingTop = `${topPadding}px`;
-    if (menuBefore) {
-      cluster.appendChild(menu);
-      cluster.appendChild(clone);
-      menu.classList.add('message-context-menu-before');
-    } else {
-      cluster.appendChild(clone);
-      cluster.appendChild(menu);
-    }
+    cluster.appendChild(clone);
+    cluster.appendChild(menu);
+
     window.FPReactionInteractionManager188?.decorateContext?.(nextState, {
       menu,
       clone,
-      menuBefore,
+      menuBefore: false,
       sourceRect,
       closeContext
     });
