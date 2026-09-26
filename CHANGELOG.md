@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.1` — `build/188-reactions-development`; отдельная ветка Telegram-style reactions поверх Build 187.1.
+**Сборка разработки:** `188.2` — `build/188-reactions-development`; Telegram-style reactions, bounded history/RAM integration поверх Build 188.1.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.1** | Reaction foundation: отдельные ReactionManager/Arbiter, каталог, SQLite, revision и ADD/REMOVE contract |
+| 26.09.2026 | **Build 188.2–188.1** | Reactions: foundation, bulk summary, lazy-history integration, bounded RAM и WS/reconnect state |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,21 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.1 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.2 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.2 — reaction history / bounded RAM
+
+- Reaction summary подключён к существующему `FPHistory174`, но ReactionManager не становится вторым владельцем истории, scroll или message mount.
+- Lazy-history запрашивает reaction summary только с `reactions=1`; unread/watchdog/background message reads дополнительный reaction SQL не выполняют.
+- Для страницы используется **один bulk SQLite aggregate**, а не N+1 по сообщениям.
+- `FPReactionManager188` хранит reaction-state только для текущего bounded history window; WS-события по незагруженным сообщениям игнорируются и RAM не занимают.
+- Initial history summaries безопасно переживают позднюю загрузку ReactionManager через bounded staging внутри active history и освобождаются после ingest.
+- `reaction:update` проходит через существующий WebSocket worker и не меняет unread/read, last message или сортировку чатов.
+- Для пропущенных во время offline/sleep реакций добавлен один bounded current-window reconcile: максимум **300 loaded message IDs**, только для открытого чата, с RoomContext cancellation.
+- Delete-for-self/delete-for-all освобождают локальный reaction-state и отменяют ещё не выполненные client reaction operations; серверная семантика удаления остаётся принятой ранее.
+- Удаление комнаты из локального списка освобождает reaction RAM; media cache не затрагивается.
+- Добавлен `test:188.2`.
+- [Контракт Build 188.2](docs/Build188_2_ReactionHistory.md).
 
 ### Build 188.1 — Reaction Foundation
 
