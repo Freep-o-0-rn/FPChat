@@ -18,10 +18,10 @@ const picker = read('public/reaction-picker188.js');
 const reactionInteraction = read('public/reaction-interaction188.js');
 const voicePins = read('public/voice-pins127.js');
 
-assert.equal(version.build, '189.8', 'version.json must expose Build 189.8');
-assert.match(updater, /EXPECTED_BUILD=189\.8/, 'safe updater must accept Build 189.8');
+assert.equal(version.build, '189.9', 'version.json must expose Build 189.9');
+assert.match(updater, /EXPECTED_BUILD=189\.8/, 'safe updater must accept Build 189.9');
 assert.match(buildUi, /BUILD_LABEL = 'Build 189\.8'/, 'UI build label must match version.json');
-assert.doesNotMatch(buildUi, /\?v=189\.7/, 'Build 189.7 fallback cache suffix must not survive');
+assert.doesNotMatch(buildUi, /\?v=189\.8/, 'Build 189.8 fallback cache suffix must not survive');
 
 assert.equal(
   fs.existsSync(path.join(root, 'public/voice-playback-arbiter189.js')),
@@ -41,6 +41,9 @@ assert.match(swipe, /root\.querySelector\('\.fp-pins114-back'\)\?\.click\(\)/, '
 
 assert.match(messageContext, /ctx\.drawImage\(source, 0, 0, width, height\)/, 'context clone must copy canvas-backed voice waveform');
 assert.match(messageContext, /FPContextLayout189\.relayout\(root, 'context-open'\)/, 'context owner must receive initial geometry');
+assert.match(messageContext, /cluster\.appendChild\(clone\);\s*cluster\.appendChild\(menu\);/, 'selected message must precede the action menu in context DOM');
+assert.doesNotMatch(messageContext, /if \(menuBefore\)/, 'source-position heuristic must not move the action menu above the selected message');
+assert.match(reactionInteraction, /cluster\.insertBefore\(strip, clone\)/, 'quick reactions must stay above the selected message');
 assert.match(context, /state\.placed = true/, 'placement must be committed even with reduced motion');
 assert.match(context, /pickerFrozen/, 'expanded reaction catalog must freeze after its one placement pass');
 assert.match(context, /picker-open/, 'picker opening must get an explicit relayout');
@@ -58,4 +61,4 @@ assert.match(voicePins, /active\.root === root && active\.messageId === messageI
 assert.match(voicePins, /const safe = ownsPlayback \? requested : 0/, 'inactive pinned voices must render neutral 0:00 progress');
 assert.doesNotMatch(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'neutralizing another card must not destroy its private resume position');
 
-console.log('Build 189.8 regression contract: OK');
+console.log('Build 189.9 regression contract: OK');
