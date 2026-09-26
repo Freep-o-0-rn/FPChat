@@ -589,7 +589,7 @@
               messageContextFix.src = `/message-context-fix.js${reactionBuildSuffix188 || buildSuffix}`;
               messageContextFix.onload = () => {
                 const messageActions = document.createElement('script');
-                messageActions.src = `/message-actions.js${buildSuffix}`;
+                messageActions.src = `/message-actions.js${reactionBuildSuffix188 || buildSuffix}`;
                 messageActions.onload = () => {
                   const messagePins = document.createElement('script');
                   messagePins.src = `/message-pins.js${buildSuffix}`;
