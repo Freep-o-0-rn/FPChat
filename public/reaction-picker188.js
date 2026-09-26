@@ -149,6 +149,11 @@
         font-size:13px;
       }
       @media (max-width:900px){
+        .${TOGGLE_CLASS}{
+          width:34px;
+          height:34px;
+          flex-basis:34px;
+        }
         .${PANEL_CLASS}{
           width:min(336px,calc(100vw - 20px));
           max-height:min(300px,48vh);
