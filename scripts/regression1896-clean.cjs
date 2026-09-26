@@ -18,10 +18,10 @@ const picker = read('public/reaction-picker188.js');
 const reactionInteraction = read('public/reaction-interaction188.js');
 const voicePins = read('public/voice-pins127.js');
 
-assert.equal(version.build, '189.7', 'version.json must expose Build 189.7');
-assert.match(updater, /EXPECTED_BUILD=189\.7/, 'safe updater must accept Build 189.7');
+assert.equal(version.build, '189.8', 'version.json must expose Build 189.8');
+assert.match(updater, /EXPECTED_BUILD=189\.7/, 'safe updater must accept Build 189.8');
 assert.match(buildUi, /BUILD_LABEL = 'Build 189\.6'/, 'UI build label must match version.json');
-assert.doesNotMatch(buildUi, /\?v=189\.5/, 'Build 189.5 fallback cache suffix must not survive');
+assert.doesNotMatch(buildUi, /\?v=189\.7/, 'Build 189.5 fallback cache suffix must not survive');
 
 assert.equal(
   fs.existsSync(path.join(root, 'public/voice-playback-arbiter189.js')),
@@ -47,12 +47,15 @@ assert.match(context, /picker-open/, 'picker opening must get an explicit relayo
 assert.doesNotMatch(context, /visualViewport\?\.addEventListener\?\.\('scroll'/, 'picker scroll/browser chrome scroll must not feed context geometry');
 assert.match(picker, /overflow-y:auto/, 'full reaction catalog must remain internally scrollable');
 assert.match(picker, /delegateLayout\(st,next\?'picker-open':'picker-close'\)/, 'picker must request one geometry pass after final expanded DOM state');
-assert.match(picker, /height:min\(360px,45vh\)/, 'mobile full reaction catalog must expose more than two rows');
+assert.match(picker, /height:min\(390px,48vh\)/, 'mobile full reaction catalog must expose roughly 4-5 visible rows');
+assert.match(reactionInteraction, /\{ menu, clone, sourceRect, closeContext \}/, 'interaction manager must receive the context action menu');
 assert.match(reactionInteraction, /menu\.hidden = Boolean\(expanded\)/, 'context action menu must hide while full reactions are open');
+assert.match(reactionInteraction, /admitPickerToggle/, 'full reaction toggle admission must stay in the existing interaction manager');
+assert.match(reactionInteraction, /claimAction\?\.\('reaction-picker-toggle'/, 'full reaction toggle must be arbitrated by FPGesture135');
 assert.match(reactionInteraction, /fp-reaction-picker-expanded188/, 'expanded reaction state must be explicit on the context cluster');
 
-assert.match(voicePins, /resetOtherPlaybackUi\(root, \{ resetProgress: true \}\)/, 'starting pinned audio must neutralize every other card');
-assert.match(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'non-active pinned voices must not inherit another voice progress');
-assert.match(voicePins, /const isActive = active\?\.messageId === String\(pin\.messageId\)/, 'existing cards must read the live Audio clock only for the active message');
+assert.match(voicePins, /active\.root === root && active\.messageId === messageId/, 'waveform progress must have one concrete DOM/audio owner');
+assert.match(voicePins, /const safe = ownsPlayback \? requested : 0/, 'inactive pinned voices must render neutral 0:00 progress');
+assert.doesNotMatch(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'neutralizing another card must not destroy its private resume position');
 
-console.log('Build 189.7 regression contract: OK');
+console.log('Build 189.8 regression contract: OK');
