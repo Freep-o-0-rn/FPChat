@@ -284,9 +284,9 @@
         button.setAttribute('aria-label', `Реакция ${String(reaction.value || '')}`);
         button.setAttribute('aria-pressed', 'false');
         renderVisual(button, reaction);
-        bindActivation(button, () => {
+        bindActivation(button, (_event, fromMousePointer) => {
           stats.selections += 1;
-          state.onSelect?.(reaction);
+          state.onSelect?.(reaction, { fromMousePointer: Boolean(fromMousePointer) });
         });
         grid.appendChild(button);
         stats.renderedItems += 1;
