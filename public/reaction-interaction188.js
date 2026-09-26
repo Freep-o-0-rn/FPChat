@@ -1,5 +1,5 @@
-/* Build 188.4: reaction interaction owner.
-   Owns reaction tap/long-press/right-click and quick-strip UI only.
+/* Build 188.5: reaction interaction owner.
+   Owns reaction tap/long-press/right-click, quick-strip semantics and picker selection delegation.
    Gesture admission remains with FPGesture135; message-context remains its existing owner. */
 (() => {
   if (window.FPReactionInteractionManager188) return;
