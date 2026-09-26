@@ -470,12 +470,19 @@
         const data = await response.json();
         const reactions = Array.isArray(data?.reactions) ? data.reactions.map((item) => Object.freeze({ ...item })) : [];
         const byId = new Map(reactions.map((item) => [String(item.id), item]));
-        const quick = reactions.filter((item) => item.enabled !== false && Number.isSafeInteger(Number(item.quickOrder)))
-          .sort((a, b) => Number(a.quickOrder) - Number(b.quickOrder) || String(a.id).localeCompare(String(b.id)));
+        const quickLimit = Math.max(1, Number(data?.quickLimit || 7) || 7);
+        const quick = reactions
+          .filter((item) => {
+            if (item?.enabled === false || item?.quickOrder == null) return false;
+            const order = Number(item.quickOrder);
+            return Number.isSafeInteger(order) && order >= 1 && order <= quickLimit;
+          })
+          .sort((a, b) => Number(a.quickOrder) - Number(b.quickOrder) || String(a.id).localeCompare(String(b.id)))
+          .slice(0, quickLimit);
         catalogState = Object.freeze({
           version: Math.max(0, Number(data?.version || 0) || 0),
           maxPerParticipantPerMessage: Math.max(1, Number(data?.maxPerParticipantPerMessage || 3) || 3),
-          quickLimit: Math.max(1, Number(data?.quickLimit || 7) || 7),
+          quickLimit,
           reactions: Object.freeze(reactions),
           quick: Object.freeze(quick),
           byId
