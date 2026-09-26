@@ -16,7 +16,7 @@ const index = read('public/index.html');
 
 for (const source of [
   arbiterSource, managerSource, interactionSource, pickerSource,
-  detailsSource, contextFix, messageActions, index
+  detailsSource, contextFix, messageActions
 ]) new Function(source);
 
 // Desktop input must not depend solely on click after legacy capture handlers.
