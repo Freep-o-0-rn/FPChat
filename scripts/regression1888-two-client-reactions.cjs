@@ -70,7 +70,14 @@ function serverSummary(viewerId = null) {
       count: rows.length,
       ...(viewerId != null ? { mine: rows.some((row) => row.participantId === viewerId) } : {})
     };
-    if (rows.length <= 2) result.previewParticipantIds = ordered.map((row) => row.participantId);
+    if (rows.length <= 2) {
+      result.previewParticipantIds = ordered.map((row) => row.participantId);
+      result.previewParticipants = ordered.map((row) => ({
+        participantId: row.participantId,
+        displayName: `User ${row.participantId}`,
+        avatarUrl: null
+      }));
+    }
     return result;
   }).sort((a, b) => b.count - a.count || a.reactionId.localeCompare(b.reactionId));
 
@@ -242,6 +249,11 @@ function createClient(participantId) {
   assert.equal(secondState.reactions[0]?.count, 1);
   assert.equal(secondState.reactions[0]?.mine, false);
   assert.deepEqual(secondState.reactions[0]?.previewParticipantIds, [1]);
+  assert.deepEqual(
+    secondState.reactions[0]?.previewParticipants?.map((item) => item.displayName),
+    ['User 1'],
+    'remote client lost reactor presentation and would render FP fallback'
+  );
 
   const addSecond = second.manager.toggleReaction({
     roomId,
@@ -262,6 +274,11 @@ function createClient(participantId) {
   assert.equal(secondState.reactions[0]?.count, 2);
   assert.equal(secondState.reactions[0]?.mine, true);
   assert.deepEqual(secondState.reactions[0]?.previewParticipantIds, [2, 1]);
+  assert.deepEqual(
+    secondState.reactions[0]?.previewParticipants?.map((item) => item.displayName),
+    ['User 2', 'User 1'],
+    'two-reactor presentation order diverged from preview participant order'
+  );
 
   await first.manager.toggleReaction({
     roomId,
