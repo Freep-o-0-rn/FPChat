@@ -134,9 +134,20 @@
     return raw.toUpperCase() || 'FP';
   }
 
-  function participantPresentation(participantId) {
+  function participantPresentation(participantId, provided = null) {
     const id = numericId(participantId);
     if (!id) return { participantId: null, displayName: 'FP', avatarUrl: null };
+
+    if (Number(provided?.participantId) === id) {
+      const displayName = cleanName(provided?.displayName || '');
+      if (displayName || provided?.avatarUrl) {
+        return {
+          participantId: id,
+          displayName: displayName || 'FP',
+          avatarUrl: provided?.avatarUrl || null
+        };
+      }
+    }
 
     const me = typeof state !== 'undefined' ? state?.me : null;
     if (Number(me?.id) === id) {
@@ -156,8 +167,8 @@
     };
   }
 
-  function makeAvatar(participantId) {
-    const presentation = participantPresentation(participantId);
+  function makeAvatar(participantId, provided = null) {
+    const presentation = participantPresentation(participantId, provided);
     const avatar = document.createElement('span');
     avatar.className = 'fp-reaction-avatar188';
     avatar.dataset.participantId = presentation.participantId ? String(presentation.participantId) : '';
@@ -179,12 +190,20 @@
     const preview = Array.isArray(reaction?.previewParticipantIds)
       ? reaction.previewParticipantIds.map(Number).filter(Boolean).slice(0, 2)
       : [];
+    const presentations = Array.isArray(reaction?.previewParticipants)
+      ? reaction.previewParticipants.slice(0, 2).map((entry) => [
+          Number(entry?.participantId) || 0,
+          cleanName(entry?.displayName || ''),
+          String(entry?.avatarUrl || '')
+        ])
+      : [];
     return JSON.stringify([
       String(reaction?.reactionId || ''),
       String(reaction?.value || ''),
       Math.max(0, Number(reaction?.count || 0) || 0),
       reaction?.mine === true,
-      preview
+      preview,
+      presentations
     ]);
   }
 
@@ -195,6 +214,9 @@
     const count = Math.max(0, Number(reaction?.count || 0) || 0);
     const preview = Array.isArray(reaction?.previewParticipantIds)
       ? reaction.previewParticipantIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0).slice(0, 2)
+      : [];
+    const previewParticipants = Array.isArray(reaction?.previewParticipants)
+      ? reaction.previewParticipants.slice(0, 2)
       : [];
 
     pill.dataset.fpReactionSignature188 = signature;
@@ -210,7 +232,13 @@
     if ((count === 1 || count === 2) && preview.length === count) {
       const avatars = document.createElement('span');
       avatars.className = 'fp-reaction-avatars188';
-      preview.forEach((participantId) => avatars.appendChild(makeAvatar(participantId)));
+      preview.forEach((participantId) => {
+        const provided = previewParticipants.find((entry) => Number(entry?.participantId) === participantId) || null;
+        const avatar = makeAvatar(participantId, provided);
+        avatar.setAttribute('aria-hidden', 'false');
+        avatar.setAttribute('title', cleanName(provided?.displayName || participantPresentation(participantId)?.displayName || '') || 'Профиль');
+        avatars.appendChild(avatar);
+      });
       pill.appendChild(avatars);
     } else {
       const value = document.createElement('span');
