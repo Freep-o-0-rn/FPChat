@@ -217,17 +217,28 @@ function serializeMessages(messages) {
     read_at: toIsoUtc(m.read_at)
   }));
 }
-function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE) {
+function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE, viewerParticipantId = null) {
   const safeLimit = normalizeHistoryLimit(limit);
-  return fpHistoryRead179.readPage({ roomId, beforeCursor, safeLimit, serializeMessages });
+  const page = fpHistoryRead179.readPage({ roomId, beforeCursor, safeLimit, serializeMessages });
+  const reactionSummaries = fpMessageReactions188.summariesForMessages(
+    roomId,
+    page.messages.map((message) => Number(message.id)),
+    viewerParticipantId
+  );
+  return { ...page, reactionSummaries };
 }
-function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE) {
+function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE, viewerParticipantId = null) {
   const safeLimit = normalizeHistoryLimit(limit);
   const rows = q.listMessagesAfter.all(roomId, afterCursor, safeLimit + 1);
   const hasMore = rows.length > safeLimit;
   const pageRows = rows.slice(0, safeLimit);
   const messages = serializeMessages(pageRows);
-  return { messages, hasMore, nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor };
+  const reactionSummaries = fpMessageReactions188.summariesForMessages(
+    roomId,
+    messages.map((message) => Number(message.id)),
+    viewerParticipantId
+  );
+  return { messages, reactionSummaries, hasMore, nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor };
 }
 function normalizeViewState(row) {
   if (!row) return null;
@@ -576,7 +587,7 @@ app.post('/api/invites/:inviteCode/join', async (req, res) => {
   const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
     fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
   );
-  const history = getMessageHistoryPage(room.id);
+  const history = getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, participant.id);
   const systemEvents = history.messages.filter((message) => message.type === 'system');
   const responseHistory = { ...history, messages: history.messages.filter((message) => message.type !== 'system') };
   const unread = getUnreadState(room.id, participant.id);
@@ -627,7 +638,7 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
     fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
   );
-  const history = getMessageHistoryPage(room.id);
+  const history = getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id);
   const unread = getUnreadState(room.id, updated.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
   return res.json({
@@ -651,12 +662,12 @@ app.get('/api/rooms/:publicId/messages', (req, res) => {
   if (req.query?.after !== undefined) {
     const afterCursor = Number.parseInt(req.query.after, 10);
     if (!Number.isSafeInteger(afterCursor) || afterCursor < 0) return res.status(400).json({ ok: false, error: 'invalid after cursor' });
-    const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit);
+    const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit, participant.id);
     const unread = getUnreadState(room.id, participant.id);
     return res.json({ ok: true, ...sync, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) });
   }
   const beforeCursor = normalizeHistoryCursor(req.query?.before);
-  const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit);
+  const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit, participant.id);
   const unread = getUnreadState(room.id, participant.id);
   return res.json({ ok: true, ...history, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) });
 });
