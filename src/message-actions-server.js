@@ -12,7 +12,8 @@ function installMessageActionsServer({
   toIsoUtc,
   safeUnlink,
   isRoomOpen,
-  roomStatePayload
+  roomStatePayload,
+  messageReactions = null
 }) {
   if (!app || !db || !q) throw new Error('message actions server dependencies are missing');
 
@@ -287,6 +288,7 @@ function installMessageActionsServer({
     const deleteTx = db.transaction(() => {
       const changed = deleteForAll.run(messageId, auth.room.id, auth.participant.id);
       if (!changed.changes) return false;
+      messageReactions?.deleteForAll?.(auth.room.id, messageId);
       deleteMessageMedia.run(auth.room.id, messageId);
       deleteHiddenForMessage.run(auth.room.id, messageId);
       deletePushDeliveriesForMessage.run(auth.room.id, messageId);
