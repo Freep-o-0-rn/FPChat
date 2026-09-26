@@ -158,7 +158,8 @@
     "test:188:foundation": "node ./scripts/regression1881-reactions-foundation.cjs",
     "test:188.1": "npm run test:188:foundation",
     "test:188.2": "npm run test:188.1 && node ./scripts/regression1882-reaction-history.cjs",
-    "test:188.3": "npm run test:188.2 && node ./scripts/regression1883-compat187.cjs && node ./scripts/regression1883-reaction-renderer.cjs"
+    "test:188.3": "npm run test:188.2 && node ./scripts/regression1883-compat187.cjs && node ./scripts/regression1883-reaction-renderer.cjs",
+    "test:188.4": "npm run test:188.3 && node ./scripts/regression1884-reaction-interaction.cjs"
   },
   "license": "MIT",
   "dependencies": {
