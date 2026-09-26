@@ -318,8 +318,8 @@
       window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
       window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});
 
-      // Build 188.1: reaction owners are feature-only and load after boot-ready so
-      // the foundation cannot extend the critical startup path. No UI is wired yet.
+      // Build 188: reaction owners are feature-only and load after boot-ready so
+      // reactions never extend the stable Build 187 critical startup path.
       const loadReactionInteraction188 = () => {
         if (window.FPReactionInteractionManager188 || document.querySelector('script[data-fp-reaction-interaction188]')) return;
         const interaction = document.createElement('script');
