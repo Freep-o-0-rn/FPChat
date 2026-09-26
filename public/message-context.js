@@ -684,11 +684,14 @@
     };
     const menu = buildMenu(nextState);
 
-    // Build 189.9: fixed Telegram-like composition.
+    // Build 189.10: fixed Telegram-like composition with FPContextLayout189 owning position.
     // Reactions are inserted above the selected message by the reaction manager,
     // while message actions always stay below the selected message. Geometry is
     // owned by FPContextLayout189, so DOM order no longer follows source position.
-    const topPadding = Math.max(12, Math.min(sourceRect.top, window.innerHeight * 0.62));
+    const hasContextGeometryOwner = Boolean(window.FPContextLayout189?.relayout);
+    const topPadding = hasContextGeometryOwner
+      ? 12
+      : Math.max(12, Math.min(sourceRect.top, window.innerHeight * 0.62));
     cluster.style.paddingTop = `${topPadding}px`;
     cluster.appendChild(clone);
     cluster.appendChild(menu);
