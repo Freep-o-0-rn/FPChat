@@ -1,5 +1,5 @@
 /* Build 97: keep iOS left-edge right-swipes inside FPChat.
-   Build 189.5: pinned screen uses this existing navigation executor and FPGesture135 arbitration. */
+   Build 189.6: pinned screen uses this existing navigation executor and FPGesture135 arbitration. */
 (() => {
   const EDGE_PX = 32;
   const DIRECTION_LOCK_PX = 10;
@@ -192,10 +192,21 @@
     const touch = event.touches[0];
     const pinsOpen = pinsIsOpen();
     const modernSettings = modernSettingsRoot();
+
+    // The left edge is reserved for app navigation. When pins are open we must
+    // suppress WebKit's native Back immediately, even if a higher pins modal later
+    // denies app navigation through FPGesture135.
+    if (touch.clientX > EDGE_PX) {
+      if (!pinsOpen && modernSettings && editableTarget(event.target)) return;
+      if (!pinsOpen && !modernSettings && blockedTarget(event.target)) return;
+      return;
+    }
+
     if (pinsOpen) {
-      // Pins are already a modal owned by FPLayer173. Do not let generic button/input
-      // filtering or the underlying chat steal this edge-back session.
-      if (editableTarget(event.target)) return;
+      resetLegacyDrawerSwipe();
+      deferLegacyDrawerReset();
+      if (event.cancelable) event.preventDefault();
+      event.stopImmediatePropagation();
     } else if (modernSettings) {
       if (editableTarget(event.target)) return;
     } else if (blockedTarget(event.target)) {
@@ -208,7 +219,6 @@
       resetLegacyDrawerSwipe();
       return;
     }
-    if (touch.clientX > EDGE_PX) return;
 
     swipe = {
       mode,
@@ -224,7 +234,7 @@
 
     if (swipe.modernSettings || swipe.mode === 'pins') resetLegacyDrawerSwipe();
     if (event.cancelable) event.preventDefault();
-    if (swipe.modernSettings || swipe.mode === 'pins') event.stopImmediatePropagation();
+    if (swipe.modernSettings) event.stopImmediatePropagation();
   }, { capture: true, passive: false });
 
   document.addEventListener("touchmove", (event) => {
