@@ -1,4 +1,4 @@
-/* Build 189.8: single owner for message-context geometry and smooth visual transition.
+/* Build 189.10: single owner for message-context geometry and smooth visual transition.
    FPGesture135 arbitrates gesture admission; FPLayer173 arbitrates the active UI layer.
    This manager never changes chat/history/message state or media playback. */
 (() => {
@@ -111,15 +111,10 @@
       return true;
     }
 
-    if (pickerOpen) {
-      if (state.savedPaddingTop === null) state.savedPaddingTop = cluster.style.paddingTop || '';
-      // Expanded reactions replace the action menu. Remove source-position reserve
-      // so the catalog can use the viewport for 4-5 visible rows.
-      cluster.style.paddingTop = `${SAFE_GAP}px`;
-    } else if (state.savedPaddingTop !== null) {
-      cluster.style.paddingTop = state.savedPaddingTop;
-      state.savedPaddingTop = null;
-    }
+    // FPContextLayout189 owns geometry for every context state. The old
+    // source-position padding from message-context.js must never consume viewport
+    // space or force the action menu below the safe area.
+    cluster.style.paddingTop = `${SAFE_GAP}px`;
 
     if (scroll && scroll.scrollTop !== 0) scroll.scrollTop = 0;
     cluster.classList.add('fp-context-layout189');
@@ -133,6 +128,10 @@
 
     const cloneRect = clone.getBoundingClientRect();
     const clusterRect = cluster.getBoundingClientRect();
+    const menu = root.querySelector('.message-context-menu:not([hidden])');
+    const menuRect = menu?.getBoundingClientRect?.() || null;
+    const quick = root.querySelector('.fp-reaction-quick188');
+    const quickRect = quick?.getBoundingClientRect?.() || null;
     const desired = bounds.center - (cloneRect.top + cloneRect.height / 2);
     const minShift = bounds.top - clusterRect.top;
     const maxShift = bounds.bottom - clusterRect.bottom;
@@ -140,12 +139,30 @@
 
     let shift = desired;
     if (clusterRect.height <= availableHeight) {
+      // Preferred path: keep the selected message as close to center as possible
+      // while guaranteeing that the complete context composition is visible.
       shift = Math.max(minShift, Math.min(maxShift, desired));
     } else {
-      const centeredTop = cloneRect.top + desired;
-      const centeredBottom = cloneRect.bottom + desired;
+      // Oversized media cannot always keep the message mathematically centered.
+      // Action visibility has priority: the last button must remain reachable
+      // without scrolling the context overlay.
+      const centeredTop = cloneRect.top + shift;
+      const centeredBottom = cloneRect.bottom + shift;
       if (centeredTop < bounds.top) shift += bounds.top - centeredTop;
       if (centeredBottom > bounds.bottom) shift -= centeredBottom - bounds.bottom;
+
+      if (menuRect) {
+        const menuBottom = menuRect.bottom + shift;
+        if (menuBottom > bounds.bottom) shift -= menuBottom - bounds.bottom;
+        const menuTop = menuRect.top + shift;
+        if (menuTop < bounds.top) shift += bounds.top - menuTop;
+      }
+
+      // Keep quick reactions visible when this does not push the action menu out.
+      if (quickRect && quickRect.top + shift < bounds.top) {
+        const candidate = shift + (bounds.top - (quickRect.top + shift));
+        if (!menuRect || menuRect.bottom + candidate <= bounds.bottom) shift = candidate;
+      }
     }
 
     shift = Math.round(shift);
@@ -196,6 +213,19 @@
     });
   }
 
+  function layoutNow(root, reason = 'external') {
+    if (!(root instanceof Element)) return false;
+    if (!states.has(root)) mount(root);
+    const state = states.get(root);
+    if (!state) return false;
+    if (state.raf) {
+      cancelAnimationFrame(state.raf);
+      state.raf = 0;
+    }
+    state.pendingReason = '';
+    return layout(root, reason);
+  }
+
   function mount(root) {
     if (!(root instanceof Element) || states.has(root)) return;
     const state = {
@@ -204,8 +234,7 @@
       pendingReason: '',
       placed: false,
       shift: 0,
-      pickerFrozen: false,
-      savedPaddingTop: null
+      pickerFrozen: false
     };
     states.set(root, state);
     stats.mounts += 1;
@@ -252,7 +281,13 @@
 
   window.FPContextLayout189 = Object.freeze({
     relayout(root = document.querySelector('.message-context-root'), reason = 'external') {
-      if (root) schedule(root, reason);
+      if (!root) return false;
+      // Picker open/close changes DOM height and action visibility in one task.
+      // Measure and place synchronously before the browser can paint the
+      // intermediate state; all other relayouts stay batched.
+      if (reason === 'picker-open' || reason === 'picker-close') return layoutNow(root, reason);
+      schedule(root, reason);
+      return true;
     },
     snapshot: () => ({
       owner: 'FPContextLayout189',
@@ -268,7 +303,7 @@
       mode: 'active-owner',
       gestureArbiter: 'FPGesture135',
       layerArbiter: 'FPLayer173',
-      owns: 'context clone centering + context overlay geometry + transition + expanded-picker viewport budget/reserve + mobile message callout suppression',
+      owns: 'context clone centering + safe-area clamping + action-menu visibility + transition + expanded-picker viewport budget + mobile message callout suppression',
       doesNotOwn: 'chat scroll/history/message state/audio playback/reaction mutations/reaction picker internal scroll'
     });
   } catch {}
