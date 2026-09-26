@@ -16,12 +16,14 @@ const context = read('public/context-layout189.js');
 const messageContext = read('public/message-context.js');
 const picker = read('public/reaction-picker188.js');
 const reactionInteraction = read('public/reaction-interaction188.js');
+const reactionRenderer = read('public/reaction-renderer188.js');
+const reactionDetails = read('public/reaction-details188.js');
 const voicePins = read('public/voice-pins127.js');
 
-assert.equal(version.build, '189.9', 'version.json must expose Build 189.9');
-assert.match(updater, /EXPECTED_BUILD=189\.9/, 'safe updater must accept Build 189.9');
+assert.equal(version.build, '189.10', 'version.json must expose Build 189.10');
+assert.match(updater, /EXPECTED_BUILD=189\.9/, 'safe updater must accept Build 189.10');
 assert.match(buildUi, /BUILD_LABEL = 'Build 189\.9'/, 'UI build label must match version.json');
-assert.doesNotMatch(buildUi, /\?v=189\.8/, 'Build 189.8 fallback cache suffix must not survive');
+assert.doesNotMatch(buildUi, /\?v=189\.9/, 'Build 189.9 fallback cache suffix must not survive');
 
 assert.equal(
   fs.existsSync(path.join(root, 'public/voice-playback-arbiter189.js')),
@@ -41,6 +43,10 @@ assert.match(swipe, /root\.querySelector\('\.fp-pins114-back'\)\?\.click\(\)/, '
 
 assert.match(messageContext, /ctx\.drawImage\(source, 0, 0, width, height\)/, 'context clone must copy canvas-backed voice waveform');
 assert.match(messageContext, /FPContextLayout189\.relayout\(root, 'context-open'\)/, 'context owner must receive initial geometry');
+assert.match(messageContext, /hasContextGeometryOwner[\s\S]*\? 12/, 'context owner must start without legacy source-position reserve');
+assert.match(context, /cluster\.style\.paddingTop = \`\$\{SAFE_GAP\}px\`/, 'context geometry must own compact top reserve');
+assert.match(context, /menuBottom > bounds\.bottom/, 'oversized context must clamp the complete action menu into the safe area');
+assert.match(context, /reason === 'picker-open' \|\| reason === 'picker-close'/, 'picker state changes must relayout synchronously before paint');
 assert.match(messageContext, /cluster\.appendChild\(clone\);\s*cluster\.appendChild\(menu\);/, 'selected message must precede the action menu in context DOM');
 assert.doesNotMatch(messageContext, /if \(menuBefore\)/, 'source-position heuristic must not move the action menu above the selected message');
 assert.match(reactionInteraction, /cluster\.insertBefore\(strip, clone\)/, 'quick reactions must stay above the selected message');
@@ -56,9 +62,13 @@ assert.match(reactionInteraction, /menu\.hidden = Boolean\(expanded\)/, 'context
 assert.match(reactionInteraction, /admitPickerToggle/, 'full reaction toggle admission must stay in the existing interaction manager');
 assert.match(reactionInteraction, /claimAction\?\.\('reaction-picker-toggle'/, 'full reaction toggle must be arbitrated by FPGesture135');
 assert.match(reactionInteraction, /fp-reaction-picker-expanded188/, 'expanded reaction state must be explicit on the context cluster');
+assert.doesNotMatch(reactionInteraction, /closest\?\.\('\.fp-reaction-avatar188'\)/, 'compact avatar must not own a profile-click branch');
+assert.doesNotMatch(reactionInteraction, /openParticipantProfile\?\.\(/, 'compact reaction interaction must not open profiles directly');
+assert.match(reactionRenderer, /avatar\.setAttribute\('aria-hidden', 'true'\)/, 'compact participant avatar must remain presentation-only');
+assert.match(reactionDetails, /root\.addEventListener\('click', \(\) => openProfile\(row\)\)/, 'profiles must remain available from Reaction Details rows');
 
 assert.match(voicePins, /active\.root === root && active\.messageId === messageId/, 'waveform progress must have one concrete DOM/audio owner');
 assert.match(voicePins, /const safe = ownsPlayback \? requested : 0/, 'inactive pinned voices must render neutral 0:00 progress');
 assert.doesNotMatch(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'neutralizing another card must not destroy its private resume position');
 
-console.log('Build 189.9 regression contract: OK');
+console.log('Build 189.10 regression contract: OK');
