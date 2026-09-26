@@ -462,7 +462,7 @@
     releaseWhenIdle.add(releaseKey);
     // FPReactionArbiter188.cancelMessage removes queued-but-not-started operations.
     // The currently running operation is intentionally not aborted for delete-for-self.
-    window.FPReactionArbiter188?.cancelMessage?.(room, id, 'REACTION_MESSAGE_HIDDEN');
+    window.FPReactionArbiter188?.cancelMessage?.(room, id, 'REACTION_MESSAGE_HIDDEN_CANCELLED');
     finalizeReleaseWhenIdle(room, id);
     return true;
   }
