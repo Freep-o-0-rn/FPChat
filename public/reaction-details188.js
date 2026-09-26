@@ -299,6 +299,8 @@
     active = null;
     state.controller?.abort?.(reason);
     state.roomAbortCleanup?.();
+    state.releaseHold?.();
+    state.releaseHold = null;
     document.removeEventListener('keydown', state.onKey, true);
     state.overlay.remove();
     stats.closes += 1;
@@ -606,6 +608,7 @@
       stale: false,
       requestGeneration: 0,
       roomAbortCleanup: null,
+      releaseHold: null,
       onKey: null
     };
 
@@ -657,6 +660,7 @@
 
     close('replace');
     const state = createState({ roomId: room, messageId: message, reactionId: tab });
+    state.releaseHold = manager?.hold?.(room, message, 'reaction-details188') || null;
     active = state;
     document.body.appendChild(state.overlay);
     document.addEventListener('keydown', state.onKey, true);
