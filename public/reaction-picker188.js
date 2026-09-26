@@ -204,6 +204,23 @@
     return groups;
   }
 
+  function bindActivation(button, activate) {
+    let suppressClickUntil = 0;
+    button.addEventListener('pointerup', (event) => {
+      if (event.pointerType !== 'mouse' || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickUntil = Date.now() + 700;
+      activate(event, true);
+    });
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (Date.now() < suppressClickUntil) return;
+      activate(event, false);
+    });
+  }
+
   function renderVisual(button, reaction) {
     const type = String(reaction?.type || 'emoji');
     button.dataset.reactionType = type;
@@ -260,9 +277,7 @@
         button.setAttribute('aria-label', `Реакция ${String(reaction.value || '')}`);
         button.setAttribute('aria-pressed', 'false');
         renderVisual(button, reaction);
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
+        bindActivation(button, () => {
           stats.selections += 1;
           state.onSelect?.(reaction);
         });
@@ -359,7 +374,7 @@
 
     let suppressSyntheticClickUntil = 0;
     toggle.addEventListener('pointerup', (event) => {
-      if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+      if (!['mouse', 'touch', 'pen'].includes(event.pointerType) || (event.pointerType === 'mouse' && event.button !== 0)) return;
       event.preventDefault();
       event.stopPropagation();
       suppressSyntheticClickUntil = Date.now() + 700;
