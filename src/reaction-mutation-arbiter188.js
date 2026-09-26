@@ -94,6 +94,8 @@ function createReactionMutationArbiter188({
         pending: 0,
         waiters: [],
         timer: null,
+        idleTimer: null,
+        lastIngressAt: Number.isFinite(at) ? at : Date.now(),
         actorBursts: new Map()
       };
       rooms.set(id, room);
@@ -156,6 +158,11 @@ function createReactionMutationArbiter188({
     }
 
     room.pending += 1;
+    room.lastIngressAt = at;
+    if (room.idleTimer) {
+      try { cancelSchedule(room.idleTimer); } catch {}
+      room.idleTimer = null;
+    }
     stats.peakRoomPending = Math.max(stats.peakRoomPending, room.pending);
     return room;
   }
@@ -169,7 +176,23 @@ function createReactionMutationArbiter188({
   function cleanupRoom(room) {
     if (!room || room.pending > 0 || room.waiters.length) return;
     clearRoomTimer(room);
-    rooms.delete(room.roomId);
+    const at = Number(now());
+    const current = Number.isFinite(at) ? at : Date.now();
+    const idleFor = current - Number(room.lastIngressAt || current);
+    if (idleFor >= WINDOW_MS) {
+      if (room.idleTimer) {
+        try { cancelSchedule(room.idleTimer); } catch {}
+        room.idleTimer = null;
+      }
+      rooms.delete(room.roomId);
+      return;
+    }
+    if (room.idleTimer) return;
+    room.idleTimer = schedule(() => {
+      room.idleTimer = null;
+      cleanupRoom(room);
+    }, Math.max(1, WINDOW_MS - idleFor));
+    room.idleTimer?.unref?.();
   }
 
   function settleRoomPending(roomId) {
