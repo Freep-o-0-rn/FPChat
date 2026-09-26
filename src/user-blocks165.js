@@ -199,6 +199,7 @@ function createUserBlocks165(db, { presenceProjector = null } = {}) {
 
   function participantPresenceDto(item, viewerId, toIsoUtc) {
     return {
+      participantId: Number(item.id) || null,
       deviceId: item.device_id,
       displayName: item.display_name,
       ...projectPresence(item, viewerId, toIsoUtc)
