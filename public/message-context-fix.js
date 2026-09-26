@@ -195,7 +195,7 @@
     b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); closeContext(root); void saveVideo({ messageId:id,index,original }); }; menu.appendChild(b);
   }
 
-  document.addEventListener('click', (e) => { const root = e.target?.closest?.(ROOT); if (!root || e.target.closest('.message-context-menu') || e.target.closest('.message-context-copy .bubble')) return; if (e.target === root.querySelector('.message-context-backdrop')) return; e.preventDefault(); e.stopImmediatePropagation(); closeContext(root); }, true);
+  document.addEventListener('click', (e) => { const root = e.target?.closest?.(ROOT); if (!root || e.target.closest('.message-context-menu') || e.target.closest('.message-context-copy .bubble') || e.target.closest('.fp-reaction-quick188,.fp-reaction-picker188')) return; if (e.target === root.querySelector('.message-context-backdrop')) return; e.preventDefault(); e.stopImmediatePropagation(); closeContext(root); }, true);
   document.addEventListener('dragstart', (e) => { if (!e.target?.closest?.('.bubble-wrap.msg,.message-context-root')) return; e.preventDefault(); e.stopImmediatePropagation(); }, true);
 
   wrapShare(); disableDrag(document);
