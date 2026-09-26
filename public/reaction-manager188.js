@@ -524,7 +524,7 @@
   function makeAbortBridge(roomId, entry) {
     const controller = new AbortController();
     entry.controller = controller;
-    const context = window.FPRoomContext170?.current?.() || null;
+    const context = entry?.roomContext || null;
     if (!context || String(context.roomId || '') !== normalizeRoomId(roomId)) return { signal: controller.signal, cleanup() {} };
     const abort = () => {
       try { controller.abort(context.signal.reason || 'room-context-ended'); }
@@ -582,8 +582,13 @@
     const op = operation === 'remove' ? 'remove' : operation === 'add' ? 'add' : '';
     const participantId = activeParticipantId(room);
     const deviceId = deviceIdForRoom(room);
+    const contextOwner = window.FPRoomContext170;
+    const roomContext = contextOwner?.current?.() || null;
     if (!room || !message || !id || !op || !participantId || !deviceId) {
       return Promise.reject(mutationError('REACTION_CONTEXT_INVALID'));
+    }
+    if (contextOwner && (!roomContext || roomContext.signal?.aborted || String(roomContext.roomId || '') !== room)) {
+      return Promise.reject(mutationError('REACTION_ROOM_CONTEXT_STALE'));
     }
 
     const current = get(room, message);
@@ -607,6 +612,7 @@
       reaction: descriptor,
       operation: op,
       createdAt: new Date().toISOString(),
+      roomContext,
       controller: null
     };
     const pending = pendingFor(room, message, true);
