@@ -1,4 +1,4 @@
-/* Build 188.5: reaction interaction owner.
+/* Build 189.10: reaction interaction owner.
    Owns reaction tap/long-press/right-click, quick-strip semantics and picker selection delegation.
    Gesture admission remains with FPGesture135; message-context remains its existing owner. */
 (() => {
@@ -21,7 +21,6 @@
     quickClicks: 0,
     pickerOpens: 0,
     pickerSelections: 0,
-    profileClicks: 0,
     mutationsFailed: 0,
     detailsFallbacks: 0,
     lastMutationError: null
@@ -379,19 +378,9 @@
 
     if (Date.now() < suppressClickUntil) return;
 
-    const avatar = event.target?.closest?.('.fp-reaction-avatar188');
-    const participantId = numericId(avatar?.dataset?.participantId);
-    if (avatar && participantId) {
-      stats.profileClicks += 1;
-      void window.FPReactionDetails188?.openParticipantProfile?.({
-        roomId: info.roomId,
-        messageId: info.messageId,
-        reactionId: info.reactionId,
-        participantId
-      });
-      return;
-    }
-
+    // Compact reaction pills have one tap contract across their entire hit area,
+    // including the small participant avatar: add/remove this reaction.
+    // Participant profiles are opened only from FPReactionDetails188 rows.
     stats.pillClicks += 1;
     void toggle(info).catch((error) => reportMutationFailure(error, info));
   }, true);
