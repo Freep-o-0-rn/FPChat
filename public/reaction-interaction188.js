@@ -152,13 +152,17 @@
 
   function requestDetails(info, point, source) {
     try {
-      if (window.FPReactionDetails188?.open?.({
-        roomId: info.roomId,
-        messageId: info.messageId,
-        reactionId: info.reactionId,
-        source,
-        point
-      }) !== false && window.FPReactionDetails188?.open) return true;
+      const detailsOwner = window.FPReactionDetails188;
+      if (typeof detailsOwner?.open === 'function') {
+        const handled = detailsOwner.open({
+          roomId: info.roomId,
+          messageId: info.messageId,
+          reactionId: info.reactionId,
+          source,
+          point
+        });
+        if (handled !== false) return true;
+      }
     } catch {}
 
     const detail = {
