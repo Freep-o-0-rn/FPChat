@@ -95,8 +95,9 @@ function createMessageReactions188({
     ORDER BY count DESC, first_seen_at ASC, reaction_id ASC
   `);
   const smallPreviewRows = db.prepare(`
-    SELECT r.reaction_id, r.participant_id, r.id
+    SELECT r.reaction_id, r.participant_id, r.id, p.display_name
     FROM message_reactions r
+    JOIN participants p ON p.id=r.participant_id
     JOIN (
       SELECT reaction_id
       FROM message_reactions
@@ -122,6 +123,7 @@ function createMessageReactions188({
         r.message_id,
         r.reaction_id,
         r.participant_id,
+        p.display_name,
         r.id,
         r.created_at,
         COALESCE(r.first_seen_at, r.created_at) AS first_seen_at,
@@ -129,6 +131,7 @@ function createMessageReactions188({
         ROW_NUMBER() OVER (PARTITION BY r.message_id, r.reaction_id ORDER BY r.id DESC) AS preview_rank
       FROM message_reactions r
       JOIN requested req ON req.message_id=r.message_id
+      JOIN participants p ON p.id=r.participant_id
       WHERE r.room_id=?
     ),
     groups AS (
@@ -140,7 +143,9 @@ function createMessageReactions188({
         MAX(CASE WHEN participant_id=? THEN 1 ELSE 0 END) AS mine,
         MAX(CASE WHEN participant_id=? THEN created_at ELSE NULL END) AS my_created_at,
         MAX(CASE WHEN reaction_count<=2 AND preview_rank=1 THEN participant_id ELSE NULL END) AS preview_1,
-        MAX(CASE WHEN reaction_count<=2 AND preview_rank=2 THEN participant_id ELSE NULL END) AS preview_2
+        MAX(CASE WHEN reaction_count<=2 AND preview_rank=1 THEN display_name ELSE NULL END) AS preview_1_name,
+        MAX(CASE WHEN reaction_count<=2 AND preview_rank=2 THEN participant_id ELSE NULL END) AS preview_2,
+        MAX(CASE WHEN reaction_count<=2 AND preview_rank=2 THEN display_name ELSE NULL END) AS preview_2_name
       FROM ranked
       GROUP BY message_id, reaction_id
     )
@@ -153,7 +158,9 @@ function createMessageReactions188({
       groups.mine,
       groups.my_created_at,
       groups.preview_1,
-      groups.preview_2
+      groups.preview_1_name,
+      groups.preview_2,
+      groups.preview_2_name
     FROM requested req
     LEFT JOIN message_reaction_state state
       ON state.room_id=? AND state.message_id=req.message_id
@@ -376,7 +383,13 @@ function createMessageReactions188({
       const id = String(row.reaction_id);
       let list = previews.get(id);
       if (!list) previews.set(id, list = []);
-      list.push(Number(row.participant_id));
+      const participantId = Number(row.participant_id);
+      if (!Number.isSafeInteger(participantId) || participantId <= 0) continue;
+      list.push({
+        participantId,
+        displayName: String(row.display_name || '').trim().slice(0, 64) || 'FP',
+        avatarUrl: null
+      });
     }
 
     const reactions = groupedSummary.all(roomId, messageId).map((row) => {
@@ -386,7 +399,10 @@ function createMessageReactions188({
         ...catalogDto(reactionId),
         count,
         ...(viewerParticipantId ? { mine: mine.has(reactionId) } : {}),
-        ...(count <= 2 ? { previewParticipantIds: previews.get(reactionId) || [] } : {})
+        ...(count <= 2 ? {
+          previewParticipantIds: (previews.get(reactionId) || []).map((item) => item.participantId),
+          previewParticipants: previews.get(reactionId) || []
+        } : {})
       };
     });
 
@@ -432,14 +448,23 @@ function createMessageReactions188({
       const reactionId = String(row.reaction_id);
       const count = Math.max(0, Number(row.count || 0));
       const mine = Number(row.mine || 0) > 0;
-      const previewParticipantIds = count <= 2
-        ? [row.preview_1, row.preview_2].map(Number).filter((id) => Number.isSafeInteger(id) && id > 0)
+      const previewParticipants = count <= 2
+        ? [
+            { participantId: Number(row.preview_1), displayName: row.preview_1_name },
+            { participantId: Number(row.preview_2), displayName: row.preview_2_name }
+          ].filter((entry) => Number.isSafeInteger(entry.participantId) && entry.participantId > 0)
+            .map((entry) => ({
+              participantId: entry.participantId,
+              displayName: String(entry.displayName || '').trim().slice(0, 64) || 'FP',
+              avatarUrl: null
+            }))
         : [];
+      const previewParticipantIds = previewParticipants.map((entry) => entry.participantId);
       item.reactions.push({
         ...catalogDto(reactionId),
         count,
         mine,
-        ...(count <= 2 ? { previewParticipantIds } : {})
+        ...(count <= 2 ? { previewParticipantIds, previewParticipants } : {})
       });
       if (mine) {
         item.myReactions.push({
