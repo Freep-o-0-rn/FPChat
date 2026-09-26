@@ -163,7 +163,7 @@
     "test:188.5": "npm run test:188.4 && node ./scripts/regression1885-reaction-picker.cjs",
     "test:188.6": "npm run test:188.5 && node ./scripts/regression1886-reaction-details.cjs",
     "test:188.7": "npm run test:188.6 && node ./scripts/regression1887-reaction-admission.cjs",
-    "test:188.8": "npm run test:188.7 && node ./scripts/regression1888-reactions-release.cjs",
+    "test:188.8": "npm run test:188.7 && node ./scripts/regression1888-two-client-reactions.cjs && node ./scripts/regression1888-reactions-release.cjs",
     "test:188": "npm run test:188.8"
   },
   "license": "MIT",
