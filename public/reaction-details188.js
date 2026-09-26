@@ -324,11 +324,11 @@
     if (!row?.profile) return false;
     const opener = window.FPUsernameSearch143?.openProfile;
     if (typeof opener !== 'function') return false;
-    const profile = row.profile;
+    const opened = opener(row.profile);
+    if (!opened) return false;
+    stats.profileOpens += 1;
     close('profile-open');
-    const opened = opener(profile);
-    if (opened) stats.profileOpens += 1;
-    return Boolean(opened);
+    return true;
   }
 
   function renderRow(state, row) {
