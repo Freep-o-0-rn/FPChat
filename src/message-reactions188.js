@@ -165,91 +165,98 @@ function createMessageReactions188({
   // Build 188.6: Reaction Details is a read-only, keyset-paged projection.
   // It does not change reaction mutation/history ownership.
   const DETAILS_PAGE_SIZE = 30;
-  const detailsTabCounts = db.prepare(`
-    SELECT reaction_id, COUNT(*) AS count, MIN(COALESCE(first_seen_at, created_at)) AS first_seen_at
-    FROM message_reactions
-    WHERE room_id=? AND message_id=?
-    GROUP BY reaction_id
-    ORDER BY count DESC, first_seen_at ASC, reaction_id ASC
-  `);
-  const detailsAllCount = db.prepare(`
-    SELECT COUNT(DISTINCT participant_id) AS count
-    FROM message_reactions
-    WHERE room_id=? AND message_id=?
-  `);
-  const detailsAllPage = db.prepare(`
-    WITH latest AS (
-      SELECT
-        r.participant_id,
-        r.created_at AS latest_created_at,
-        r.id AS latest_id,
-        ROW_NUMBER() OVER (
-          PARTITION BY r.participant_id
-          ORDER BY r.created_at DESC, r.id DESC
-        ) AS rn
-      FROM message_reactions r
-      WHERE r.room_id=? AND r.message_id=?
-    )
-    SELECT
-      latest.participant_id,
-      latest.latest_created_at,
-      latest.latest_id,
-      p.display_name,
-      p.device_id,
-      NULLIF(profile.username,'') AS profile_username,
-      COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
-      COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
-      COALESCE(privacy.allow_username_search,1) AS allow_username_search
-    FROM latest
-    JOIN participants p ON p.id=latest.participant_id
-    LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
-    LEFT JOIN user_identities identity ON identity.device_id=p.device_id
-    LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
-    WHERE latest.rn=1
-      AND (
-        ? IS NULL
-        OR latest.latest_created_at < ?
-        OR (latest.latest_created_at = ? AND latest.latest_id < ?)
-        OR (latest.latest_created_at = ? AND latest.latest_id = ? AND latest.participant_id < ?)
-      )
-    ORDER BY latest.latest_created_at DESC, latest.latest_id DESC, latest.participant_id DESC
-    LIMIT ?
-  `);
-  const detailsReactionPage = db.prepare(`
-    SELECT
-      r.participant_id,
-      r.created_at AS latest_created_at,
-      r.id AS latest_id,
-      p.display_name,
-      p.device_id,
-      NULLIF(profile.username,'') AS profile_username,
-      COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
-      COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
-      COALESCE(privacy.allow_username_search,1) AS allow_username_search
-    FROM message_reactions r
-    JOIN participants p ON p.id=r.participant_id
-    LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
-    LEFT JOIN user_identities identity ON identity.device_id=p.device_id
-    LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
-    WHERE r.room_id=? AND r.message_id=? AND r.reaction_id=?
-      AND (
-        ? IS NULL
-        OR r.created_at < ?
-        OR (r.created_at = ? AND r.id < ?)
-        OR (r.created_at = ? AND r.id = ? AND r.participant_id < ?)
-      )
-    ORDER BY r.created_at DESC, r.id DESC, r.participant_id DESC
-    LIMIT ?
-  `);
-  const detailsParticipantReactions = db.prepare(`
-    SELECT participant_id, reaction_id, created_at, id
-    FROM message_reactions
-    WHERE room_id=? AND message_id=?
-      AND participant_id IN (
-        SELECT CAST(value AS INTEGER) FROM json_each(?)
-      )
-    ORDER BY participant_id ASC, created_at DESC, id DESC
-  `);
+  let detailsQueries = null;
+  function ensureDetailsQueries() {
+    if (detailsQueries) return detailsQueries;
+    detailsQueries = {
+      tabCounts: db.prepare(`
+        SELECT reaction_id, COUNT(*) AS count, MIN(COALESCE(first_seen_at, created_at)) AS first_seen_at
+        FROM message_reactions
+        WHERE room_id=? AND message_id=?
+        GROUP BY reaction_id
+        ORDER BY count DESC, first_seen_at ASC, reaction_id ASC
+      `),
+      allCount: db.prepare(`
+        SELECT COUNT(DISTINCT participant_id) AS count
+        FROM message_reactions
+        WHERE room_id=? AND message_id=?
+      `),
+      allPage: db.prepare(`
+        WITH latest AS (
+          SELECT
+            r.participant_id,
+            r.created_at AS latest_created_at,
+            r.id AS latest_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY r.participant_id
+              ORDER BY r.created_at DESC, r.id DESC
+            ) AS rn
+          FROM message_reactions r
+          WHERE r.room_id=? AND r.message_id=?
+        )
+        SELECT
+          latest.participant_id,
+          latest.latest_created_at,
+          latest.latest_id,
+          p.display_name,
+          p.device_id,
+          NULLIF(profile.username,'') AS profile_username,
+          COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
+          COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
+          COALESCE(privacy.allow_username_search,1) AS allow_username_search
+        FROM latest
+        JOIN participants p ON p.id=latest.participant_id
+        LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
+        LEFT JOIN user_identities identity ON identity.device_id=p.device_id
+        LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
+        WHERE latest.rn=1
+          AND (
+            ? IS NULL
+            OR latest.latest_created_at < ?
+            OR (latest.latest_created_at = ? AND latest.latest_id < ?)
+            OR (latest.latest_created_at = ? AND latest.latest_id = ? AND latest.participant_id < ?)
+          )
+        ORDER BY latest.latest_created_at DESC, latest.latest_id DESC, latest.participant_id DESC
+        LIMIT ?
+      `),
+      reactionPage: db.prepare(`
+        SELECT
+          r.participant_id,
+          r.created_at AS latest_created_at,
+          r.id AS latest_id,
+          p.display_name,
+          p.device_id,
+          NULLIF(profile.username,'') AS profile_username,
+          COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
+          COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
+          COALESCE(privacy.allow_username_search,1) AS allow_username_search
+        FROM message_reactions r
+        JOIN participants p ON p.id=r.participant_id
+        LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
+        LEFT JOIN user_identities identity ON identity.device_id=p.device_id
+        LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
+        WHERE r.room_id=? AND r.message_id=? AND r.reaction_id=?
+          AND (
+            ? IS NULL
+            OR r.created_at < ?
+            OR (r.created_at = ? AND r.id < ?)
+            OR (r.created_at = ? AND r.id = ? AND r.participant_id < ?)
+          )
+        ORDER BY r.created_at DESC, r.id DESC, r.participant_id DESC
+        LIMIT ?
+      `),
+      participantReactions: db.prepare(`
+        SELECT participant_id, reaction_id, created_at, id
+        FROM message_reactions
+        WHERE room_id=? AND message_id=?
+          AND participant_id IN (
+            SELECT CAST(value AS INTEGER) FROM json_each(?)
+          )
+        ORDER BY participant_id ASC, created_at DESC, id DESC
+      `)
+    };
+    return detailsQueries;
+  }
 
   function encodeDetailsCursor(row) {
     if (!row) return null;
@@ -466,6 +473,7 @@ function createMessageReactions188({
       throw reactionError('REACTION_DETAILS_REVISION_INVALID', 400, 'invalid reaction revision');
     }
 
+    const dq = ensureDetailsQueries();
     const tx = db.transaction(() => {
       const revision = revisionFor(room, message);
       if (wantedRevision != null && wantedRevision !== revision) {
@@ -474,23 +482,23 @@ function createMessageReactions188({
         throw error;
       }
 
-      const tabs = detailsTabCounts.all(room, message).map((row) => ({
+      const tabs = dq.tabCounts.all(room, message).map((row) => ({
         ...catalogDto(row.reaction_id),
         count: Math.max(0, Number(row.count || 0))
       }));
-      const allCount = Math.max(0, Number(detailsAllCount.get(room, message)?.count || 0));
+      const allCount = Math.max(0, Number(dq.allCount.get(room, message)?.count || 0));
       const cursorArgs = decodedCursor
         ? [decodedCursor.t, decodedCursor.t, decodedCursor.t, decodedCursor.i, decodedCursor.t, decodedCursor.i, decodedCursor.p]
         : [null, null, null, 0, null, 0, 0];
 
       const rawRows = tabReactionId
-        ? detailsReactionPage.all(room, message, tabReactionId, ...cursorArgs, DETAILS_PAGE_SIZE + 1)
-        : detailsAllPage.all(room, message, ...cursorArgs, DETAILS_PAGE_SIZE + 1);
+        ? dq.reactionPage.all(room, message, tabReactionId, ...cursorArgs, DETAILS_PAGE_SIZE + 1)
+        : dq.allPage.all(room, message, ...cursorArgs, DETAILS_PAGE_SIZE + 1);
       const hasMore = rawRows.length > DETAILS_PAGE_SIZE;
       const pageRows = rawRows.slice(0, DETAILS_PAGE_SIZE);
       const participantIds = pageRows.map((row) => Number(row.participant_id)).filter((id) => Number.isSafeInteger(id) && id > 0);
       const allParticipantReactions = participantIds.length
-        ? detailsParticipantReactions.all(room, message, JSON.stringify(participantIds))
+        ? dq.participantReactions.all(room, message, JSON.stringify(participantIds))
         : [];
       const reactionsByParticipant = new Map();
       for (const row of allParticipantReactions) {
