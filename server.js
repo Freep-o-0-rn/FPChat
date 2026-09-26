@@ -22,6 +22,7 @@ const { installVoiceServer } = require('./src/voice-server');
 const { createEncryptedUpload179 } = require('./src/encrypted-upload179');
 const { createHistoryRead179 } = require('./src/history-read179');
 const { createNotificationService181 } = require('./src/notification-service181');
+const { createMessageReactions188 } = require('./src/message-reactions188');
 
 dotenv.config();
 
@@ -151,6 +152,15 @@ const fpHistoryRead179 = createHistoryRead179({
   db,
   listMessagesLatest: q.listMessagesLatest,
   listMessagesBefore: q.listMessagesBefore
+});
+const fpMessageReactions188 = createMessageReactions188({
+  db,
+  q,
+  sendToRoomParticipants,
+  isRoomOpen,
+  roomStatePayload,
+  userBlocks: fpUserBlocks165,
+  toIsoUtc
 });
 
 function randomToken(length) {
@@ -358,6 +368,7 @@ function safeUnlink(file) {
 }
 function removeRoomRows(roomId) {
   const files = q.listMediaFilesByRoomId.all(roomId);
+  fpMessageReactions188.deleteRoom(roomId);
   q.deleteMediaByRoomId.run(roomId);
   q.deletePushByRoomId.run(roomId);
   q.deletePushDeliveriesByRoomId.run(roomId);
@@ -1283,8 +1294,10 @@ installMessageActionsServer({
   toIsoUtc,
   safeUnlink,
   isRoomOpen,
-  roomStatePayload
+  roomStatePayload,
+  messageReactions: fpMessageReactions188
 });
+fpMessageReactions188.installRoutes(app);
 installMessagePinsServer({
   app,
   db,
