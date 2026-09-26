@@ -6,7 +6,9 @@
   const rooms = new Map();
   const loadedByRoom = new Map();
   const holds = new Map();
+  const pendingByMessage = new Map();
   let activeHistoryRoom = '';
+  let mutationSequence = 0;
   let catalogPromise = null;
   let catalogState = null;
   const stats = {
@@ -19,7 +21,12 @@
     destroyed: 0,
     rangeSyncs: 0,
     catalogLoads: 0,
-    catalogFailures: 0
+    catalogFailures: 0,
+    optimisticApplied: 0,
+    mutationsStarted: 0,
+    mutationsConfirmed: 0,
+    mutationsFailed: 0,
+    mutationsCancelled: 0
   };
 
   function normalizeRoomId(value) {
@@ -35,6 +42,34 @@
     const room = normalizeRoomId(roomId);
     const message = normalizeMessageId(messageId);
     return room && message ? `${room}:${message}` : '';
+  }
+
+  function emitChanged(roomId, messageId, revision = null, optimistic = false) {
+    try {
+      window.dispatchEvent(new CustomEvent('fpchat:reaction188-changed', {
+        detail: {
+          roomId: normalizeRoomId(roomId),
+          messageId: normalizeMessageId(messageId),
+          reactionRevision: revision == null ? null : Math.max(0, Number(revision || 0) || 0),
+          optimistic: Boolean(optimistic)
+        }
+      }));
+    } catch {}
+  }
+
+  function pendingKey(roomId, messageId) {
+    return key(roomId, messageId);
+  }
+
+  function pendingFor(roomId, messageId, create = false) {
+    const id = pendingKey(roomId, messageId);
+    if (!id) return null;
+    let list = pendingByMessage.get(id);
+    if (!list && create) {
+      list = [];
+      pendingByMessage.set(id, list);
+    }
+    return list || null;
   }
 
   function roomFor(roomId, create = true) {
@@ -104,18 +139,149 @@
     }
     room.set(id, next);
     stats.ingested += 1;
-    try {
-      window.dispatchEvent(new CustomEvent('fpchat:reaction188-changed', {
-        detail: { roomId: normalizeRoomId(roomId), messageId: id, reactionRevision: next.reactionRevision }
-      }));
-    } catch {}
+    emitChanged(roomId, id, next.reactionRevision, false);
     return next;
   }
 
-  function get(roomId, messageId) {
+  function getBase(roomId, messageId) {
     const room = roomFor(roomId, false);
     const id = normalizeMessageId(messageId);
     return room && id ? room.get(id) || null : null;
+  }
+
+  function descriptorFor(reactionId, fallback = null) {
+    const id = String(reactionId || '').trim();
+    const item = catalogState?.byId?.get?.(id) || null;
+    return {
+      reactionId: id,
+      type: String(item?.type || fallback?.type || 'emoji'),
+      value: String(item?.value || fallback?.value || id),
+      enabled: item ? item.enabled !== false : fallback?.enabled !== false
+    };
+  }
+
+  function projectPending(roomId, messageId, baseState = null) {
+    const list = pendingFor(roomId, messageId, false);
+    if (!list?.length) return baseState;
+    const base = baseState || Object.freeze({
+      reactionRevision: 0,
+      reactions: Object.freeze([]),
+      myReactions: Object.freeze([]),
+      catalogVersion: catalogState?.version || 0
+    });
+
+    const groups = new Map();
+    let order = 0;
+    for (const item of base.reactions || []) {
+      groups.set(String(item.reactionId), {
+        reactionId: String(item.reactionId),
+        type: String(item.type || 'emoji'),
+        value: String(item.value || item.reactionId || ''),
+        count: Math.max(0, Number(item.count || 0) || 0),
+        mine: item.mine === true,
+        previewParticipantIds: Array.isArray(item.previewParticipantIds) ? [...item.previewParticipantIds] : [],
+        order: order++
+      });
+    }
+    const mine = (base.myReactions || []).map((item) => ({
+      reactionId: String(item.reactionId),
+      type: String(item.type || 'emoji'),
+      value: String(item.value || item.reactionId || ''),
+      createdAt: item.createdAt || null
+    }));
+    const maxMine = Math.max(1, Number(catalogState?.maxPerParticipantPerMessage || 3) || 3);
+
+    const removeOwn = (reactionId, participantId) => {
+      const ownIndex = mine.findIndex((item) => item.reactionId === reactionId);
+      if (ownIndex < 0) return false;
+      mine.splice(ownIndex, 1);
+      const group = groups.get(reactionId);
+      if (!group) return true;
+      group.count = Math.max(0, group.count - 1);
+      group.mine = false;
+      if (group.count <= 0) {
+        groups.delete(reactionId);
+        return true;
+      }
+      if (group.count <= 2) {
+        group.previewParticipantIds = (group.previewParticipantIds || [])
+          .map(Number)
+          .filter((id) => Number.isSafeInteger(id) && id > 0 && id !== participantId)
+          .slice(0, 2);
+      } else {
+        group.previewParticipantIds = [];
+      }
+      return true;
+    };
+
+    const addOwn = (entry) => {
+      if (mine.some((item) => item.reactionId === entry.reactionId)) return false;
+      while (mine.length >= maxMine) removeOwn(mine[0].reactionId, entry.participantId);
+      const descriptor = descriptorFor(entry.reactionId, entry.reaction);
+      mine.push({
+        reactionId: descriptor.reactionId,
+        type: descriptor.type,
+        value: descriptor.value,
+        createdAt: entry.createdAt
+      });
+      let group = groups.get(entry.reactionId);
+      if (!group) {
+        group = {
+          reactionId: descriptor.reactionId,
+          type: descriptor.type,
+          value: descriptor.value,
+          count: 0,
+          mine: false,
+          previewParticipantIds: [],
+          order: order++
+        };
+        groups.set(entry.reactionId, group);
+      }
+      group.count += 1;
+      group.mine = true;
+      if (group.count <= 2) {
+        group.previewParticipantIds = [
+          entry.participantId,
+          ...(group.previewParticipantIds || []).map(Number).filter((id) => id !== entry.participantId)
+        ].filter((id) => Number.isSafeInteger(id) && id > 0).slice(0, 2);
+      } else {
+        group.previewParticipantIds = [];
+      }
+      return true;
+    };
+
+    for (const entry of list) {
+      if (entry.operation === 'add') addOwn(entry);
+      else if (entry.operation === 'remove') removeOwn(entry.reactionId, entry.participantId);
+    }
+
+    const reactions = [...groups.values()]
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count || a.order - b.order || a.reactionId.localeCompare(b.reactionId))
+      .map((item) => ({
+        reactionId: item.reactionId,
+        type: item.type,
+        value: item.value,
+        count: item.count,
+        mine: item.mine,
+        ...(item.count <= 2 && item.previewParticipantIds.length
+          ? { previewParticipantIds: item.previewParticipantIds.slice(0, 2) }
+          : {})
+      }));
+
+    return normalizePayload({
+      reactionRevision: base.reactionRevision,
+      reactions,
+      myReactions: mine,
+      catalogVersion: base.catalogVersion || catalogState?.version || 0
+    });
+  }
+
+  function get(roomId, messageId) {
+    const id = normalizeMessageId(messageId);
+    if (!id) return null;
+    const base = getBase(roomId, id);
+    return projectPending(roomId, id, base);
   }
 
   function isLoaded(roomId, messageId) {
@@ -160,6 +326,7 @@
     const keep = normalizeRoomId(keepRoomId);
     for (const roomId of [...loadedByRoom.keys()]) {
       if (roomId === keep) continue;
+      cancelPendingRoom(roomId, 'REACTION_ROOM_CHANGED');
       loadedByRoom.delete(roomId);
       const room = roomFor(roomId, false);
       if (!room) continue;
@@ -257,7 +424,7 @@
       return true;
     }
 
-    const current = get(roomId, messageId);
+    const current = getBase(roomId, messageId);
     const own = participantOwnStateFromWs(payload, current, viewerParticipantId);
     const next = {
       reactionRevision: Math.max(0, Number(payload.reactionRevision || 0) || 0),
@@ -271,7 +438,7 @@
   }
 
   function destroyMessage(roomId, messageId) {
-    window.FPReactionArbiter188?.cancelMessage?.(roomId, messageId, 'MESSAGE_DELETED');
+    cancelPendingMessage(roomId, messageId, 'MESSAGE_DELETED');
     holds.delete(key(roomId, messageId));
     loadedByRoom.get(normalizeRoomId(roomId))?.delete(normalizeMessageId(messageId));
     const room = roomFor(roomId, false);
@@ -285,7 +452,7 @@
   function releaseRoom(roomId) {
     const id = normalizeRoomId(roomId);
     if (!id) return;
-    window.FPReactionArbiter188?.cancelRoom?.(id, 'REACTION_ROOM_CANCELLED');
+    cancelPendingRoom(id, 'REACTION_ROOM_CANCELLED');
     rooms.delete(id);
     loadedByRoom.delete(id);
     if (activeHistoryRoom === id) activeHistoryRoom = '';
@@ -331,6 +498,178 @@
     return (await loadCatalog()).reactions.filter((item) => item.enabled !== false);
   }
 
+  function deviceIdForRoom(roomId) {
+    const id = normalizeRoomId(roomId);
+    if (!id) return '';
+    try {
+      const stored = typeof STORAGE !== 'undefined' ? STORAGE.get(STORAGE.roomState(id)) : null;
+      if (stored?.deviceId) return String(stored.deviceId).trim();
+    } catch {}
+    try {
+      if (String(state?.roomId || '') === id && typeof activeChatDeviceId !== 'undefined') return String(activeChatDeviceId || '').trim();
+    } catch {}
+    return '';
+  }
+
+  function activeParticipantId(roomId) {
+    try {
+      if (String(state?.roomId || '') !== normalizeRoomId(roomId)) return null;
+      const id = Number(state?.me?.id);
+      return Number.isSafeInteger(id) && id > 0 ? id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function makeAbortBridge(roomId, entry) {
+    const controller = new AbortController();
+    entry.controller = controller;
+    const context = window.FPRoomContext170?.current?.() || null;
+    if (!context || String(context.roomId || '') !== normalizeRoomId(roomId)) return { signal: controller.signal, cleanup() {} };
+    const abort = () => {
+      try { controller.abort(context.signal.reason || 'room-context-ended'); }
+      catch { controller.abort(); }
+    };
+    if (context.signal.aborted) abort();
+    else context.signal.addEventListener('abort', abort, { once: true });
+    return {
+      signal: controller.signal,
+      cleanup() { context.signal.removeEventListener('abort', abort); }
+    };
+  }
+
+  function removePendingEntry(entry) {
+    const list = pendingFor(entry.roomId, entry.messageId, false);
+    if (!list) return false;
+    const index = list.indexOf(entry);
+    if (index >= 0) list.splice(index, 1);
+    if (!list.length) pendingByMessage.delete(pendingKey(entry.roomId, entry.messageId));
+    return index >= 0;
+  }
+
+  function cancelPendingMessage(roomId, messageId, reason = 'REACTION_CANCELLED') {
+    const list = pendingFor(roomId, messageId, false);
+    if (list) {
+      for (const entry of list) {
+        try { entry.controller?.abort?.(reason); } catch {}
+      }
+    }
+    return window.FPReactionArbiter188?.cancelMessage?.(roomId, messageId, reason) || 0;
+  }
+
+  function cancelPendingRoom(roomId, reason = 'REACTION_ROOM_CANCELLED') {
+    const room = normalizeRoomId(roomId);
+    if (!room) return 0;
+    for (const [entryKey, list] of pendingByMessage) {
+      if (!entryKey.startsWith(`${room}:`)) continue;
+      for (const entry of list) {
+        try { entry.controller?.abort?.(reason); } catch {}
+      }
+    }
+    return window.FPReactionArbiter188?.cancelRoom?.(room, reason) || 0;
+  }
+
+  function mutationError(code, message = code) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+
+  function mutateReaction({ roomId, messageId, reactionId, operation, reaction = null } = {}) {
+    const room = normalizeRoomId(roomId);
+    const message = normalizeMessageId(messageId);
+    const id = String(reactionId || '').trim();
+    const op = operation === 'remove' ? 'remove' : operation === 'add' ? 'add' : '';
+    const participantId = activeParticipantId(room);
+    const deviceId = deviceIdForRoom(room);
+    if (!room || !message || !id || !op || !participantId || !deviceId) {
+      return Promise.reject(mutationError('REACTION_CONTEXT_INVALID'));
+    }
+
+    const current = get(room, message);
+    const mine = new Set((current?.myReactions || []).map((item) => String(item.reactionId || '')));
+    if ((op === 'add' && mine.has(id)) || (op === 'remove' && !mine.has(id))) {
+      return Promise.resolve({ ok: true, changed: false, localNoop: true });
+    }
+
+    const descriptor = descriptorFor(id, reaction || (current?.reactions || []).find((item) => item.reactionId === id));
+    if (op === 'add' && descriptor.enabled === false) {
+      return Promise.reject(mutationError('REACTION_DISABLED'));
+    }
+
+    const entry = {
+      id: ++mutationSequence,
+      mutationId: globalThis.crypto?.randomUUID?.() || `reaction-${Date.now()}-${mutationSequence}`,
+      roomId: room,
+      messageId: message,
+      participantId,
+      reactionId: id,
+      reaction: descriptor,
+      operation: op,
+      createdAt: new Date().toISOString(),
+      controller: null
+    };
+    const pending = pendingFor(room, message, true);
+    pending.push(entry);
+    stats.optimisticApplied += 1;
+    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true);
+
+    const queued = window.FPReactionArbiter188?.enqueue?.({
+      roomId: room,
+      messageId: message,
+      run: async () => {
+        stats.mutationsStarted += 1;
+        const bridge = makeAbortBridge(room, entry);
+        try {
+          if (bridge.signal.aborted) throw new DOMException('Reaction cancelled', 'AbortError');
+          const method = op === 'add' ? 'PUT' : 'DELETE';
+          const response = await fetch(
+            `/api/rooms/${encodeURIComponent(room)}/messages/${message}/reactions/${encodeURIComponent(id)}`,
+            {
+              method,
+              cache: 'no-store',
+              signal: bridge.signal,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ deviceId, mutationId: entry.mutationId })
+            }
+          );
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.ok) {
+            const error = mutationError(data?.code || `REACTION_HTTP_${response.status}`, data?.error || 'reaction failed');
+            error.status = response.status;
+            throw error;
+          }
+          applyAuthoritative(room, message, data);
+          stats.mutationsConfirmed += 1;
+          return data;
+        } finally {
+          bridge.cleanup();
+        }
+      }
+    }) || Promise.reject(mutationError('REACTION_ARBITER_UNAVAILABLE'));
+
+    return queued.catch((error) => {
+      if (error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL')) stats.mutationsCancelled += 1;
+      else stats.mutationsFailed += 1;
+      throw error;
+    }).finally(() => {
+      const removed = removePendingEntry(entry);
+      if (removed) emitChanged(room, message, getBase(room, message)?.reactionRevision ?? 0, true);
+    });
+  }
+
+  function toggleReaction({ roomId, messageId, reactionId, reaction = null } = {}) {
+    const current = get(roomId, messageId);
+    const mine = (current?.myReactions || []).some((item) => String(item.reactionId) === String(reactionId || ''));
+    return mutateReaction({
+      roomId,
+      messageId,
+      reactionId,
+      reaction,
+      operation: mine ? 'remove' : 'add'
+    });
+  }
+
   function loadedMessageIds(roomId = activeHistoryRoom) {
     return [...(loadedByRoom.get(normalizeRoomId(roomId)) || [])];
   }
@@ -347,6 +686,7 @@
       messages,
       loaded,
       holds: holds.size,
+      pendingMutations: [...pendingByMessage.values()].reduce((sum, list) => sum + list.length, 0),
       catalogLoaded: Boolean(catalogState),
       catalogVersion: catalogState?.version || 0,
       stats: { ...stats }
@@ -368,6 +708,10 @@
     loadCatalog,
     getQuickReactions,
     getAvailableReactions,
+    mutateReaction,
+    toggleReaction,
+    cancelPendingMessage,
+    cancelPendingRoom,
     snapshot
   });
 
@@ -377,7 +721,7 @@
         role: 'reaction-state-owner',
         mode: 'active-owner',
         cache: 'RAM only; bounded by FPHistory174 mounted numeric IDs',
-        owns: 'reaction summary/my-reactions/revision; no DOM/gesture/transport'
+        owns: 'reaction summary/my-reactions/revision + optimistic mutation projection; no DOM/gesture/transport execution'
       });
     } catch {}
   };
