@@ -236,6 +236,23 @@
         color:var(--muted);
         font-size:12px;
       }
+      .fp-reaction-profile-toast188{
+        position:fixed;
+        left:50%;
+        bottom:calc(22px + env(safe-area-inset-bottom));
+        z-index:5300;
+        max-width:min(360px,calc(100vw - 28px));
+        transform:translateX(-50%);
+        padding:9px 12px;
+        border-radius:12px;
+        background:rgba(28,32,38,.94);
+        color:#fff;
+        box-shadow:0 10px 30px rgba(0,0,0,.28);
+        font-size:12px;
+        font-weight:650;
+        text-align:center;
+        pointer-events:none;
+      }
       @media(max-width:600px){
         .fp-reaction-details188-overlay{
           align-items:flex-end;
@@ -322,6 +339,16 @@
     return avatar;
   }
 
+  function showProfileToast(text) {
+    document.querySelector('.fp-reaction-profile-toast188')?.remove();
+    const toast = document.createElement('div');
+    toast.className = 'fp-reaction-profile-toast188';
+    toast.setAttribute('role', 'status');
+    toast.textContent = String(text || 'Профиль недоступен');
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2600);
+  }
+
   function openProfile(row) {
     if (!row?.profile) return false;
     const opener = window.FPUsernameSearch143?.openProfile;
@@ -331,6 +358,51 @@
     stats.profileOpens += 1;
     close('profile-open');
     return true;
+  }
+
+  async function openParticipantProfile({ roomId, messageId, reactionId, participantId } = {}) {
+    const room = String(roomId || '').trim();
+    const message = numericId(messageId);
+    const participant = numericId(participantId);
+    const reaction = String(reactionId || '').trim();
+    if (!room || !message || !participant || !reaction) return false;
+
+    const manager = window.FPReactionManager188;
+    const deviceId = String(manager?.deviceIdForRoom?.(room) || '').trim();
+    const context = window.FPRoomContext170?.current?.() || null;
+    if (!deviceId || (context && String(context.roomId || '') !== room)) return false;
+
+    const params = new URLSearchParams({
+      deviceId,
+      reactionId: reaction
+    });
+    try {
+      const response = await networkFetch(
+        `/api/rooms/${encodeURIComponent(room)}/messages/${message}/reactions/details?${params.toString()}`,
+        { cache: 'no-store', signal: context?.signal }
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
+        showProfileToast('Профиль недоступен');
+        return false;
+      }
+      const row = (Array.isArray(data.rows) ? data.rows : [])
+        .find((item) => Number(item?.participantId) === participant) || null;
+      if (!row?.profile) {
+        showProfileToast('Профиль недоступен');
+        return false;
+      }
+      const opener = window.FPUsernameSearch143?.openProfile;
+      if (typeof opener !== 'function' || opener(row.profile) === false) {
+        showProfileToast('Профиль недоступен');
+        return false;
+      }
+      stats.profileOpens += 1;
+      return true;
+    } catch (error) {
+      if (error?.name !== 'AbortError') showProfileToast('Профиль недоступен');
+      return false;
+    }
   }
 
   function renderRow(state, row) {
@@ -692,6 +764,7 @@
     PAGE_SIZE,
     open,
     close,
+    openParticipantProfile,
     isOpen: () => Boolean(active),
     snapshot: () => ({
       owner: 'FPReactionDetails188',
