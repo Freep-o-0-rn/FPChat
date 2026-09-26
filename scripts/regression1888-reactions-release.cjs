@@ -82,6 +82,8 @@ for (const forbidden of ['noteUnreadEvent(', 'upsertChat(', 'updateUnreadPresent
 // UI contracts accepted in 188.3-188.6.
 assert(renderer.includes("(count === 1 || count === 2) && preview.length === count"), 'avatar preview no longer limited to 1-2 reactors');
 assert(renderer.includes("previewParticipantIds.map(Number)"), 'reaction participant preview IDs missing');
+assert(renderer.includes('previewParticipants'), 'compact reaction preview has no server-backed participant presentation');
+assert(renderer.includes('participantPresentation(participantId, provided)'), 'compact avatar still depends only on volatile presence state');
 assert(renderer.includes("pill.classList.toggle('is-mine'"), 'own compact reaction highlight missing');
 assert(renderer.includes("document.createElement('button')"), 'compact reaction pill is not interactive');
 assert(interaction.includes('const LONG_PRESS_MS = 450;'), 'reaction long press timing changed');
@@ -98,11 +100,16 @@ assert(details.includes('const PAGE_SIZE = 30;'), 'Reaction Details lazy page si
 assert(details.includes("sheet.setAttribute('aria-modal', 'true')"), 'Reaction Details left existing modal layer contract');
 assert(details.includes('window.FPNetwork171'), 'Reaction Details bypasses FPNetwork171');
 assert(details.includes('window.FPUsernameSearch143?.openProfile'), 'Reaction Details bypasses existing profile owner');
+assert(details.includes('async function openParticipantProfile'), 'compact reactor profile bridge missing');
+assert(interaction.includes("event.target?.closest?.('.fp-reaction-avatar188')"), 'compact reactor avatar click still toggles reaction instead of opening profile');
+assert(interaction.includes('openParticipantProfile?.({'), 'compact reactor avatar does not delegate through privacy-safe Details projection');
 
 // Server conflict/order/load protection.
 assert(reactionServer.includes('UNIQUE(message_id, participant_id, reaction_id)'), 'reaction uniqueness changed');
 assert(reactionServer.includes('catalog.maxPerParticipantPerMessage'), 'max-three rule not server authoritative');
 assert(reactionServer.includes('ORDER BY count DESC, first_seen_at ASC, reaction_id ASC'), 'reaction group ordering changed');
+assert(reactionServer.includes('previewParticipants'), 'server reaction summary omits room-visible participant presentation');
+assert(reactionServer.includes('preview_1_name'), 'bulk history reaction summary omits participant names');
 assert(reactionServer.includes('REACTION_DETAILS_STALE'), 'Reaction Details revision race guard missing');
 assert(serverArbiter.includes('const WINDOW_MS = 5000;'), 'adaptive admission window changed');
 assert(serverArbiter.includes('const USER_BURST_LIMIT = 20;'), 'per-user burst guard changed');
