@@ -228,7 +228,12 @@
     if (!root) return;
     const media = voiceMedia(pin);
     const duration = Math.max(0, Number(durationOverride ?? root.dataset.duration ?? media?.duration_seconds ?? 0) || 0);
-    const safe = Math.max(0, Math.min(duration || Infinity, Number(current) || 0));
+    const messageId = String(pin?.messageId || pin?.message?.id || '');
+    const ownsPlayback = Boolean(active && active.root === root && active.messageId === messageId);
+    // Strict visual ownership: only the currently listened Audio instance may
+    // advance time/waveform. Inactive pinned voices always render neutral 0:00.
+    const requested = Math.max(0, Math.min(duration || Infinity, Number(current) || 0));
+    const safe = ownsPlayback ? requested : 0;
     root.dataset.duration = String(duration);
     const time = root.querySelector('.fp-pins127-time');
     if (time) time.textContent = `${formatDuration(safe)} / ${formatDuration(duration)}`;
@@ -248,13 +253,13 @@
     if (current.root?.isConnected) {
       current.root.dataset.pendingSeek = reset ? '0' : String(positions.get(pinKey(current.messageId)) || 0);
       setPlayState(current.root, 'play');
-      renderProgress(current.root, current.pin, reset ? 0 : now, duration);
     }
     try { URL.revokeObjectURL(current.url); } catch {}
     active = null;
+    if (current.root?.isConnected) renderProgress(current.root, current.pin, 0, duration);
   }
 
-  function resetOtherPlaybackUi(ownerRoot = null, { resetProgress = false } = {}) {
+  function resetOtherPlaybackUi(ownerRoot = null) {
     document.querySelectorAll('.fp-pins127-player').forEach((otherRoot) => {
       if (otherRoot === ownerRoot) return;
       const otherMessageId = String(otherRoot.dataset.messageId || '');
@@ -263,9 +268,9 @@
       if (button && (button.classList.contains('is-loading') || !button.classList.contains('is-play'))) {
         setPlayState(otherRoot, 'play');
       }
-      if (!resetProgress || !otherPin) return;
-      positions.delete(pinKey(otherMessageId));
-      otherRoot.dataset.pendingSeek = '0';
+      if (!otherPin) return;
+      // Preserve each message's private resume position, but never expose it as
+      // active progress while another pinned voice owns playback.
       renderProgress(
         otherRoot,
         otherPin,
@@ -297,7 +302,7 @@
     const generation = playbackGeneration;
     // Only the selected pinned voice may carry playback progress. Starting a
     // different voice clears stale/resume presentation from every other card.
-    resetOtherPlaybackUi(root, { resetProgress: true });
+    resetOtherPlaybackUi(root);
     setPlayState(root, 'loading');
     let url = '';
     try {
@@ -315,7 +320,7 @@
         return;
       }
       active = playback;
-      resetOtherPlaybackUi(root, { resetProgress: true });
+      resetOtherPlaybackUi(root);
 
       audio.addEventListener('loadedmetadata', () => {
         if (active !== playback || generation !== playbackGeneration) return;
@@ -334,7 +339,7 @@
       });
       audio.addEventListener('play', () => {
         if (active === playback && generation === playbackGeneration) {
-          resetOtherPlaybackUi(root, { resetProgress: true });
+          resetOtherPlaybackUi(root);
           setPlayState(root, 'pause');
         }
       });
@@ -345,10 +350,10 @@
         if (active !== playback || generation !== playbackGeneration) return;
         positions.delete(pinKey(messageId));
         root.dataset.pendingSeek = '0';
-        renderProgress(root, pin, 0, playback.duration || audio.duration || declared);
         setPlayState(root, 'play');
         try { URL.revokeObjectURL(url); } catch {}
         active = null;
+        renderProgress(root, pin, 0, playback.duration || audio.duration || declared);
       });
       audio.addEventListener('error', () => {
         if (active !== playback || generation !== playbackGeneration) {
@@ -367,7 +372,7 @@
         try { audio.pause(); } catch {}
         return;
       }
-      resetOtherPlaybackUi(root, { resetProgress: true });
+      resetOtherPlaybackUi(root);
       setPlayState(root, 'pause');
       renderProgress(root, pin, audio.currentTime, playback.duration || declared);
     } catch {
