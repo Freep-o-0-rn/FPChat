@@ -110,6 +110,57 @@ function createMessageReactions188({
   const deleteStateForMessage = db.prepare('DELETE FROM message_reaction_state WHERE room_id=? AND message_id=?');
   const deleteReactionsForRoom = db.prepare('DELETE FROM message_reactions WHERE room_id=?');
   const deleteStateForRoom = db.prepare('DELETE FROM message_reaction_state WHERE room_id=?');
+  const bulkSummaryRows = db.prepare(`
+    WITH requested(message_id) AS (
+      SELECT DISTINCT CAST(value AS INTEGER)
+      FROM json_each(?)
+      WHERE CAST(value AS INTEGER) > 0
+    ),
+    ranked AS (
+      SELECT
+        r.message_id,
+        r.reaction_id,
+        r.participant_id,
+        r.id,
+        r.created_at,
+        COALESCE(r.first_seen_at, r.created_at) AS first_seen_at,
+        COUNT(*) OVER (PARTITION BY r.message_id, r.reaction_id) AS reaction_count,
+        ROW_NUMBER() OVER (PARTITION BY r.message_id, r.reaction_id ORDER BY r.id DESC) AS preview_rank
+      FROM message_reactions r
+      JOIN requested req ON req.message_id=r.message_id
+      WHERE r.room_id=?
+    ),
+    groups AS (
+      SELECT
+        message_id,
+        reaction_id,
+        MAX(reaction_count) AS count,
+        MIN(first_seen_at) AS group_first_seen,
+        MAX(CASE WHEN participant_id=? THEN 1 ELSE 0 END) AS mine,
+        MAX(CASE WHEN participant_id=? THEN created_at ELSE NULL END) AS my_created_at,
+        MAX(CASE WHEN reaction_count<=2 AND preview_rank=1 THEN participant_id ELSE NULL END) AS preview_1,
+        MAX(CASE WHEN reaction_count<=2 AND preview_rank=2 THEN participant_id ELSE NULL END) AS preview_2
+      FROM ranked
+      GROUP BY message_id, reaction_id
+    )
+    SELECT
+      req.message_id,
+      COALESCE(state.revision,0) AS reaction_revision,
+      groups.reaction_id,
+      groups.count,
+      groups.group_first_seen,
+      groups.mine,
+      groups.my_created_at,
+      groups.preview_1,
+      groups.preview_2
+    FROM requested req
+    LEFT JOIN message_reaction_state state
+      ON state.room_id=? AND state.message_id=req.message_id
+    LEFT JOIN groups
+      ON groups.message_id=req.message_id
+    WHERE COALESCE(state.revision,0)>0 OR groups.reaction_id IS NOT NULL
+    ORDER BY req.message_id ASC, groups.count DESC, groups.group_first_seen ASC, groups.reaction_id ASC
+  `);
 
   let messageQueries = null;
   function ensureMessageQueries() {
@@ -128,6 +179,20 @@ function createMessageReactions188({
         SELECT 1 AS yes
         FROM message_hidden
         WHERE room_id=? AND message_id=? AND device_id=?
+      `),
+      listVisibleMessageIds: db.prepare(`
+        SELECT m.id
+        FROM messages m
+        WHERE m.room_id=?
+          AND m.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+          AND COALESCE(m.deleted_for_all,0)=0
+          AND m.type!='system'
+          AND NOT EXISTS (
+            SELECT 1 FROM message_hidden h
+            WHERE h.room_id=m.room_id AND h.message_id=m.id AND h.device_id=?
+          )
+        ORDER BY m.id ASC
+        LIMIT 300
       `)
     };
     return messageQueries;
@@ -184,6 +249,65 @@ function createMessageReactions188({
       } : {}),
       catalogVersion: catalog.version
     };
+  }
+
+  function summariesForMessages(roomId, messageIds, viewerParticipantId = null) {
+    const room = Number(roomId);
+    const viewer = Number(viewerParticipantId);
+    if (!Number.isSafeInteger(room) || room <= 0) return [];
+    const ids = [...new Set((Array.isArray(messageIds) ? messageIds : [])
+      .map(Number)
+      .filter((id) => Number.isSafeInteger(id) && id > 0))].slice(0, 300);
+    if (!ids.length) return [];
+
+    const viewerId = Number.isSafeInteger(viewer) && viewer > 0 ? viewer : 0;
+    const rows = bulkSummaryRows.all(JSON.stringify(ids), room, viewerId, viewerId, room);
+    const byMessage = new Map();
+
+    for (const row of rows) {
+      const messageId = Number(row.message_id);
+      let item = byMessage.get(messageId);
+      if (!item) {
+        item = {
+          messageId,
+          reactionRevision: Math.max(0, Number(row.reaction_revision || 0)),
+          reactions: [],
+          myReactions: [],
+          catalogVersion: catalog.version
+        };
+        byMessage.set(messageId, item);
+      }
+      if (!row.reaction_id) continue;
+
+      const reactionId = String(row.reaction_id);
+      const count = Math.max(0, Number(row.count || 0));
+      const mine = Number(row.mine || 0) > 0;
+      const previewParticipantIds = count <= 2
+        ? [row.preview_1, row.preview_2].map(Number).filter((id) => Number.isSafeInteger(id) && id > 0)
+        : [];
+      item.reactions.push({
+        ...catalogDto(reactionId),
+        count,
+        mine,
+        ...(count <= 2 ? { previewParticipantIds } : {})
+      });
+      if (mine) {
+        item.myReactions.push({
+          ...catalogDto(reactionId),
+          createdAt: iso(row.my_created_at)
+        });
+      }
+    }
+
+    for (const item of byMessage.values()) {
+      item.myReactions.sort((a, b) => {
+        const left = Date.parse(a.createdAt || '') || 0;
+        const right = Date.parse(b.createdAt || '') || 0;
+        return left - right || String(a.reactionId).localeCompare(String(b.reactionId));
+      });
+    }
+
+    return ids.map((id) => byMessage.get(id)).filter(Boolean);
   }
 
   function assertMutableMessage(roomId, messageId) {
@@ -312,6 +436,29 @@ function createMessageReactions188({
 
     app.get('/api/reactions/catalog', (req, res) => res.json({ ok: true, ...publicCatalog() }));
 
+    app.post('/api/rooms/:publicId/reactions/summary', (req, res) => {
+      const room = q.findRoomByPublicId.get(String(req.params.publicId || ''));
+      if (!room) return res.status(404).json({ ok: false, code: 'ROOM_NOT_FOUND', error: 'room not found' });
+      const deviceId = safeDevice(req.body?.deviceId);
+      if (!deviceId) return res.status(400).json({ ok: false, code: 'DEVICE_ID_REQUIRED', error: 'deviceId required' });
+      const participant = q.findParticipant.get(room.id, deviceId);
+      if (!participant) return res.status(403).json({ ok: false, code: 'ACCESS_REVOKED', error: 'forbidden' });
+      const requested = [...new Set((Array.isArray(req.body?.messageIds) ? req.body.messageIds : [])
+        .map(Number)
+        .filter((id) => Number.isSafeInteger(id) && id > 0))].slice(0, 300);
+      if (!requested.length) return res.json({ ok: true, reactionSummaries: [], catalogVersion: catalog.version });
+
+      const mq = ensureMessageQueries();
+      const visibleIds = mq.listVisibleMessageIds.all(room.id, JSON.stringify(requested), deviceId).map((row) => Number(row.id));
+      const reactionSummaries = summariesForMessages(room.id, visibleIds, participant.id);
+      return res.json({
+        ok: true,
+        reactionSummaries,
+        catalogVersion: catalog.version,
+        ...(typeof roomStatePayload === 'function' ? roomStatePayload(room) : {})
+      });
+    });
+
     const handle = (operation) => async (req, res) => {
       const auth = authorize(req, res, operation);
       if (!auth) return;
@@ -394,6 +541,7 @@ function createMessageReactions188({
   return Object.freeze({
     catalog: publicCatalog,
     summary,
+    summariesForMessages,
     mutate,
     deleteForAll,
     deleteRoom,
