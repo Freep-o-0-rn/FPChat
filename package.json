@@ -157,7 +157,8 @@
     "test:187": "npm run test:187:presence-privacy && npm run test:180:block-contract && npm run test:179:explicit-participant-presence && npm run test:179:explicit-presence-broadcaster && npm run test:186",
     "test:188:foundation": "node ./scripts/regression1881-reactions-foundation.cjs",
     "test:188.1": "npm run test:188:foundation",
-    "test:188.2": "npm run test:188.1 && node ./scripts/regression1882-reaction-history.cjs"
+    "test:188.2": "npm run test:188.1 && node ./scripts/regression1882-reaction-history.cjs",
+    "test:188.3": "npm run test:188.2 && node ./scripts/regression1883-compat187.cjs && node ./scripts/regression1883-reaction-renderer.cjs"
   },
   "license": "MIT",
   "dependencies": {
