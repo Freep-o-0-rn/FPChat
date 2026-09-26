@@ -54,7 +54,9 @@ assert(renderer.includes('.message-context-copy .' + '$' + '{PILL}'), 'cloned me
 assert.equal((context.match(/fp-reaction-pill188/g) || []).length, 2, 'message-context reaction guards changed');
 assert(context.includes('FPReactionInteractionManager188?.decorateContext'), 'quick strip is not an additive message-context hook');
 assert(app.includes("if(e.target?.closest?.('.fp-reaction-pill188'))return;"), 'reply swipe can start from reaction pill');
-assert(index.includes('renderer.onload = loadReactionInteraction188;'), 'interaction manager load order changed');
+assert(index.includes('renderer.onload = loadReactionPicker188;'), 'picker load order changed');
+assert(index.includes('picker.onload = loadReactionInteraction188;'), 'interaction manager load order changed');
+assert(index.includes('picker.onerror = loadReactionInteraction188;'), 'quick reactions no longer survive optional picker load failure');
 
 const fakeWindow = {
   addEventListener() {},
