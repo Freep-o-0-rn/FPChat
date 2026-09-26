@@ -42,6 +42,7 @@ assert(blocks.includes('participantId: Number(item.id) || null'), 'participant D
 const index = read('public/index.html');
 assert(index.includes('reaction-renderer188.js'), 'reaction renderer asset missing');
 assert(index.includes('manager.onload = loadReactionRenderer188;'), 'renderer is not ordered after ReactionManager');
-assert(index.includes('renderer.onload = loadReactionInteraction188;'), 'interaction manager is not ordered after renderer');
+assert(index.includes('renderer.onload = loadReactionPicker188;'), 'reaction picker is not ordered after renderer');
+assert(index.includes('picker.onload = loadReactionInteraction188;'), 'interaction manager is not ordered after picker');
 
 console.log('Build 188.3 reaction renderer regression: PASS');
