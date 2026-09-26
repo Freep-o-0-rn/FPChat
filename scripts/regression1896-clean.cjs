@@ -19,8 +19,8 @@ const reactionInteraction = read('public/reaction-interaction188.js');
 const voicePins = read('public/voice-pins127.js');
 
 assert.equal(version.build, '189.9', 'version.json must expose Build 189.9');
-assert.match(updater, /EXPECTED_BUILD=189\.8/, 'safe updater must accept Build 189.9');
-assert.match(buildUi, /BUILD_LABEL = 'Build 189\.8'/, 'UI build label must match version.json');
+assert.match(updater, /EXPECTED_BUILD=189\.9/, 'safe updater must accept Build 189.9');
+assert.match(buildUi, /BUILD_LABEL = 'Build 189\.9'/, 'UI build label must match version.json');
 assert.doesNotMatch(buildUi, /\?v=189\.8/, 'Build 189.8 fallback cache suffix must not survive');
 
 assert.equal(
