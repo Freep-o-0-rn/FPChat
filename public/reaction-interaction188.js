@@ -474,7 +474,7 @@
           onExpandedChange: (expanded) => {
             if (expanded) stats.pickerOpens += 1;
           },
-          onSelect: (reaction) => {
+          onSelect: (reaction, activation = {}) => {
             const info = {
               roomId,
               messageId,
@@ -489,7 +489,8 @@
               value: String(reaction?.value || ''),
               enabled: reaction?.enabled !== false
             }).catch((error) => reportMutationFailure(error, info));
-            closeContext?.();
+            if (activation.fromMousePointer) setTimeout(() => closeContext?.(), 0);
+            else closeContext?.();
           }
         });
       }
