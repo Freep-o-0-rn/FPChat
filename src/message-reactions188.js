@@ -29,6 +29,7 @@ function createMessageReactions188({
       participant_id INTEGER NOT NULL,
       reaction_id TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(message_id, participant_id, reaction_id)
     );
 
@@ -47,6 +48,12 @@ function createMessageReactions188({
       ON message_reactions(message_id, participant_id, created_at, id);
   `);
 
+  const reactionColumns = db.prepare('PRAGMA table_info(message_reactions)').all();
+  if (!reactionColumns.some((column) => column.name === 'first_seen_at')) {
+    db.exec('ALTER TABLE message_reactions ADD COLUMN first_seen_at TEXT');
+    db.exec('UPDATE message_reactions SET first_seen_at=created_at WHERE first_seen_at IS NULL');
+  }
+
   const arbiter = createReactionMutationArbiter188();
   const findOwnReaction = db.prepare(`
     SELECT id, reaction_id, created_at
@@ -59,9 +66,14 @@ function createMessageReactions188({
     WHERE room_id=? AND message_id=? AND participant_id=?
     ORDER BY id ASC
   `);
+  const firstSeenForReaction = db.prepare(`
+    SELECT MIN(COALESCE(first_seen_at, created_at)) AS first_seen_at
+    FROM message_reactions
+    WHERE room_id=? AND message_id=? AND reaction_id=?
+  `);
   const insertReaction = db.prepare(`
-    INSERT INTO message_reactions (room_id, message_id, participant_id, reaction_id)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO message_reactions (room_id, message_id, participant_id, reaction_id, first_seen_at)
+    VALUES (?, ?, ?, ?, COALESCE(?, datetime('now')))
   `);
   const deleteReaction = db.prepare(`
     DELETE FROM message_reactions
@@ -75,11 +87,11 @@ function createMessageReactions188({
   `);
   const readRevision = db.prepare('SELECT revision FROM message_reaction_state WHERE room_id=? AND message_id=?');
   const groupedSummary = db.prepare(`
-    SELECT reaction_id, COUNT(*) AS count, MIN(id) AS first_id
+    SELECT reaction_id, COUNT(*) AS count, MIN(COALESCE(first_seen_at, created_at)) AS first_seen_at
     FROM message_reactions
     WHERE room_id=? AND message_id=?
     GROUP BY reaction_id
-    ORDER BY count DESC, first_id ASC, reaction_id ASC
+    ORDER BY count DESC, first_seen_at ASC, reaction_id ASC
   `);
   const smallPreviewRows = db.prepare(`
     SELECT r.reaction_id, r.participant_id, r.id
@@ -193,7 +205,8 @@ function createMessageReactions188({
       const own = listOwnReactions.all(roomId, messageId, participantId);
       const removeCount = Math.max(0, own.length - catalog.maxPerParticipantPerMessage + 1);
       for (let i = 0; i < removeCount; i += 1) deleteReactionById.run(own[i].id);
-      insertReaction.run(roomId, messageId, participantId, reactionId);
+      const firstSeenAt = firstSeenForReaction.get(roomId, messageId, reactionId)?.first_seen_at || null;
+      insertReaction.run(roomId, messageId, participantId, reactionId, firstSeenAt);
       changed = true;
     } else if (operation === 'remove') {
       changed = deleteReaction.run(roomId, messageId, participantId, reactionId).changes > 0;
