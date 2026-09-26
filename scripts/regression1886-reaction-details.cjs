@@ -22,7 +22,8 @@ assert(serverSource.includes('ORDER BY r.created_at DESC, r.id DESC, r.participa
 assert(serverSource.includes('COUNT(DISTINCT participant_id)'), 'All tab no longer means one participant = one row');
 assert(serverSource.includes('LEFT JOIN user_privacy_settings privacy'), 'profile privacy projection missing');
 assert(serverSource.includes('allow_username_search'), 'existing profile visibility setting not respected');
-assert(serverSource.includes('blockedByPeer'), 'peer block no longer hides profile action');
+assert(serverSource.includes('blocked_by_peer'), 'peer block no longer hides profile action');
+assert(serverSource.includes('LEFT JOIN chat_request_blocks blocked_peer'), 'profile block projection regressed to per-row queries');
 assert(serverSource.includes("app.get('/api/rooms/:publicId/messages/:messageId/reactions/details'"), 'Reaction Details route missing');
 
 assert(detailsSource.includes('const PAGE_SIZE = 30;'), 'client Details page size changed');
@@ -102,6 +103,14 @@ db.exec(`
     show_last_seen_exact INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE chat_request_blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_id TEXT,
+    blocker_device_id TEXT NOT NULL,
+    blocked_device_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(blocker_device_id, blocked_device_id)
+  );
 
   INSERT INTO rooms(id,public_id,status) VALUES(1,'room-a','open');
   INSERT INTO messages(id,room_id,sender_id,type,deleted_for_all) VALUES(10,1,1,'text',0);
@@ -131,6 +140,8 @@ db.exec(`
     ('device-0001',1),
     ('device-0002',0),
     ('device-0003',1);
+  INSERT INTO chat_request_blocks(public_id,blocker_device_id,blocked_device_id)
+  VALUES('block-3-1','device-0003','device-0001');
 `);
 
 const q = {
@@ -139,14 +150,7 @@ const q = {
   findParticipant: db.prepare('SELECT * FROM participants WHERE room_id=? AND device_id=? AND access_revoked=0')
 };
 const userBlocks = {
-  roomSendGuard: () => ({ ok: true }),
-  relationship(viewer, subject) {
-    return {
-      blockedByMe: null,
-      blockedByPeer: viewer === 'device-0001' && subject === 'device-0003' ? { public_id: 'blocked' } : null,
-      communicationBlocked: false
-    };
-  }
+  roomSendGuard: () => ({ ok: true })
 };
 const service = createMessageReactions188({
   db,
