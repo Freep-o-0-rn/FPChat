@@ -203,12 +203,15 @@ function createMessageReactions188({
           NULLIF(profile.username,'') AS profile_username,
           COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
           COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
-          COALESCE(privacy.allow_username_search,1) AS allow_username_search
+          COALESCE(privacy.allow_username_search,1) AS allow_username_search,
+          CASE WHEN blocked_peer.public_id IS NULL THEN 0 ELSE 1 END AS blocked_by_peer
         FROM latest
         JOIN participants p ON p.id=latest.participant_id
         LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
         LEFT JOIN user_identities identity ON identity.device_id=p.device_id
         LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
+        LEFT JOIN chat_request_blocks blocked_peer
+          ON blocked_peer.blocker_device_id=p.device_id AND blocked_peer.blocked_device_id=?
         WHERE latest.rn=1
           AND (
             ? IS NULL
@@ -229,12 +232,15 @@ function createMessageReactions188({
           NULLIF(profile.username,'') AS profile_username,
           COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
           COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
-          COALESCE(privacy.allow_username_search,1) AS allow_username_search
+          COALESCE(privacy.allow_username_search,1) AS allow_username_search,
+          CASE WHEN blocked_peer.public_id IS NULL THEN 0 ELSE 1 END AS blocked_by_peer
         FROM message_reactions r
         JOIN participants p ON p.id=r.participant_id
         LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
         LEFT JOIN user_identities identity ON identity.device_id=p.device_id
         LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
+        LEFT JOIN chat_request_blocks blocked_peer
+          ON blocked_peer.blocker_device_id=p.device_id AND blocked_peer.blocked_device_id=?
         WHERE r.room_id=? AND r.message_id=? AND r.reaction_id=?
           AND (
             ? IS NULL
@@ -294,7 +300,7 @@ function createMessageReactions188({
     const username = String(row?.profile_username || '').trim();
     const isSelf = Boolean(viewer && subject && viewer === subject);
     const privacyAllows = Number(row?.allow_username_search ?? 1) !== 0;
-    const blockedByPeer = !isSelf && Boolean(userBlocks?.relationship?.(viewer, subject)?.blockedByPeer);
+    const blockedByPeer = Number(row?.blocked_by_peer || 0) !== 0;
     if (!username || (!isSelf && (!privacyAllows || blockedByPeer))) return null;
     return {
       username,
@@ -492,8 +498,8 @@ function createMessageReactions188({
         : [null, null, null, 0, null, 0, 0];
 
       const rawRows = tabReactionId
-        ? dq.reactionPage.all(room, message, tabReactionId, ...cursorArgs, DETAILS_PAGE_SIZE + 1)
-        : dq.allPage.all(room, message, ...cursorArgs, DETAILS_PAGE_SIZE + 1);
+        ? dq.reactionPage.all(String(viewerDeviceId || ''), room, message, tabReactionId, ...cursorArgs, DETAILS_PAGE_SIZE + 1)
+        : dq.allPage.all(room, message, String(viewerDeviceId || ''), ...cursorArgs, DETAILS_PAGE_SIZE + 1);
       const hasMore = rawRows.length > DETAILS_PAGE_SIZE;
       const pageRows = rawRows.slice(0, DETAILS_PAGE_SIZE);
       const participantIds = pageRows.map((row) => Number(row.participant_id)).filter((id) => Number.isSafeInteger(id) && id > 0);
