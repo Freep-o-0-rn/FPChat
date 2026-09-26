@@ -324,7 +324,7 @@ function createReactionMutationArbiter188({
           stats.completed += 1;
           entry.resolve(value);
         } catch (error) {
-          if (String(error?.code || '').includes('CANCEL')) stats.cancelled += 1;
+          if (entry.cancelled || entry.generation !== lane.generation || String(error?.code || '').includes('CANCEL')) stats.cancelled += 1;
           else stats.failed += 1;
           entry.reject(error);
         } finally {
