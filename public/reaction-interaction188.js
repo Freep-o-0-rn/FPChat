@@ -8,6 +8,7 @@
   const MOVE_CANCEL_PX = 12;
   const PILL_SELECTOR = '.fp-reaction-pill188';
   const QUICK_CLASS = 'fp-reaction-quick188';
+  const ERROR_TOAST_CLASS = 'fp-reaction-error188';
   const STYLE_ID = 'fp-reaction-interaction188-style';
 
   let touchSession = null;
@@ -21,7 +22,8 @@
     pickerOpens: 0,
     pickerSelections: 0,
     mutationsFailed: 0,
-    detailsFallbacks: 0
+    detailsFallbacks: 0,
+    lastMutationError: null
   };
 
   function ensureStyle() {
@@ -102,6 +104,24 @@
           font-size:22px;
         }
       }
+      .${ERROR_TOAST_CLASS}{
+        position:fixed;
+        left:50%;
+        bottom:calc(22px + env(safe-area-inset-bottom));
+        z-index:5200;
+        max-width:min(360px,calc(100vw - 28px));
+        transform:translateX(-50%);
+        padding:9px 12px;
+        border-radius:12px;
+        background:rgba(28,32,38,.94);
+        color:#fff;
+        box-shadow:0 10px 30px rgba(0,0,0,.28);
+        font-size:12px;
+        font-weight:650;
+        line-height:1.35;
+        text-align:center;
+        pointer-events:none;
+      }
       @media (prefers-reduced-motion:reduce){
         .fp-reaction-quick-button188{transition:none}
       }
@@ -137,12 +157,35 @@
     return (row?.reactions || []).find((item) => String(item.reactionId) === info.reactionId) || null;
   }
 
+  function showMutationError(error) {
+    document.querySelector(`.${ERROR_TOAST_CLASS}`)?.remove();
+    const code = String(error?.code || 'REACTION_FAILED');
+    const toast = document.createElement('div');
+    toast.className = ERROR_TOAST_CLASS;
+    toast.setAttribute('role', 'status');
+    toast.textContent = `Не удалось изменить реакцию (${code})`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3200);
+  }
+
   function reportMutationFailure(error, detail = {}) {
     if (error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL')) return;
     stats.mutationsFailed += 1;
+    stats.lastMutationError = {
+      code: String(error?.code || 'REACTION_FAILED'),
+      status: Number(error?.status || 0) || null,
+      at: Date.now()
+    };
+    console.warn('[FPChat] reaction mutation failed', stats.lastMutationError);
+    showMutationError(error);
     try {
       window.dispatchEvent(new CustomEvent('fpchat:reaction188-error', {
-        detail: { code: error?.code || 'REACTION_FAILED', ...detail }
+        detail: {
+          code: error?.code || 'REACTION_FAILED',
+          status: Number(error?.status || 0) || null,
+          message: String(error?.message || ''),
+          ...detail
+        }
       }));
     } catch {}
   }
