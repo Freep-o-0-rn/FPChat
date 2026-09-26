@@ -73,6 +73,17 @@
 - Added a real Chromium desktop acceptance `regression1888-desktop-browser.cjs`: message right-click → chevron expansion → quick reaction → compact-pill toggle → full-picker reaction.
 - [Desktop/race audit](docs/Build188_8_Physical_Acceptance_Audit.md).
 
+### Build 188.8 — compact reactor identity/profile fix
+
+- По физической проверке найден отдельный дефект compact reaction preview: renderer знал только `previewParticipantIds` и пытался разрешить имя через volatile `state.presence`. Если нужного participant в локальном presence snapshot не было/он ещё не синхронизировался, круг деградировал в `FP`.
+- Server compact summary и bulk history summary теперь передают вместе с ID room-visible `previewParticipants: [{ participantId, displayName, avatarUrl }]`. Username/profile/privacy поля в WS summary не добавляются.
+- `FPReactionManager188` сохраняет presentation в canonical reaction state; `FPReactionRenderer188` использует server presentation первым и только затем fallback на локальный presence.
+- Это убирает зависимость инициалов reaction pill от timing presence-update и корректно показывает имя реактора после live WS, reload и lazy-history.
+- Тап именно по маленькому кругу участника теперь не toggle-ит реакцию: он делегируется `FPReactionDetails188.openParticipantProfile(...)`.
+- Profile bridge повторно использует существующий viewer-specific Reaction Details endpoint и его privacy/block projection, затем открывает существующий `FPUsernameSearch143` profile UI. Отдельный ProfileManager или новый privacy owner не создавался.
+- Если существующий public profile недоступен настройками/блокировкой или у пользователя нет открываемого public username, показывается `Профиль недоступен`; обычный тап по остальной части reaction pill по-прежнему ADD/REMOVE.
+- Cache revision `188.8` обновлён, чтобы исправленные reaction assets пришли на уже развернутые клиенты.
+
 ### Build 188.8 — physical acceptance fixes
 
 - При первой физической приёмке на iPhone обнаружена точная ошибка quick-catalog: server DTO сериализовал отсутствие `quickOrder` как `null`, а client filter считал `Number(null) === 0` валидным integer.
