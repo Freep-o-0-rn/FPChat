@@ -57,6 +57,11 @@ assert(app.includes("if(handleWsPresenceUpdate(payload)||handleWsMessageAck(payl
 assert(app.includes('/reactions/summary'), 'reconnect current-window reaction reconciliation missing');
 assert(app.includes('.slice(0,300)'), 'reconnect reaction batch must remain bounded to history window');
 
+const messageActions = read('public/message-actions.js');
+assert(messageActions.includes('window.FPReactionManager188?.destroyMessage?.(roomId, id);'), 'message delete does not release/cancel local reaction state');
+const roomLifecycle = read('public/room-lifecycle.js');
+assert(roomLifecycle.includes('window.FPReactionManager188?.releaseRoom?.(roomId);'), 'room removal does not release reaction RAM');
+
 const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE rooms (id INTEGER PRIMARY KEY, public_id TEXT, status TEXT);
