@@ -92,6 +92,16 @@
     const preview = Array.isArray(item?.previewParticipantIds)
       ? item.previewParticipantIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0).slice(0, 2)
       : [];
+    const previewParticipants = Array.isArray(item?.previewParticipants)
+      ? item.previewParticipants
+          .map((entry) => ({
+            participantId: Number(entry?.participantId),
+            displayName: String(entry?.displayName || '').trim().replace(/\s+/g, ' ').slice(0, 64),
+            avatarUrl: entry?.avatarUrl ? String(entry.avatarUrl) : null
+          }))
+          .filter((entry) => Number.isSafeInteger(entry.participantId) && entry.participantId > 0)
+          .slice(0, 2)
+      : [];
     const mine = mineOverride === null ? item?.mine === true : Boolean(mineOverride);
     return Object.freeze({
       reactionId,
@@ -99,7 +109,10 @@
       value: String(item?.value || ''),
       count,
       mine,
-      ...(count <= 2 ? { previewParticipantIds: Object.freeze(preview) } : {})
+      ...(count <= 2 ? {
+        previewParticipantIds: Object.freeze(preview),
+        previewParticipants: Object.freeze(previewParticipants.map((entry) => Object.freeze(entry)))
+      } : {})
     });
   }
 
