@@ -377,6 +377,9 @@
 
   ensureStyle();
   document.documentElement.classList.add('fp-reaction-interaction188-ready');
+  // Tiny catalog preload happens only after boot-ready through this optional owner.
+  // It does not extend the stable Build 187 startup gate.
+  void window.FPReactionManager188?.loadCatalog?.().catch?.(() => {});
 
   window.FPReactionInteractionManager188 = Object.freeze({
     LONG_PRESS_MS,
