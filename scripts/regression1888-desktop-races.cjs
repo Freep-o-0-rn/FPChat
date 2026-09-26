@@ -30,6 +30,10 @@ assert(pickerSource.includes("event.pointerType !== 'mouse' || event.button !== 
   'picker item desktop pointerup activation missing');
 assert(pickerSource.includes("['mouse', 'touch', 'pen'].includes(event.pointerType)"),
   'picker expand control does not accept desktop mouse pointerup');
+assert(pickerSource.includes('fromMousePointer: Boolean(fromMousePointer)'),
+  'picker selection loses mouse activation metadata');
+assert(interactionSource.includes('if (activation.fromMousePointer) setTimeout(() => closeContext?.(), 0);'),
+  'desktop picker selection can generate an underlying ghost click');
 assert(index.includes("messageContextFix.src = `/message-context-fix.js${reactionBuildSuffix188 || buildSuffix}`;"),
   'same-build desktop context fix can be stale-cached');
 
