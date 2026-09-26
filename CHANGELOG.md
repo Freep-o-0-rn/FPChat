@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.7` — `build/188-reactions-development`; Telegram-style reactions, adaptive server admission поверх Build 188.6.
+**Сборка разработки:** `188.8` — `build/188-reactions-development`; финальный release candidate Telegram-style reactions поверх Build 188.7.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.7–188.1** | Reactions: foundation, bounded history/RAM, UI/Details и adaptive server admission для будущих групп |
+| 26.09.2026 | **Build 188.8–188.1** | Reactions: полный Telegram-style reaction-domain, финальная архитектурная/регрессионная приёмка и release candidate |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,26 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.7 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.8 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.8 — final reactions release candidate
+
+- Build 188 зафиксирован как завершённый reaction-domain без добавления новой пользовательской механики поверх 188.7.
+- Добавлен финальный cross-build regression `regression1888-reactions-release.cjs`, который проверяет накопленные контракты 188.1–188.7 как единую систему.
+- Финальная проверка фиксирует owner map: `FPReactionManager188`, клиентский `FPReactionArbiter188`, серверный `FPReactionMutationArbiter188`, `FPReactionInteractionManager188`, `FPReactionRenderer188`, `FPReactionPicker188`, `FPReactionDetails188`.
+- Зафиксировано, что reaction WS не меняет unread, chat ordering, last-message activity и notifications.
+- Зафиксирована изоляция reaction-domain от media cache, localStorage/IndexedDB reaction cache и persistent offline queue.
+- Финальный regression проверяет compact UI: свои реакции выделяются; 1–2 реактора используют profile circles, 3+ — числовой count.
+- Зафиксированы Telegram-style gesture contracts: long press 450 мс / movement cancel 12 px, существующий `FPGesture135` остаётся arbiter.
+- Проверяются quick/full catalog, lazy picker, Reaction Details по 30, stale revision guard и существующий profile/network/layer ownership.
+- SQLite acceptance повторно проверяет max 3 реакции, вытеснение самой старой, explicit ADD/REMOVE no-op revision, popularity ordering и delete-for-all cleanup.
+- Delete-for-self и edit отдельно защищены от случайного уничтожения reaction-domain.
+- Build 188.8 не меняет уже принятую adaptive admission 188.7: 5 s window, 20/user, room budget 40–250 по online participants, bounded overflow queue, 429/503 без auto-retry.
+- Добавлены `npm run test:188.8` и короткий alias `npm run test:188`.
+- Release identity/updater/UI cache-bust синхронизированы на **188.8**.
+- Build остаётся в `build/188-reactions-development`; merge в main и production deploy автоматически не выполняются.
+- Добавлена отдельная physical acceptance matrix для финальной ручной проверки на реальных клиентах.
+- [Release candidate Build 188.8](docs/Build188_8_Reactions_Release_Candidate.md).
 
 ### Build 188.7 — adaptive reaction admission
 
