@@ -48,6 +48,10 @@ assert(detailsSource.includes('incomingRevision <= state.revision'),
 assert(detailsSource.includes('const opened = opener(row.profile);') &&
        detailsSource.indexOf('const opened = opener(row.profile);') < detailsSource.indexOf("close('profile-open');"),
   'Details closes before profile handoff succeeds');
+assert(detailsSource.includes("manager?.hold?.(room, message, 'reaction-details188')"),
+  'Reaction Details does not retain the current message reaction summary');
+assert(detailsSource.includes('state.releaseHold?.();'),
+  'Reaction Details does not release its reaction-summary hold on close');
 
 // Delete-for-self must differ from delete-for-all.
 assert(messageActions.includes("if (scope === 'self') window.FPReactionManager188?.hideMessageLocal?.(roomId, id);"),
