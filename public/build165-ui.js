@@ -3,11 +3,11 @@
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 188.3';
+  const BUILD_LABEL = 'Build 188.4';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=188.3'; }
-    catch { return '?v=188.3'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=188.4'; }
+    catch { return '?v=188.4'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
