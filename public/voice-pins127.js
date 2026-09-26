@@ -17,6 +17,7 @@
   let fetchTask = null;
   let refreshRaf = 0;
   let active = null;
+  let playbackGeneration = 0;
 
   function roomId() {
     try { return String(state?.roomId || ''); } catch { return ''; }
@@ -236,6 +237,7 @@
   }
 
   function stopPlayback(reset = false) {
+    playbackGeneration += 1;
     const current = active;
     if (!current) return;
     try { current.audio.pause(); } catch {}
@@ -252,12 +254,27 @@
     active = null;
   }
 
+  function resetOtherPlaybackUi(ownerRoot = null) {
+    document.querySelectorAll('.fp-pins127-player').forEach((otherRoot) => {
+      if (otherRoot === ownerRoot) return;
+      const button = otherRoot.querySelector('.fp-pins127-play');
+      if (!button) return;
+      if (button.classList.contains('is-loading') || !button.classList.contains('is-play')) {
+        setPlayState(otherRoot, 'play');
+      }
+    });
+  }
+
   async function togglePlayback(root, pin) {
     const messageId = String(pin?.messageId || pin?.message?.id || '');
     if (!messageId || !root) return;
     if (active?.messageId === messageId) {
       if (active.audio.paused) {
-        try { active.audio.playbackRate = speed(); await active.audio.play(); setPlayState(root, 'pause'); } catch {}
+        try {
+          active.audio.playbackRate = speed();
+          await active.audio.play();
+          if (active?.messageId === messageId) setPlayState(root, 'pause');
+        } catch {}
       } else {
         active.audio.pause();
         setPlayState(root, 'play');
@@ -267,19 +284,29 @@
 
     stopPlayback(false);
     try { window.FPVoice?.stopPlayback?.(); } catch {}
+    const generation = playbackGeneration;
+    resetOtherPlaybackUi(root);
     setPlayState(root, 'loading');
+    let url = '';
     try {
       const blob = await loadBlob(pin);
-      const url = URL.createObjectURL(blob);
+      if (generation !== playbackGeneration || !root.isConnected) return;
+
+      url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.preload = 'metadata';
       audio.playbackRate = speed();
       const declared = Math.max(0, Number(voiceMedia(pin)?.duration_seconds || root.dataset.duration || 0) || 0);
-      const playback = { messageId, pin, root, audio, url, duration: declared };
+      const playback = { messageId, pin, root, audio, url, duration: declared, generation };
+      if (generation !== playbackGeneration || !root.isConnected) {
+        try { URL.revokeObjectURL(url); } catch {}
+        return;
+      }
       active = playback;
+      resetOtherPlaybackUi(root);
 
       audio.addEventListener('loadedmetadata', () => {
-        if (active !== playback) return;
+        if (active !== playback || generation !== playbackGeneration) return;
         const actual = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : declared;
         playback.duration = actual;
         root.dataset.duration = String(actual);
@@ -288,19 +315,22 @@
         renderProgress(root, pin, audio.currentTime, actual);
       });
       audio.addEventListener('timeupdate', () => {
-        if (active !== playback) return;
+        if (active !== playback || generation !== playbackGeneration) return;
         const duration = playback.duration || audio.duration || declared;
         if (duration > 0) positions.set(pinKey(messageId), Math.max(0, Math.min(1, audio.currentTime / duration)));
         renderProgress(root, pin, audio.currentTime, duration);
       });
       audio.addEventListener('play', () => {
-        if (active === playback) setPlayState(root, 'pause');
+        if (active === playback && generation === playbackGeneration) {
+          resetOtherPlaybackUi(root);
+          setPlayState(root, 'pause');
+        }
       });
       audio.addEventListener('pause', () => {
-        if (active === playback) setPlayState(root, 'play');
+        if (active === playback && generation === playbackGeneration) setPlayState(root, 'play');
       });
       audio.addEventListener('ended', () => {
-        if (active !== playback) return;
+        if (active !== playback || generation !== playbackGeneration) return;
         positions.delete(pinKey(messageId));
         root.dataset.pendingSeek = '0';
         renderProgress(root, pin, 0, playback.duration || audio.duration || declared);
@@ -309,7 +339,11 @@
         active = null;
       });
       audio.addEventListener('error', () => {
-        if (active === playback) active = null;
+        if (active !== playback || generation !== playbackGeneration) {
+          try { URL.revokeObjectURL(url); } catch {}
+          return;
+        }
+        active = null;
         setPlayState(root, 'play');
         try { URL.revokeObjectURL(url); } catch {}
       });
@@ -317,10 +351,17 @@
       const ratio = Math.max(0, Math.min(1, Number(root.dataset.pendingSeek || positions.get(pinKey(messageId)) || 0)));
       if (ratio > 0 && declared > 0) { try { audio.currentTime = ratio * declared; } catch {} }
       await audio.play();
+      if (active !== playback || generation !== playbackGeneration) {
+        try { audio.pause(); } catch {}
+        return;
+      }
+      resetOtherPlaybackUi(root);
       setPlayState(root, 'pause');
       renderProgress(root, pin, audio.currentTime, playback.duration || declared);
     } catch {
-      if (active?.messageId === messageId) active = null;
+      if (generation !== playbackGeneration) return;
+      if (active?.generation === generation) active = null;
+      if (url) { try { URL.revokeObjectURL(url); } catch {} }
       setPlayState(root, 'play');
       alert('Не удалось загрузить голосовое сообщение.');
     }
