@@ -376,6 +376,7 @@
   });
 
   ensureStyle();
+  document.documentElement.classList.add('fp-reaction-interaction188-ready');
 
   window.FPReactionInteractionManager188 = Object.freeze({
     LONG_PRESS_MS,
