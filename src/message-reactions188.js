@@ -17,7 +17,8 @@ function createMessageReactions188({
   isRoomOpen = null,
   roomStatePayload = null,
   userBlocks = null,
-  toIsoUtc = null
+  toIsoUtc = null,
+  getOnlineParticipantCount = null
 }) {
   if (!db || !q) throw new Error('reaction server dependencies are missing');
 
@@ -54,7 +55,7 @@ function createMessageReactions188({
     db.exec('UPDATE message_reactions SET first_seen_at=created_at WHERE first_seen_at IS NULL');
   }
 
-  const arbiter = createReactionMutationArbiter188();
+  const arbiter = createReactionMutationArbiter188({ getOnlineParticipantCount });
   const findOwnReaction = db.prepare(`
     SELECT id, reaction_id, created_at
     FROM message_reactions
@@ -785,6 +786,8 @@ function createMessageReactions188({
             reactionId,
             operation
           });
+        }, {
+          actorId: auth.participant.id
         });
 
         if (result.changed && typeof sendToRoomParticipants === 'function') {
@@ -811,7 +814,17 @@ function createMessageReactions188({
         });
       } catch (error) {
         const status = Number(error?.status) || (error?.code === 'MESSAGE_DELETED' ? 404 : 409);
-        return res.status(status).json({ ok: false, mutationId, code: error?.code || 'REACTION_FAILED', error: error?.message || 'reaction failed' });
+        const retryAfterMs = Number(error?.retryAfterMs);
+        if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+          res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        }
+        return res.status(status).json({
+          ok: false,
+          mutationId,
+          code: error?.code || 'REACTION_FAILED',
+          error: error?.message || 'reaction failed',
+          ...(Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? { retryAfterMs: Math.ceil(retryAfterMs) } : {})
+        });
       }
     };
 
