@@ -7,6 +7,7 @@
   const loadedByRoom = new Map();
   const holds = new Map();
   const pendingByMessage = new Map();
+  const releaseWhenIdle = new Set();
   let activeHistoryRoom = '';
   let mutationSequence = 0;
   let catalogPromise = null;
@@ -438,8 +439,37 @@
     return true;
   }
 
+  function finalizeReleaseWhenIdle(roomId, messageId) {
+    const releaseKey = key(roomId, messageId);
+    if (!releaseKey || !releaseWhenIdle.has(releaseKey)) return false;
+    if (window.FPReactionArbiter188?.hasPending?.(roomId, messageId)) return false;
+    releaseWhenIdle.delete(releaseKey);
+    holds.delete(releaseKey);
+    const room = roomFor(roomId, false);
+    const id = normalizeMessageId(messageId);
+    const removed = Boolean(room && id && room.delete(id));
+    if (removed) stats.released += 1;
+    if (room && !room.size) rooms.delete(normalizeRoomId(roomId));
+    return removed;
+  }
+
+  function hideMessageLocal(roomId, messageId) {
+    const room = normalizeRoomId(roomId);
+    const id = normalizeMessageId(messageId);
+    const releaseKey = key(room, id);
+    if (!room || !id || !releaseKey) return false;
+    loadedByRoom.get(room)?.delete(id);
+    releaseWhenIdle.add(releaseKey);
+    // FPReactionArbiter188.cancelMessage removes queued-but-not-started operations.
+    // The currently running operation is intentionally not aborted for delete-for-self.
+    window.FPReactionArbiter188?.cancelMessage?.(room, id, 'REACTION_MESSAGE_HIDDEN');
+    finalizeReleaseWhenIdle(room, id);
+    return true;
+  }
+
   function destroyMessage(roomId, messageId) {
     cancelPendingMessage(roomId, messageId, 'MESSAGE_DELETED');
+    releaseWhenIdle.delete(key(roomId, messageId));
     holds.delete(key(roomId, messageId));
     loadedByRoom.get(normalizeRoomId(roomId))?.delete(normalizeMessageId(messageId));
     const room = roomFor(roomId, false);
@@ -458,6 +488,7 @@
     loadedByRoom.delete(id);
     if (activeHistoryRoom === id) activeHistoryRoom = '';
     for (const holdKey of [...holds.keys()]) if (holdKey.startsWith(`${id}:`)) holds.delete(holdKey);
+    for (const releaseKey of [...releaseWhenIdle]) if (releaseKey.startsWith(`${id}:`)) releaseWhenIdle.delete(releaseKey);
   }
 
   async function loadCatalog() {
@@ -691,7 +722,11 @@
       throw error;
     }).finally(() => {
       const removed = removePendingEntry(entry);
-      if (removed) emitChanged(room, message, getBase(room, message)?.reactionRevision ?? 0, true);
+      if (releaseWhenIdle.has(pendingKey(room, message))) {
+        finalizeReleaseWhenIdle(room, message);
+      } else if (removed) {
+        emitChanged(room, message, getBase(room, message)?.reactionRevision ?? 0, true);
+      }
     });
   }
 
@@ -724,6 +759,7 @@
       loaded,
       holds: holds.size,
       pendingMutations: [...pendingByMessage.values()].reduce((sum, list) => sum + list.length, 0),
+      releaseWhenIdle: releaseWhenIdle.size,
       catalogLoaded: Boolean(catalogState),
       catalogVersion: catalogState?.version || 0,
       stats: { ...stats }
@@ -741,6 +777,7 @@
     releaseMessage,
     syncHistoryRange,
     destroyMessage,
+    hideMessageLocal,
     releaseRoom,
     loadCatalog,
     getQuickReactions,
