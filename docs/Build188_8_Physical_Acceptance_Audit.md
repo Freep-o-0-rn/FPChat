@@ -58,6 +58,18 @@ Fix: existing profile owner is invoked first; Details closes only after a succes
 
 Fix: <=340px quick controls and picker toggle use a compact 31px layout.
 
+### A10 — Reaction Details did not hold bounded reaction state — MEDIUM / LIFECYCLE
+
+The accepted memory contract allowed temporary retention while Details is open, but the modal did not acquire the existing ReactionManager hold. A history-window change could therefore release the compact summary while Details was still active.
+
+Fix: Reaction Details now acquires `FPReactionManager188.hold(roomId,messageId,'reaction-details188')` on open and releases it on every close path. No second cache is added.
+
+### A11 — desktop path lacked a real-browser acceptance gate — MEDIUM / TEST GAP
+
+Static source assertions could verify handlers existed but could not prove that Chromium event ordering actually reached them through the legacy context capture layer.
+
+Fix: `regression1888-desktop-browser.cjs` now exercises the real app in Chromium: right-click context, chevron expansion, quick reaction mutation/render, compact-pill toggle, and full-picker selection.
+
 ## Ownership check
 
 No second gesture/layer/network/history/media owner was introduced. FPGesture135, FPLayer173, FPNetwork171, FPRoomContext170, FPHistory174 and FPMessageStore172 remain authoritative.
@@ -71,6 +83,8 @@ W2: Delete-for-self intentionally waits for a running reaction request. A truly 
 W3: Reaction catalog is cached for the current page lifetime; deployment-time catalog changes require reload.
 
 W4: Group load protection has regression coverage, but group UI is not implemented. Current physical acceptance should stay focused on exactly two clients.
+
+W5: Browser regression covers Chromium desktop input. Safari/iOS still requires physical acceptance because its touch/click synthesis differs from Chromium.
 
 ## Desktop acceptance order
 
