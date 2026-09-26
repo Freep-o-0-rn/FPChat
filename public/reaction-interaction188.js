@@ -488,6 +488,11 @@
           getMineIds: () => mineIds(roomId, messageId),
           onExpandedChange: (expanded) => {
             if (expanded) stats.pickerOpens += 1;
+            // Telegram-like context mode: the full catalog replaces the action
+            // menu while it is open. Quick reactions + selected message stay visible.
+            menu.hidden = Boolean(expanded);
+            menu.setAttribute('aria-hidden', expanded ? 'true' : 'false');
+            contextState.cluster?.classList.toggle('fp-reaction-picker-expanded188', Boolean(expanded));
           },
           onSelect: (reaction, activation = {}) => {
             const info = {
