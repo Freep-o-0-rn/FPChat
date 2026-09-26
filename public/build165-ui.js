@@ -22,16 +22,6 @@
     document.body.appendChild(contextLayout);
   }
 
-  // Build 189.5: the pinned-messages modal owns its edge-back recognizer, while
-  // FPGesture135/FPLayer173 remain the admission/layer arbiters.
-  if (!window.FPPinsNavigation189 && !document.querySelector('script[data-fp-pins-navigation189]')) {
-    const pinsNavigation = document.createElement('script');
-    pinsNavigation.src = `/pins-navigation189.js${storageSuffix}`;
-    pinsNavigation.dataset.fpPinsNavigation189 = '1';
-    pinsNavigation.async = true;
-    document.body.appendChild(pinsNavigation);
-  }
-
   if (!window.FPRuntime169 && !document.querySelector('script[data-fp-runtime169]')) {
     const runtime = document.createElement('script');
     runtime.src = `/runtime169.js${storageSuffix}`;
