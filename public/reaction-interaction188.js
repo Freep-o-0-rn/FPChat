@@ -21,6 +21,7 @@
     quickClicks: 0,
     pickerOpens: 0,
     pickerSelections: 0,
+    profileClicks: 0,
     mutationsFailed: 0,
     detailsFallbacks: 0,
     lastMutationError: null
@@ -377,6 +378,20 @@
     event.stopImmediatePropagation();
 
     if (Date.now() < suppressClickUntil) return;
+
+    const avatar = event.target?.closest?.('.fp-reaction-avatar188');
+    const participantId = numericId(avatar?.dataset?.participantId);
+    if (avatar && participantId) {
+      stats.profileClicks += 1;
+      void window.FPReactionDetails188?.openParticipantProfile?.({
+        roomId: info.roomId,
+        messageId: info.messageId,
+        reactionId: info.reactionId,
+        participantId
+      });
+      return;
+    }
+
     stats.pillClicks += 1;
     void toggle(info).catch((error) => reportMutationFailure(error, info));
   }, true);
