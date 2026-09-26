@@ -514,6 +514,15 @@
     timer = setTimeout(() => lookup(username, seq), 300);
   }
 
+  window.FPUsernameSearch143 = Object.freeze({
+    openProfile(user) {
+      if (!user || !validSyntax(String(user.username || '').toLowerCase())) return false;
+      openProfile(user);
+      return true;
+    },
+    closeProfile
+  });
+
   search.addEventListener('input', onInput);
   search.addEventListener('search', onInput);
   onInput();
