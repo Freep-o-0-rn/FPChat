@@ -10,6 +10,31 @@
   const unread=box=>nodes(box).filter(n=>n.dataset.incoming==='1'&&n.dataset.read==='0').length;
   const valid=view=>isRoomViewCurrent170(view);
   const pending=roomId=>window.FPMessageStore172?.pending(roomId)||[];
+  const numericMessageIds=messages=>(Array.isArray(messages)?messages:[]).map(message=>Number(message?.id)).filter(value=>Number.isSafeInteger(value)&&value>0);
+  function mergeReactionSummaries188(){
+    const byMessage=new Map();
+    for(const list of arguments){
+      for(const summary of Array.isArray(list)?list:[]){
+        const messageId=Number(summary?.messageId);
+        if(!Number.isSafeInteger(messageId)||messageId<=0)continue;
+        const current=byMessage.get(messageId);
+        const nextRevision=Math.max(0,Number(summary?.reactionRevision||0)||0);
+        const currentRevision=Math.max(0,Number(current?.reactionRevision||0)||0);
+        if(!current||nextRevision>=currentRevision)byMessage.set(messageId,summary);
+      }
+    }
+    return [...byMessage.values()].sort((a,b)=>Number(a.messageId)-Number(b.messageId));
+  }
+  function filterReactionSummaries188(summaries,messages){
+    const ids=new Set(numericMessageIds(messages));
+    return (Array.isArray(summaries)?summaries:[]).filter(summary=>ids.has(Number(summary?.messageId)));
+  }
+  function ingestReactionPage188(view,data,messages=data?.messages){
+    const manager=window.FPReactionManager188;
+    if(!manager||!view?.roomId)return 0;
+    const ids=numericMessageIds(messages);
+    return manager.ingestHistoryPage?.(view.roomId,filterReactionSummaries188(data?.reactionSummaries, messages),{messageIds:ids})||0;
+  }
 
   async function page(view,params={},signal=view.context?.signal){
     if(!valid(view))throw new DOMException('Stale room','AbortError');
@@ -31,7 +56,11 @@
       page(view,{before:String(anchor+1)},signal),page(view,{after:String(anchor)},signal)
     ]);
     const messages=[...new Map([...older.messages,...newer.messages].map(m=>[Number(m.id),m])).values()].sort((a,b)=>Number(a.id)-Number(b.id));
-    return {...older,messages,hasNewer:Boolean(newer.hasMore)};
+    const reactionSummaries=filterReactionSummaries188(
+      mergeReactionSummaries188(older.reactionSummaries,newer.reactionSummaries),
+      messages
+    );
+    return {...older,messages,reactionSummaries,hasNewer:Boolean(newer.hasMore)};
   }
   async function hydrate(view,data){
     const seed=Array.isArray(data.messages)?data.messages:[];
@@ -49,6 +78,7 @@
       data.hasMore=start>0||Boolean(data.hasMore);
       data.nextCursor=Number(data.messages[0]?.id)||null;
     }
+    data.reactionSummaries=filterReactionSummaries188(data.reactionSummaries,data.messages);
   }
   function dispose(node){
     node.dataset.fpEvicted174='1';
@@ -67,6 +97,20 @@
     const indices=mounted.map(n=>index.get(n.dataset.clientMessageId||n.dataset.messageId)).filter(i=>i!==undefined);
     history.localOlder174=indices.length?Math.min(...indices)>0:false;
     history.localNewer174=local.length>0&&(!indices.length||Math.max(...indices)<local.length-1);
+
+    const reactions=window.FPReactionManager188;
+    if(reactions){
+      reactions.syncHistoryRange?.(history.roomId,numeric);
+      if(Array.isArray(history.reactionSummaries188)){
+        reactions.ingestHistoryPage?.(history.roomId,history.reactionSummaries188,{messageIds:numeric});
+        history.reactionSummaries188=null;
+      }
+      if(history.pendingReactionUpdates188 instanceof Map&&history.pendingReactionUpdates188.size){
+        const viewerParticipantId=state?.me?.id||null;
+        for(const payload of history.pendingReactionUpdates188.values())reactions.ingestWs?.(payload,viewerParticipantId);
+        history.pendingReactionUpdates188.clear();
+      }
+    }
   }
   function restoreAnchor(box,anchor){
     if(anchor)restoreMessagesViewState(box,anchor);
@@ -172,6 +216,7 @@
       if(!task.current())return false;
       const existing=new Set(nodes(box).map(n=>String(n.dataset.messageId)));
       const unique=data.messages.filter(m=>!existing.has(String(m.id)));
+      ingestReactionPage188(view,data,unique);
       const scratch=await render(view,unique,history.deviceId,task.current);
       if(!task.current()){nodes(scratch).forEach(dispose);return false;}
       reconcileBeforeMount(view,scratch,history.deviceId);
@@ -225,6 +270,7 @@
       const data=await around(view,anchor,task.signal);jumps++;
       if(!task.current())return null;
       if(anchor&&!data.messages.some(m=>Number(m.id)===anchor))return null;
+      ingestReactionPage188(view,data,data.messages);
       const scratch=await render(view,data.messages,history.deviceId,task.current);
       if(!task.current()){nodes(scratch).forEach(dispose);return null;}
       reconcileBeforeMount(view,scratch,history.deviceId);
@@ -295,6 +341,12 @@
     updateUnreadIndicators();
     return result;
   }
+  function syncReactionRange(){
+    const history=activeChatHistory,box=document.getElementById('messages');
+    if(!history||!isCurrentMessagesBox(box))return false;
+    syncRange(history,box);
+    return true;
+  }
   function mounted(box){
     box.style.overflowAnchor='none';
     box.addEventListener('scroll',()=>{
@@ -305,6 +357,6 @@
     trim();
     if(pending(activeChatHistory?.roomId).length&&!activeChatHistory?.unreadCount&&!activeChatHistory?.viewState?.anchorMessageId)void jump();
   }
-  window.FPHistory174=Object.freeze({hydrate,load,jump,goToUnread,trim,mounted,shouldDefer,defer,
+  window.FPHistory174=Object.freeze({hydrate,load,jump,goToUnread,trim,mounted,shouldDefer,defer,syncReactionRange,
     snapshot:()=>({limit:LIMIT,mounted:nodes(document.getElementById('messages')).length,requests,evictions,jumps,hasOlder:Boolean(activeChatHistory?.hasMore||activeChatHistory?.localOlder174),hasNewer:Boolean(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)})});
 })();
