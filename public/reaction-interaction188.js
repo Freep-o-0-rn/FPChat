@@ -169,20 +169,32 @@
   }
 
   function reportMutationFailure(error, detail = {}) {
-    if (error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL')) return;
+    const rawCode = String(error?.code || '');
+    const isCancellation = error?.name === 'AbortError' || rawCode.includes('CANCEL');
+    const stillInSameRoom = String(detail?.roomId || '') === String(state?.roomId || '');
+    if (isCancellation && (!stillInSameRoom || document.visibilityState === 'hidden')) return;
+
+    const code = error?.name === 'AbortError'
+      ? 'REACTION_ABORTED'
+      : (rawCode || 'REACTION_FAILED');
+    const visibleError = Object.assign(new Error(error?.message || code), {
+      code,
+      status: Number(error?.status || 0) || null
+    });
+
     stats.mutationsFailed += 1;
     stats.lastMutationError = {
-      code: String(error?.code || 'REACTION_FAILED'),
-      status: Number(error?.status || 0) || null,
+      code,
+      status: visibleError.status,
       at: Date.now()
     };
-    console.warn('[FPChat] reaction mutation failed', stats.lastMutationError);
-    showMutationError(error);
+    console.warn('[FPChat] reaction mutation failed', stats.lastMutationError, error);
+    showMutationError(visibleError);
     try {
       window.dispatchEvent(new CustomEvent('fpchat:reaction188-error', {
         detail: {
-          code: error?.code || 'REACTION_FAILED',
-          status: Number(error?.status || 0) || null,
+          code,
+          status: visibleError.status,
           message: String(error?.message || ''),
           ...detail
         }
@@ -193,11 +205,18 @@
   function toggle(info, reaction = null) {
     const manager = window.FPReactionManager188;
     if (!manager?.toggleReaction) return Promise.reject(new Error('reaction manager unavailable'));
-    return manager.toggleReaction({
+    const promise = manager.toggleReaction({
       roomId: info.roomId,
       messageId: info.messageId,
       reactionId: info.reactionId,
       reaction: reaction || reactionDescriptor(info)
+    });
+    // The manager applies optimistic state synchronously. Explicitly ask the thin
+    // renderer to paint it so physical UI does not depend on event delivery timing.
+    window.FPReactionRenderer188?.patchMounted?.(info.roomId, info.messageId);
+    return Promise.resolve(promise).then((result) => {
+      window.FPReactionRenderer188?.patchMounted?.(info.roomId, info.messageId);
+      return result;
     });
   }
 
