@@ -104,6 +104,15 @@
           font-size:22px;
         }
       }
+      @media (max-width:340px){
+        .${QUICK_CLASS}{gap:3px;padding:5px}
+        .fp-reaction-quick-button188{
+          width:31px;
+          height:34px;
+          flex-basis:31px;
+          font-size:21px;
+        }
+      }
       .${ERROR_TOAST_CLASS}{
         position:fixed;
         left:50%;
