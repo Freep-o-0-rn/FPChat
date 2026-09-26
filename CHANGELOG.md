@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.3` — `build/188-reactions-development`; Telegram-style reactions, compact renderer поверх Build 188.2.
+**Сборка разработки:** `188.4` — `build/188-reactions-development`; Telegram-style reactions, interaction/quick reactions поверх Build 188.3.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.3–188.1** | Reactions: foundation, bounded history/RAM, compact pills и стабильный Build 187 compatibility guard |
+| 26.09.2026 | **Build 188.4–188.1** | Reactions: foundation, bounded history/RAM, compact pills, tap/long-press guards и quick reactions |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,24 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.3 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.4 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.4 — interaction / quick reactions
+
+- Добавлен отдельный `FPReactionInteractionManager188`: tap, long press, ПКМ по reaction pill и quick strip внутри существующего message-context.
+- Reaction long press использует тот же контракт, что и сообщение: **450 мс / 12 px**; допуск остаётся у `FPGesture135`.
+- Reaction pill исключён из существующих message long press / reply swipe / message context right-click recognizers только точечными target-guards; старые gesture owners не переписаны.
+- Tap по своей реакции формирует explicit **REMOVE**, tap по чужой/отсутствующей — explicit **ADD**. Server-side TOGGLE не вводится.
+- `FPReactionManager188` получил optimistic projection поверх authoritative state; быстрые последовательности не теряют второй intent при позднем ответе первой операции.
+- Правило максимум **3 реакции** применяется и в optimistic projection: четвёртая вытесняет самую старую.
+- Mutation остаётся в per-message FIFO `FPReactionArbiter188`, без retry/offline persistence. Ошибка сети откатывает только неподтверждённый optimistic state.
+- Каждая mutation захватывает текущий `FPRoomContext170`; смена комнаты отменяет старые queued/running reaction operations и не позволяет A изменить UI B.
+- В существующий message-context добавлена quick-панель **😂 ❤️ 👍 👎 🔥 🥰 👏**. Выбор реакции использует тот же ReactionManager path и закрывает context.
+- Full picker и Reaction Details ещё не реализованы. Long press/ПКМ по pill уже имеют future hook; до появления Details безопасно возвращаются к существующему message-context.
+- Reaction pills становятся кликабельными только после успешной загрузки InteractionManager. Если optional asset не загрузился, они остаются inert и старая логика 187 продолжает получать input.
+- Compatibility guard расширен: `message-context.js` и `appendMessage(...)` после удаления строго разрешённых reaction hooks/guards снова совпадают со стабильной 187.
+- Добавлен `test:188.4`.
+- [Контракт Build 188.4](docs/Build188_4_ReactionInteraction.md).
 
 ### Build 188.3 — compact reaction pills
 
