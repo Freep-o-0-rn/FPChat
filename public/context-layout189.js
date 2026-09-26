@@ -68,9 +68,10 @@
     const clusterRect = cluster.getBoundingClientRect();
     const viewportHeight = Math.max(1, bounds.bottom - bounds.top);
     const surroundingHeight = Math.max(0, clusterRect.height - pickerRect.height);
+    const mobile = window.matchMedia('(max-width: 900px)').matches;
     const cssCap = Math.min(
-      window.matchMedia('(max-width: 900px)').matches ? 230 : 260,
-      viewportHeight * (window.matchMedia('(max-width: 900px)').matches ? 0.34 : 0.38)
+      mobile ? 360 : 420,
+      viewportHeight * (mobile ? 0.45 : 0.50)
     );
     const available = Math.max(96, viewportHeight - surroundingHeight - 10);
     const height = Math.max(96, Math.min(cssCap, available));
