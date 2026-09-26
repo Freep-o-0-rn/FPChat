@@ -39,7 +39,7 @@
   async function page(view,params={},signal=view.context?.signal){
     if(!valid(view))throw new DOMException('Stale room','AbortError');
     const deviceId=STORAGE.get(STORAGE.roomState(view.roomId))?.deviceId;
-    const query=new URLSearchParams({deviceId:String(deviceId),limit:String(PAGE),...params});
+    const query=new URLSearchParams({deviceId:String(deviceId),limit:String(PAGE),reactions:'1',...params});
     requests++;
     const response=await fetch(`/api/rooms/${encodeURIComponent(view.roomId)}/messages?${query}`,{cache:'no-store',signal});
     if(!response.ok)throw Error(`History ${response.status}`);
