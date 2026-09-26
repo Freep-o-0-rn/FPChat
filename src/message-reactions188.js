@@ -162,6 +162,142 @@ function createMessageReactions188({
     ORDER BY req.message_id ASC, groups.count DESC, groups.group_first_seen ASC, groups.reaction_id ASC
   `);
 
+  // Build 188.6: Reaction Details is a read-only, keyset-paged projection.
+  // It does not change reaction mutation/history ownership.
+  const DETAILS_PAGE_SIZE = 30;
+  const detailsTabCounts = db.prepare(`
+    SELECT reaction_id, COUNT(*) AS count, MIN(COALESCE(first_seen_at, created_at)) AS first_seen_at
+    FROM message_reactions
+    WHERE room_id=? AND message_id=?
+    GROUP BY reaction_id
+    ORDER BY count DESC, first_seen_at ASC, reaction_id ASC
+  `);
+  const detailsAllCount = db.prepare(`
+    SELECT COUNT(DISTINCT participant_id) AS count
+    FROM message_reactions
+    WHERE room_id=? AND message_id=?
+  `);
+  const detailsAllPage = db.prepare(`
+    WITH latest AS (
+      SELECT
+        r.participant_id,
+        r.created_at AS latest_created_at,
+        r.id AS latest_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY r.participant_id
+          ORDER BY r.created_at DESC, r.id DESC
+        ) AS rn
+      FROM message_reactions r
+      WHERE r.room_id=? AND r.message_id=?
+    )
+    SELECT
+      latest.participant_id,
+      latest.latest_created_at,
+      latest.latest_id,
+      p.display_name,
+      p.device_id,
+      NULLIF(profile.username,'') AS profile_username,
+      COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
+      COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
+      COALESCE(privacy.allow_username_search,1) AS allow_username_search
+    FROM latest
+    JOIN participants p ON p.id=latest.participant_id
+    LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
+    LEFT JOIN user_identities identity ON identity.device_id=p.device_id
+    LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
+    WHERE latest.rn=1
+      AND (
+        ? IS NULL
+        OR latest.latest_created_at < ?
+        OR (latest.latest_created_at = ? AND latest.latest_id < ?)
+        OR (latest.latest_created_at = ? AND latest.latest_id = ? AND latest.participant_id < ?)
+      )
+    ORDER BY latest.latest_created_at DESC, latest.latest_id DESC, latest.participant_id DESC
+    LIMIT ?
+  `);
+  const detailsReactionPage = db.prepare(`
+    SELECT
+      r.participant_id,
+      r.created_at AS latest_created_at,
+      r.id AS latest_id,
+      p.display_name,
+      p.device_id,
+      NULLIF(profile.username,'') AS profile_username,
+      COALESCE(NULLIF(identity.display_name,''), NULLIF(profile.display_name,''), NULLIF(p.display_name,'')) AS profile_display_name,
+      COALESCE(NULLIF(profile.role,''),'user') AS profile_role,
+      COALESCE(privacy.allow_username_search,1) AS allow_username_search
+    FROM message_reactions r
+    JOIN participants p ON p.id=r.participant_id
+    LEFT JOIN user_profiles profile ON profile.device_id=p.device_id
+    LEFT JOIN user_identities identity ON identity.device_id=p.device_id
+    LEFT JOIN user_privacy_settings privacy ON privacy.device_id=p.device_id
+    WHERE r.room_id=? AND r.message_id=? AND r.reaction_id=?
+      AND (
+        ? IS NULL
+        OR r.created_at < ?
+        OR (r.created_at = ? AND r.id < ?)
+        OR (r.created_at = ? AND r.id = ? AND r.participant_id < ?)
+      )
+    ORDER BY r.created_at DESC, r.id DESC, r.participant_id DESC
+    LIMIT ?
+  `);
+  const detailsParticipantReactions = db.prepare(`
+    SELECT participant_id, reaction_id, created_at, id
+    FROM message_reactions
+    WHERE room_id=? AND message_id=?
+      AND participant_id IN (
+        SELECT CAST(value AS INTEGER) FROM json_each(?)
+      )
+    ORDER BY participant_id ASC, created_at DESC, id DESC
+  `);
+
+  function encodeDetailsCursor(row) {
+    if (!row) return null;
+    const payload = JSON.stringify({
+      t: String(row.latest_created_at || ''),
+      i: Number(row.latest_id || 0),
+      p: Number(row.participant_id || 0)
+    });
+    return Buffer.from(payload, 'utf8').toString('base64url');
+  }
+
+  function decodeDetailsCursor(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (raw.length > 256 || !/^[A-Za-z0-9_-]+$/.test(raw)) throw reactionError('REACTION_DETAILS_CURSOR_INVALID', 400, 'invalid details cursor');
+    try {
+      const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+      const t = String(parsed?.t || '');
+      const i = Number(parsed?.i);
+      const p = Number(parsed?.p);
+      if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)
+        || !Number.isSafeInteger(i) || i <= 0
+        || !Number.isSafeInteger(p) || p <= 0) {
+        throw new Error('invalid');
+      }
+      return { t, i, p };
+    } catch {
+      throw reactionError('REACTION_DETAILS_CURSOR_INVALID', 400, 'invalid details cursor');
+    }
+  }
+
+  function detailsProfile(row, viewerDeviceId) {
+    const viewer = String(viewerDeviceId || '');
+    const subject = String(row?.device_id || '');
+    const username = String(row?.profile_username || '').trim();
+    const isSelf = Boolean(viewer && subject && viewer === subject);
+    const privacyAllows = Number(row?.allow_username_search ?? 1) !== 0;
+    const blockedByPeer = !isSelf && Boolean(userBlocks?.relationship?.(viewer, subject)?.blockedByPeer);
+    if (!username || (!isSelf && (!privacyAllows || blockedByPeer))) return null;
+    return {
+      username,
+      displayName: String(row?.profile_display_name || row?.display_name || 'Пользователь FPChat'),
+      role: row?.profile_role === 'service' ? 'service' : 'user',
+      isSelf,
+      avatarUrl: null
+    };
+  }
+
   let messageQueries = null;
   function ensureMessageQueries() {
     if (messageQueries) return messageQueries;
@@ -310,6 +446,97 @@ function createMessageReactions188({
     return ids.map((id) => byMessage.get(id)).filter(Boolean);
   }
 
+  function reactionDetailsPage({ roomId, messageId, viewerParticipantId, viewerDeviceId, reactionId = null, cursor = null, expectedRevision = null }) {
+    const room = Number(roomId);
+    const message = Number(messageId);
+    const viewerParticipant = Number(viewerParticipantId);
+    const tabReactionId = reactionId == null || reactionId === '' || reactionId === 'all' ? null : String(reactionId).trim();
+    if (!Number.isSafeInteger(room) || room <= 0 || !Number.isSafeInteger(message) || message <= 0
+      || !Number.isSafeInteger(viewerParticipant) || viewerParticipant <= 0) {
+      throw reactionError('REACTION_DETAILS_TARGET_INVALID', 400, 'invalid reaction details target');
+    }
+    if (tabReactionId && (!REACTION_ID_RE.test(tabReactionId) || !reactionById(tabReactionId))) {
+      throw reactionError('REACTION_UNKNOWN', 400, 'unknown reaction');
+    }
+    const decodedCursor = decodeDetailsCursor(cursor);
+    const wantedRevision = expectedRevision == null || expectedRevision === ''
+      ? null
+      : Number(expectedRevision);
+    if (wantedRevision != null && (!Number.isSafeInteger(wantedRevision) || wantedRevision < 0)) {
+      throw reactionError('REACTION_DETAILS_REVISION_INVALID', 400, 'invalid reaction revision');
+    }
+
+    const tx = db.transaction(() => {
+      const revision = revisionFor(room, message);
+      if (wantedRevision != null && wantedRevision !== revision) {
+        const error = reactionError('REACTION_DETAILS_STALE', 409, 'reaction details changed');
+        error.reactionRevision = revision;
+        throw error;
+      }
+
+      const tabs = detailsTabCounts.all(room, message).map((row) => ({
+        ...catalogDto(row.reaction_id),
+        count: Math.max(0, Number(row.count || 0))
+      }));
+      const allCount = Math.max(0, Number(detailsAllCount.get(room, message)?.count || 0));
+      const cursorArgs = decodedCursor
+        ? [decodedCursor.t, decodedCursor.t, decodedCursor.t, decodedCursor.i, decodedCursor.t, decodedCursor.i, decodedCursor.p]
+        : [null, null, null, 0, null, 0, 0];
+
+      const rawRows = tabReactionId
+        ? detailsReactionPage.all(room, message, tabReactionId, ...cursorArgs, DETAILS_PAGE_SIZE + 1)
+        : detailsAllPage.all(room, message, ...cursorArgs, DETAILS_PAGE_SIZE + 1);
+      const hasMore = rawRows.length > DETAILS_PAGE_SIZE;
+      const pageRows = rawRows.slice(0, DETAILS_PAGE_SIZE);
+      const participantIds = pageRows.map((row) => Number(row.participant_id)).filter((id) => Number.isSafeInteger(id) && id > 0);
+      const allParticipantReactions = participantIds.length
+        ? detailsParticipantReactions.all(room, message, JSON.stringify(participantIds))
+        : [];
+      const reactionsByParticipant = new Map();
+      for (const row of allParticipantReactions) {
+        const participantId = Number(row.participant_id);
+        let list = reactionsByParticipant.get(participantId);
+        if (!list) reactionsByParticipant.set(participantId, list = []);
+        list.push({
+          ...catalogDto(row.reaction_id),
+          createdAt: iso(row.created_at)
+        });
+      }
+
+      const rows = pageRows.map((row) => {
+        const participantId = Number(row.participant_id);
+        const allReactions = reactionsByParticipant.get(participantId) || [];
+        const reactions = tabReactionId
+          ? allReactions.filter((reaction) => reaction.reactionId === tabReactionId)
+          : allReactions;
+        return {
+          participantId,
+          displayName: String(row.display_name || 'Пользователь FPChat'),
+          avatarUrl: null,
+          isSelf: Number(viewerParticipant) === participantId,
+          profile: detailsProfile(row, viewerDeviceId),
+          reactions,
+          lastReactionAt: iso(row.latest_created_at)
+        };
+      });
+      return {
+        reactionRevision: revision,
+        tab: tabReactionId || 'all',
+        tabs: {
+          allCount,
+          reactions: tabs
+        },
+        rows,
+        hasMore,
+        nextCursor: hasMore ? encodeDetailsCursor(pageRows[pageRows.length - 1]) : null,
+        pageSize: DETAILS_PAGE_SIZE,
+        catalogVersion: catalog.version
+      };
+    });
+
+    return tx();
+  }
+
   function assertMutableMessage(roomId, messageId) {
     const mq = ensureMessageQueries();
     const row = mq.findMessage.get(roomId, messageId);
@@ -436,6 +663,55 @@ function createMessageReactions188({
 
     app.get('/api/reactions/catalog', (req, res) => res.json({ ok: true, ...publicCatalog() }));
 
+    app.get('/api/rooms/:publicId/messages/:messageId/reactions/details', (req, res) => {
+      const room = q.findRoomByPublicId.get(String(req.params.publicId || ''));
+      if (!room) return res.status(404).json({ ok: false, code: 'ROOM_NOT_FOUND', error: 'room not found' });
+      const deviceId = safeDevice(req.query?.deviceId);
+      if (!deviceId) return res.status(400).json({ ok: false, code: 'DEVICE_ID_REQUIRED', error: 'deviceId required' });
+      const participant = q.findParticipant.get(room.id, deviceId);
+      if (!participant) return res.status(403).json({ ok: false, code: 'ACCESS_REVOKED', error: 'forbidden' });
+
+      const messageId = safeMessageId(req.params.messageId);
+      if (!messageId) return res.status(400).json({ ok: false, code: 'MESSAGE_ID_INVALID', error: 'invalid message id' });
+      const mq = ensureMessageQueries();
+      const message = mq.findMessage.get(room.id, messageId);
+      if (!message || Number(message.deleted_for_all)) {
+        return res.status(404).json({ ok: false, code: 'MESSAGE_DELETED', error: 'message not found' });
+      }
+      if (String(message.type || '') === 'system') {
+        return res.status(409).json({ ok: false, code: 'REACTION_MESSAGE_UNSUPPORTED', error: 'system message does not support reactions' });
+      }
+      if (mq.isHidden.get(room.id, messageId, deviceId)) {
+        return res.status(404).json({ ok: false, code: 'MESSAGE_HIDDEN', error: 'message is hidden for this device' });
+      }
+
+      try {
+        const page = reactionDetailsPage({
+          roomId: room.id,
+          messageId,
+          viewerParticipantId: participant.id,
+          viewerDeviceId: deviceId,
+          reactionId: req.query?.reactionId || 'all',
+          cursor: req.query?.cursor || null,
+          expectedRevision: req.query?.revision ?? null
+        });
+        return res.json({
+          ok: true,
+          messageId,
+          ...page,
+          ...(typeof roomStatePayload === 'function' ? roomStatePayload(room) : {})
+        });
+      } catch (error) {
+        const status = Number(error?.status) || 409;
+        return res.status(status).json({
+          ok: false,
+          code: error?.code || 'REACTION_DETAILS_FAILED',
+          error: error?.message || 'reaction details failed',
+          ...(error?.reactionRevision != null ? { reactionRevision: Number(error.reactionRevision) } : {})
+        });
+      }
+    });
+
     app.post('/api/rooms/:publicId/reactions/summary', (req, res) => {
       const room = q.findRoomByPublicId.get(String(req.params.publicId || ''));
       if (!room) return res.status(404).json({ ok: false, code: 'ROOM_NOT_FOUND', error: 'room not found' });
@@ -542,6 +818,7 @@ function createMessageReactions188({
     catalog: publicCatalog,
     summary,
     summariesForMessages,
+    reactionDetailsPage,
     mutate,
     deleteForAll,
     deleteRoom,
