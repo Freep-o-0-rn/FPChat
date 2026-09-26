@@ -10,8 +10,9 @@ new Function(renderer);
 
 assert(renderer.includes("scope: '.fp-message-reactions188 only'"), 'renderer ownership scope changed');
 assert(renderer.includes("owner: 'FPMessageRender178'"), 'renderer is no longer a worker under MessageRender');
-assert(renderer.includes("gestures: 'none in Build 188.3'"), 'Build 188.3 unexpectedly owns gestures');
-assert(renderer.includes('pointer-events:none'), 'reaction pills can intercept stable Build 187 gestures');
+assert(renderer.includes("gestures: 'delegated to FPReactionInteractionManager188'"), 'reaction gesture ownership is not delegated');
+assert(renderer.includes('pointer-events:none'), 'reaction pills are not inert before interaction owner readiness');
+assert(renderer.includes(':root.fp-reaction-interaction188-ready .${PILL}'), 'reaction pills are not gated by interaction owner readiness');
 assert.equal((renderer.match(/MutationObserver/g) || []).length, 0, 'reaction renderer introduced a MutationObserver');
 assert.equal((renderer.match(/IntersectionObserver/g) || []).length, 0, 'reaction renderer introduced an IntersectionObserver');
 assert.equal((renderer.match(/setInterval\s*\(/g) || []).length, 0, 'reaction renderer introduced polling');
@@ -41,5 +42,6 @@ assert(blocks.includes('participantId: Number(item.id) || null'), 'participant D
 const index = read('public/index.html');
 assert(index.includes('reaction-renderer188.js'), 'reaction renderer asset missing');
 assert(index.includes('manager.onload = loadReactionRenderer188;'), 'renderer is not ordered after ReactionManager');
+assert(index.includes('renderer.onload = loadReactionInteraction188;'), 'interaction manager is not ordered after renderer');
 
 console.log('Build 188.3 reaction renderer regression: PASS');
