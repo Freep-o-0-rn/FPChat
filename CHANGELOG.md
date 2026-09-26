@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.6` — `build/188-reactions-development`; Telegram-style reactions, Reaction Details поверх Build 188.5.
+**Сборка разработки:** `188.7` — `build/188-reactions-development`; Telegram-style reactions, adaptive server admission поверх Build 188.6.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.6–188.1** | Reactions: foundation, bounded history/RAM, pills, quick/full picker и lazy Reaction Details |
+| 26.09.2026 | **Build 188.7–188.1** | Reactions: foundation, bounded history/RAM, UI/Details и adaptive server admission для будущих групп |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,26 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.6 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.7 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.7 — adaptive reaction admission
+
+- Существующий серверный `FPReactionMutationArbiter188` расширен: он по-прежнему владеет FIFO `roomId + messageId`, но теперь также является единым room-wide admission owner; второй reaction arbiter не создавался.
+- Room budget считается **только по реально онлайн участникам**: server adapter считает уникальных участников комнаты с live visible WebSocket; несколько вкладок/сокетов одного device не увеличивают count.
+- Окно admission: **5 секунд**.
+- Adaptive budget: `clamp(online × 1, 40, 250)`. Примеры: 2 online → 40/5s, 100 → 100/5s, 500 → 250/5s.
+- Offline/зарегистрированные участники бюджет не увеличивают. Presence privacy не влияет на внутренний raw-online resource guard.
+- После исчерпания текущего room budget нормальный burst не теряется: операции ждут в bounded RAM queue ещё на один room budget. Для 40 это максимум 80 pending, для 250 — максимум 500 pending.
+- Только при полном room cap сервер возвращает `503 REACTION_BUSY` + `retryAfterMs` / `Retry-After`.
+- Добавлен отдельный per-participant burst guard **20 mutations / 5 s / room**; превышение возвращает `429 REACTION_RATE_LIMITED`.
+- Per-user guard ключуется authenticated `participant_id` и действует сразу по всей комнате, поэтому его нельзя обойти переключением между сообщениями.
+- Accepted mutations по-прежнему выполняются строго FIFO внутри одного сообщения; разные message lanes получают permit у общего room admission.
+- Очередь admission только RAM: SQLite/localStorage/IndexedDB/media cache для неё не используются; auto-retry/offline resend не добавлены.
+- Admission state удерживается только на активное 5-секундное окно и затем освобождается; wake/idle timers используют `unref()`, polling interval не появился.
+- Delete-for-all/delete-room продолжают отменять ещё не стартовавшие reaction mutations; waiter, ожидающий room permit, не может исполниться после cancellation.
+- После ожидания в room queue существующие проверки room-open/access/block выполняются повторно непосредственно перед mutation.
+- Добавлен `test:188.7` для adaptive budget, normal overflow queue, 503 cap, 429 per-user burst и сохранения same-message FIFO.
+- [Контракт Build 188.7](docs/Build188_7_ReactionAdmission.md).
 
 ### Build 188.6 — Reaction Details
 
