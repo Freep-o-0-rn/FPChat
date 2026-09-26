@@ -46,28 +46,17 @@
     if (state.placed || reducedMotion()) return;
     state.placed = true;
     stats.animatedOpens += 1;
-
     const target = shift ? `translate3d(0, ${shift}px, 0)` : 'translate3d(0, 0, 0)';
     try {
-      // FLIP-like entrance: the clone is first perceived at the source position,
-      // then the already-calculated context composition glides to its owned target.
       cluster.animate([
         { transform: 'translate3d(0, 0, 0)', opacity: 0.96 },
         { transform: target, opacity: 1 }
-      ], {
-        duration: 220,
-        easing: 'cubic-bezier(.2,.8,.2,1)',
-        fill: 'none'
-      });
+      ], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'none' });
       clone.classList.add('fp-context-copy189');
       clone.animate([
         { transform: 'scale(.985)' },
         { transform: 'scale(1)' }
-      ], {
-        duration: 220,
-        easing: 'cubic-bezier(.2,.8,.2,1)',
-        fill: 'none'
-      });
+      ], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'none' });
     } catch {}
   }
 
@@ -79,11 +68,16 @@
     const state = states.get(root);
     if (!cluster || !clone || !state) return false;
 
-    // The context layer owns only its visual copy. Never move the real chat.
+    // Expanded reaction catalog owns only its internal scroll. Once opened,
+    // the context composition is frozen so picker scrolling cannot feed back
+    // into context geometry or move the action menu.
+    const picker = root.querySelector('.fp-reaction-picker188');
+    const pickerExpanded = Boolean(picker && !picker.hidden);
+    if (pickerExpanded && state.placed) return true;
+
     if (scroll && scroll.scrollTop !== 0) scroll.scrollTop = 0;
     cluster.classList.add('fp-context-layout189');
 
-    // Measure natural geometry, not a transform left by the previous layout.
     const previousTransition = cluster.style.transition;
     cluster.style.transition = 'none';
     cluster.style.transform = '';
@@ -109,21 +103,25 @@
     shift = Math.round(shift);
     const target = shift ? `translate3d(0, ${shift}px, 0)` : '';
     cluster.style.transform = target;
-    // Force the owned target to be committed before restoring normal relayout transitions.
     void cluster.offsetWidth;
     cluster.style.transition = previousTransition;
 
     animateFirstPlacement(cluster, clone, shift, state);
-
+    state.shift = shift;
     stats.relayouts += 1;
     stats.centered += 1;
     stats.lastTranslateY = shift;
     return true;
   }
 
-  function schedule(root) {
+  function schedule(root, reason = 'mutation') {
     const state = states.get(root);
     if (!state || state.raf) return;
+    // Internal picker scrolling/mutations must never become geometry input.
+    if (reason === 'mutation') {
+      const picker = root.querySelector('.fp-reaction-picker188');
+      if (picker && !picker.hidden && state.placed) return;
+    }
     state.raf = requestAnimationFrame(() => {
       state.raf = requestAnimationFrame(() => {
         state.raf = 0;
@@ -134,13 +132,15 @@
 
   function mount(root) {
     if (!(root instanceof Element) || states.has(root)) return;
-    const state = { observer: null, raf: 0, placed: false };
+    const state = { observer: null, raf: 0, placed: false, shift: 0 };
     states.set(root, state);
     stats.mounts += 1;
-    const observer = new MutationObserver(() => schedule(root));
-    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'aria-expanded'] });
+    const observer = new MutationObserver(() => schedule(root, 'mutation'));
+    // Only structural/visibility changes are interesting. Class churn inside
+    // the emoji grid is intentionally excluded to avoid a relayout loop.
+    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'aria-expanded'] });
     state.observer = observer;
-    schedule(root);
+    schedule(root, 'mount');
   }
 
   function scan(node) {
@@ -167,11 +167,11 @@
   bodyObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
   document.querySelectorAll('.message-context-root').forEach(mount);
 
-  window.visualViewport?.addEventListener?.('resize', () => document.querySelectorAll('.message-context-root').forEach(schedule), { passive: true });
-  window.visualViewport?.addEventListener?.('scroll', () => document.querySelectorAll('.message-context-root').forEach(schedule), { passive: true });
+  window.visualViewport?.addEventListener?.('resize', () => document.querySelectorAll('.message-context-root').forEach(root => schedule(root, 'viewport')), { passive: true });
+  window.visualViewport?.addEventListener?.('scroll', () => document.querySelectorAll('.message-context-root').forEach(root => schedule(root, 'viewport')), { passive: true });
 
   window.FPContextLayout189 = Object.freeze({
-    relayout(root = document.querySelector('.message-context-root')) { if (root) schedule(root); },
+    relayout(root = document.querySelector('.message-context-root'), reason = 'external') { if (root) schedule(root, reason); },
     snapshot: () => ({ owner: 'FPContextLayout189', gestureArbiter: 'FPGesture135', layerArbiter: 'FPLayer173', ...stats })
   });
 
@@ -181,8 +181,8 @@
       mode: 'active-owner',
       gestureArbiter: 'FPGesture135',
       layerArbiter: 'FPLayer173',
-      owns: 'context clone centering + context overlay geometry + context transition + mobile message callout suppression',
-      doesNotOwn: 'chat scroll/history/message state/reaction mutations'
+      owns: 'initial context clone centering + context overlay geometry + context transition + mobile message callout suppression',
+      doesNotOwn: 'chat scroll/history/message state/reaction mutations/reaction picker internal scroll'
     });
   } catch {}
 })();
