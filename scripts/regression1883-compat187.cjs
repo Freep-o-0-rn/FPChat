@@ -69,6 +69,16 @@ assert.equal(
 assert.equal((context.match(/fp-reaction-pill188/g) || []).length, 2, 'message-context must contain exactly two reaction target guards');
 assert.equal((context.match(/FPReactionInteractionManager188\?\.decorateContext/g) || []).length, 1, 'message-context must contain exactly one reaction decorator hook');
 
+const contextFix = read('public/message-context-fix.js');
+const contextFixReactionGuard = " || e.target.closest('.fp-reaction-quick188,.fp-reaction-picker188')";
+assert.equal(
+  fnv1a(contextFix.replace(contextFixReactionGuard, '')),
+  'cc2862bc',
+  'Build 188 changed stable Build 187 message-context-fix beyond the additive reaction click guard'
+);
+assert.equal((contextFix.match(/fp-reaction-quick188/g) || []).length, 1, 'message-context-fix must contain exactly one reaction quick/picker click guard');
+assert.equal((contextFix.match(/fp-reaction-picker188/g) || []).length, 1, 'message-context-fix must contain exactly one reaction quick/picker click guard');
+
 const usernameSearch = read('public/username-search143.js');
 const profileApi = `  window.FPUsernameSearch143 = Object.freeze({
     openProfile(user) {
