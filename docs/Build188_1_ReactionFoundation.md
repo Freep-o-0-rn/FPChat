@@ -88,6 +88,7 @@ Stores only active reaction ownership:
 - `participant_id`
 - `reaction_id`
 - `created_at`
+- `first_seen_at` — internal stable group-order marker copied while a reaction type remains active
 
 Uniqueness:
 
@@ -146,8 +147,10 @@ A client `mutationId` may be echoed as a correlation identifier, but no ever-gro
 Reaction groups are sorted by:
 
 1. count descending;
-2. first reaction row ascending;
+2. first appearance of the still-active reaction group ascending;
 3. reaction ID ascending.
+
+The first-appearance marker is preserved when the earliest reactor removes their reaction while other reactors remain, so equal-count pills do not jump.
 
 Preview participants:
 
@@ -167,7 +170,7 @@ They are not allowed on:
 - deleted-for-all messages;
 - messages hidden for the current device through direct new API calls.
 
-ADD uses the existing block/send authority and cannot bypass a communication block.
+ADD uses the existing block/send authority and cannot bypass a communication block. Admission that can change while a request waits in a per-message server lane (room open state, participant access and ADD block state) is rechecked again immediately before the SQLite mutation.
 
 REMOVE is less restrictive than ADD, but still requires an active participant with room access.
 
