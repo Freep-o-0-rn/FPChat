@@ -418,7 +418,7 @@
         ? `Все${entry.count ? ` ${entry.count}` : ''}`
         : `${entry.label} ${entry.count}`;
       button.addEventListener('click', () => {
-        if (state.tab === entry.id || state.loading) return;
+        if (state.tab === entry.id) return;
         state.tab = entry.id;
         void loadPage(state, { reset: true });
       });
@@ -444,10 +444,12 @@
   }
 
   async function loadPage(state, { reset = false } = {}) {
-    if (!state || active !== state || state.loading) return false;
+    if (!state || active !== state) return false;
+    if (!reset && state.loading) return false;
     if (!reset && !state.hasMore) return false;
 
     if (reset) {
+      state.requestGeneration += 1;
       state.controller?.abort?.('details-reset');
       state.cursor = null;
       state.revision = null;
@@ -457,6 +459,7 @@
       setStateMessage(state, 'Загрузка…');
     }
 
+    const generation = state.requestGeneration;
     const controller = new AbortController();
     state.controller = controller;
     state.loading = true;
@@ -476,7 +479,7 @@
         signal: controller.signal
       });
       const data = await response.json().catch(() => null);
-      if (active !== state || controller.signal.aborted) return false;
+      if (active !== state || controller.signal.aborted || generation !== state.requestGeneration) return false;
 
       if (response.status === 409 && data?.code === 'REACTION_DETAILS_STALE') {
         markStale(state);
@@ -601,6 +604,7 @@
       hasMore: true,
       loading: false,
       stale: false,
+      requestGeneration: 0,
       roomAbortCleanup: null,
       onKey: null
     };
@@ -667,8 +671,10 @@
     if (!state) return;
     const detail = event?.detail || {};
     if (String(detail.roomId || '') !== state.roomId || numericId(detail.messageId) !== state.messageId) return;
+    const incomingRevision = Math.max(0, Number(detail.reactionRevision || 0) || 0);
+    if (!detail.optimistic && state.revision != null && incomingRevision && incomingRevision <= state.revision) return;
     // High-volume groups must not trigger one HTTP refresh per WS mutation.
-    // Mark the current snapshot stale; user refresh or a stale page boundary reloads it.
+    // Mark only a genuinely newer (or local optimistic) snapshot stale.
     markStale(state);
   }, { passive: true });
 
