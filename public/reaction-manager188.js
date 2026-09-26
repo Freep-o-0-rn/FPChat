@@ -25,6 +25,7 @@
     optimisticApplied: 0,
     mutationsStarted: 0,
     mutationsConfirmed: 0,
+    mutationsReconciledByWs: 0,
     mutationsFailed: 0,
     mutationsCancelled: 0
   };
@@ -636,25 +637,48 @@
         try {
           if (bridge.signal.aborted) throw new DOMException('Reaction cancelled', 'AbortError');
           const method = op === 'add' ? 'PUT' : 'DELETE';
-          const response = await fetch(
-            `/api/rooms/${encodeURIComponent(room)}/messages/${message}/reactions/${encodeURIComponent(id)}`,
-            {
-              method,
-              cache: 'no-store',
-              signal: bridge.signal,
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ deviceId, mutationId: entry.mutationId })
+          try {
+            const response = await fetch(
+              `/api/rooms/${encodeURIComponent(room)}/messages/${message}/reactions/${encodeURIComponent(id)}`,
+              {
+                method,
+                cache: 'no-store',
+                signal: bridge.signal,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deviceId, mutationId: entry.mutationId })
+              }
+            );
+            const data = await response.json().catch(() => null);
+            if (!response.ok || !data?.ok) {
+              const error = mutationError(data?.code || `REACTION_HTTP_${response.status}`, data?.error || 'reaction failed');
+              error.status = response.status;
+              throw error;
             }
-          );
-          const data = await response.json().catch(() => null);
-          if (!response.ok || !data?.ok) {
-            const error = mutationError(data?.code || `REACTION_HTTP_${response.status}`, data?.error || 'reaction failed');
-            error.status = response.status;
+            applyAuthoritative(room, message, data);
+            stats.mutationsConfirmed += 1;
+            return data;
+          } catch (error) {
+            // The server broadcasts reaction:update before finishing the HTTP response.
+            // If that WS already moved authoritative own-state to the requested target,
+            // treat a lost/aborted response as confirmed instead of showing a false failure.
+            if (error?.name !== 'AbortError' && !Number(error?.status)) {
+              const authoritative = getBase(room, message);
+              const authoritativeMine = new Set((authoritative?.myReactions || []).map((item) => String(item.reactionId || '')));
+              const fulfilled = op === 'add' ? authoritativeMine.has(id) : !authoritativeMine.has(id);
+              if (fulfilled) {
+                stats.mutationsConfirmed += 1;
+                stats.mutationsReconciledByWs += 1;
+                return {
+                  ok: true,
+                  changed: true,
+                  reconciledByWs: true,
+                  messageId: message,
+                  ...(authoritative || {})
+                };
+              }
+            }
             throw error;
           }
-          applyAuthoritative(room, message, data);
-          stats.mutationsConfirmed += 1;
-          return data;
         } finally {
           bridge.cleanup();
         }
