@@ -69,4 +69,22 @@ assert.equal(
 assert.equal((context.match(/fp-reaction-pill188/g) || []).length, 2, 'message-context must contain exactly two reaction target guards');
 assert.equal((context.match(/FPReactionInteractionManager188\?\.decorateContext/g) || []).length, 1, 'message-context must contain exactly one reaction decorator hook');
 
+const usernameSearch = read('public/username-search143.js');
+const profileApi = `  window.FPUsernameSearch143 = Object.freeze({
+    openProfile(user) {
+      if (!user || !validSyntax(String(user.username || '').toLowerCase())) return false;
+      openProfile(user);
+      return true;
+    },
+    closeProfile
+  });
+
+`;
+assert.equal(
+  fnv1a(usernameSearch.replace(profileApi, '')),
+  '87f4353d',
+  'Build 188 changed stable Build 187 username-search beyond the additive public profile opener'
+);
+assert.equal((usernameSearch.match(/window\.FPUsernameSearch143 = Object\.freeze/g) || []).length, 1, 'username-search must expose exactly one additive profile opener');
+
 console.log('Build 188.3 compatibility guard vs stable 187: PASS');
