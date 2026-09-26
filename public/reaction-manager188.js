@@ -714,6 +714,7 @@
     loadCatalog,
     getQuickReactions,
     getAvailableReactions,
+    deviceIdForRoom,
     mutateReaction,
     toggleReaction,
     cancelPendingMessage,
