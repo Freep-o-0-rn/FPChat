@@ -1,18 +1,18 @@
-/* Build 189.3: presentation bridge with Build 169-189 owners and Layer/Gesture/Scroll/Viewport ownership. */
+/* Build 189.4: presentation bridge with Build 169-189 owners and Layer/Gesture/Scroll/Viewport ownership. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 189.3';
+  const BUILD_LABEL = 'Build 189.4';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=189.3'; }
-    catch { return '?v=189.3'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=189.4'; }
+    catch { return '?v=189.4'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;
 
-  // Build 189.3: geometry is a dedicated owner. It observes only the context
+  // Build 189.4: geometry/transition is a dedicated owner. It observes only the context
   // overlay and delegates admission to the existing Gesture/Layer arbiters.
   if (!window.FPContextLayout189 && !document.querySelector('script[data-fp-context-layout189]')) {
     const contextLayout = document.createElement('script');
