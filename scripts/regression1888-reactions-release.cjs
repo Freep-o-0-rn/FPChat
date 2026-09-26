@@ -18,6 +18,7 @@ const details = read('public/reaction-details188.js');
 const history = read('public/history174.js');
 const app = read('public/app.js');
 const messageActions = read('src/message-actions-server.js');
+const messageContextFix = read('public/message-context-fix.js');
 const index = read('public/index.html');
 const version = JSON.parse(read('public/version.json'));
 const pkg = JSON.parse(read('package.json'));
@@ -131,6 +132,8 @@ assert(index.includes('details.onload = loadReactionInteraction188;'), 'details/
 assert(index.includes('details.onerror = loadReactionInteraction188;'), 'Reaction Details optional fallback missing');
 assert(index.includes("let reactionBuildSuffix188 = '';"), 'same-build reaction asset revision suffix missing');
 assert(index.includes('reactionBuildSuffix188 || buildSuffix'), 'reaction assets are not revision-busted inside Build 188.8');
+assert(messageContextFix.includes("e.target.closest('.fp-reaction-quick188,.fp-reaction-picker188')"), 'legacy message-context capture guard still swallows reaction controls');
+assert(index.includes("messageContextFix.src = `/message-context-fix.js${reactionBuildSuffix188 || buildSuffix}`;"), 'same-build context reaction guard is not revision-busted');
 assert(picker.includes("toggle.addEventListener('pointerup'"), 'picker touch activation is not hardened for iOS');
 assert(interaction.includes('FPReactionRenderer188?.patchMounted?.(info.roomId, info.messageId)'), 'quick/picker optimistic state is not explicitly painted');
 assert(interaction.includes("code = error?.name === 'AbortError'"), 'active-room reaction cancellation code is hidden during acceptance');
