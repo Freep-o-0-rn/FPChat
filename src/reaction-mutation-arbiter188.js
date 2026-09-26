@@ -300,15 +300,6 @@ function createReactionMutationArbiter188({
     if (lanes.get(lane.key) === lane) lanes.delete(lane.key);
   }
 
-  function rejectCancelledEntry(entry, code) {
-    entry.cancelled = true;
-    entry.cancelCode = code;
-    removeAdmissionWaiter(entry, code);
-    stats.cancelled += 1;
-    entry.reject(cancellationError(code));
-    settleRoomPending(entry.roomId);
-  }
-
   async function drain(lane) {
     if (!lane || lane.running) return;
     lane.running = true;
@@ -392,9 +383,8 @@ function createReactionMutationArbiter188({
     if (current && !current.startedTask) {
       current.cancelled = true;
       current.cancelCode = code;
-      if (removeAdmissionWaiter(current, code)) {
-        cancelled += 1;
-      }
+      removeAdmissionWaiter(current, code);
+      cancelled += 1;
     }
 
     const pending = lane.queue.splice(0);
