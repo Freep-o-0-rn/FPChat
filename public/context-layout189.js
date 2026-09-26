@@ -1,4 +1,5 @@
-/* Build 189.4: single owner for message-context geometry, smooth visual transition and mobile callout suppression.
+/* Build 189.5: single owner for message-context geometry, smooth visual transition,
+   canvas-backed voice clone restoration and mobile callout suppression.
    FPGesture135 arbitrates gesture admission; FPLayer173 arbitrates the active UI layer.
    This manager never changes chat scrollTop or message/history state. */
 (() => {
@@ -7,7 +8,7 @@
   const SAFE_GAP = 12;
   const STYLE_ID = 'fp-context-layout189-style';
   const states = new WeakMap();
-  const stats = { mounts: 0, relayouts: 0, centered: 0, animatedOpens: 0, calloutsBlocked: 0, lastTranslateY: 0 };
+  const stats = { mounts: 0, relayouts: 0, centered: 0, animatedOpens: 0, calloutsBlocked: 0, canvasRestores: 0, lastTranslateY: 0 };
 
   function reducedMotion() {
     try { return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true; }
@@ -42,6 +43,40 @@
     return true;
   }
 
+  function messageIdOf(node) {
+    return String(node?.dataset?.messageId || node?.dataset?.id || '').trim();
+  }
+
+  function restoreCanvasBackedUi(clone) {
+    if (!(clone instanceof Element)) return 0;
+    const messageId = messageIdOf(clone);
+    if (!messageId) return 0;
+    const original = [...document.querySelectorAll('#messages .bubble-wrap.msg')]
+      .find((node) => messageIdOf(node) === messageId);
+    if (!original) return 0;
+    const sourceCanvases = [...original.querySelectorAll('canvas')];
+    const cloneCanvases = [...clone.querySelectorAll('canvas')];
+    let restored = 0;
+    for (let i = 0; i < Math.min(sourceCanvases.length, cloneCanvases.length); i += 1) {
+      const source = sourceCanvases[i];
+      const target = cloneCanvases[i];
+      if (!(source instanceof HTMLCanvasElement) || !(target instanceof HTMLCanvasElement)) continue;
+      const width = Math.max(1, Number(source.width) || 1);
+      const height = Math.max(1, Number(source.height) || 1);
+      target.width = width;
+      target.height = height;
+      try {
+        const ctx = target.getContext('2d');
+        if (!ctx) continue;
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(source, 0, 0, width, height);
+        restored += 1;
+      } catch {}
+    }
+    if (restored) stats.canvasRestores += restored;
+    return restored;
+  }
+
   function animateFirstPlacement(cluster, clone, shift, state) {
     if (state.placed || reducedMotion()) return;
     state.placed = true;
@@ -68,9 +103,11 @@
     const state = states.get(root);
     if (!cluster || !clone || !state) return false;
 
-    // Expanded reaction catalog owns only its internal scroll. Once opened,
-    // the context composition is frozen so picker scrolling cannot feed back
-    // into context geometry or move the action menu.
+    // cloneNode() does not copy a canvas bitmap. Voice waveform and any other
+    // canvas-backed message UI are restored from the original message without
+    // creating a second player or taking playback ownership.
+    restoreCanvasBackedUi(clone);
+
     const picker = root.querySelector('.fp-reaction-picker188');
     const pickerExpanded = Boolean(picker && !picker.hidden);
     if (pickerExpanded && state.placed) return true;
@@ -117,7 +154,6 @@
   function schedule(root, reason = 'mutation') {
     const state = states.get(root);
     if (!state || state.raf) return;
-    // Internal picker scrolling/mutations must never become geometry input.
     if (reason === 'mutation') {
       const picker = root.querySelector('.fp-reaction-picker188');
       if (picker && !picker.hidden && state.placed) return;
@@ -136,8 +172,6 @@
     states.set(root, state);
     stats.mounts += 1;
     const observer = new MutationObserver(() => schedule(root, 'mutation'));
-    // Only structural/visibility changes are interesting. Class churn inside
-    // the emoji grid is intentionally excluded to avoid a relayout loop.
     observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'aria-expanded'] });
     state.observer = observer;
     schedule(root, 'mount');
@@ -181,8 +215,8 @@
       mode: 'active-owner',
       gestureArbiter: 'FPGesture135',
       layerArbiter: 'FPLayer173',
-      owns: 'initial context clone centering + context overlay geometry + context transition + mobile message callout suppression',
-      doesNotOwn: 'chat scroll/history/message state/reaction mutations/reaction picker internal scroll'
+      owns: 'initial context clone centering + context overlay geometry + context transition + canvas-backed clone presentation + mobile message callout suppression',
+      doesNotOwn: 'chat scroll/history/message state/audio playback/reaction mutations/reaction picker internal scroll'
     });
   } catch {}
 })();
