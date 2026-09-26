@@ -57,6 +57,18 @@
 
 **26 сентября 2026 · Build 188.8 · ветка `build/188-reactions-development` · база: Build 187.1**
 
+### Build 188.8 — physical acceptance fixes
+
+- При первой физической приёмке на iPhone обнаружена точная ошибка quick-catalog: server DTO сериализовал отсутствие `quickOrder` как `null`, а client filter считал `Number(null) === 0` валидным integer.
+- Из-за этого в quick strip попадал почти весь каталог и сортировался по reaction id; на экране это проявлялось как `😇 😡 🍌 🍾 💔 🎄 🤡 😎 🤪 😢 😈 ...`.
+- Та же ошибка скрывала кнопку раскрытия полного picker: chevron добавлялся в конец переполненного strip и обрезался `overflow:hidden`.
+- Client quick filter теперь принимает только явный `quickOrder != null`, диапазон `1..quickLimit`, сортирует и жёстко ограничивает результат `slice(0, quickLimit)`.
+- Server public catalog больше не отдаёт `quickOrder:null`: поле отсутствует у не-quick реакций.
+- Ожидаемый quick strip снова строго `😂 ❤️ 👍 👎 🔥 🥰 👏 ⌄`.
+- Для второй найденной проблемы — reaction tap без видимого результата — client mutation/optimistic pipeline дополнительно прогнан изолированно: optimistic state создаётся до HTTP, PUT формируется корректно, authoritative response сохраняет pill-state.
+- Чтобы физическая приёмка больше не скрывала server/context ошибку мгновенным rollback, `FPReactionInteractionManager188` теперь показывает короткий toast `Не удалось изменить реакцию (<CODE>)` и сохраняет последний code/status в snapshot.
+- Регрессии 188.5/188.8 дополнены проверкой именно public server catalog → client quick filter, чтобы `null -> 0` больше не прошёл тесты.
+
 ### Build 188.8 — final reactions release candidate
 
 - Build 188 зафиксирован как завершённый reaction-domain без добавления новой пользовательской механики поверх 188.7.
