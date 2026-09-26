@@ -27,6 +27,7 @@
         user-select:none;
       }
       .${PILL}{
+        appearance:none;
         min-height:24px;
         max-width:100%;
         box-sizing:border-box;
@@ -39,12 +40,22 @@
         border-radius:999px;
         background:rgba(120,130,145,.10);
         color:var(--text);
+        font:inherit;
         font-size:12px;
         font-weight:650;
         line-height:1;
         white-space:nowrap;
-        pointer-events:none;
+        cursor:pointer;
+        touch-action:manipulation;
+        pointer-events:auto;
         transition:background .12s ease,border-color .12s ease,color .12s ease;
+      }
+      .${PILL}:focus-visible{
+        outline:2px solid var(--accent);
+        outline-offset:2px;
+      }
+      .message-context-copy .${PILL}{
+        pointer-events:none;
       }
       .${PILL}.is-mine{
         border-color:rgba(51,144,236,.48);
@@ -206,6 +217,7 @@
     }
 
     pill.setAttribute('aria-label', `${String(reaction?.value || '')} ${count}`);
+    pill.setAttribute('aria-pressed', reaction?.mine === true ? 'true' : 'false');
     stats.pillUpdates += 1;
     return true;
   }
@@ -259,7 +271,8 @@
       keep.add(reactionId);
       let pill = existing.get(reactionId);
       if (!pill) {
-        pill = document.createElement('span');
+        pill = document.createElement('button');
+        pill.type = 'button';
         pill.className = PILL;
         pill.dataset.reactionId = reactionId;
       }
@@ -338,7 +351,7 @@
       owner: 'FPMessageRender178',
       scope: '.fp-message-reactions188 only',
       input: 'FPReactionManager188 canonical state',
-      gestures: 'none in Build 188.3',
+      gestures: 'delegated to FPReactionInteractionManager188',
       scrollWrites: false,
       observers: false
     });
