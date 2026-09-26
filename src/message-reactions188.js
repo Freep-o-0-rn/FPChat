@@ -312,13 +312,30 @@ function createMessageReactions188({
       }
       const mutationId = String(req.body?.mutationId || '').trim().slice(0, 80) || null;
       try {
-        const result = await arbiter.enqueue(auth.room.id, auth.messageId, () => mutate({
-          roomId: auth.room.id,
-          messageId: auth.messageId,
-          participantId: auth.participant.id,
-          reactionId,
-          operation
-        }));
+        const result = await arbiter.enqueue(auth.room.id, auth.messageId, () => {
+          // The request may wait behind earlier mutations for this message.
+          // Re-check mutable admission at execution time so a queued ADD cannot
+          // bypass a room close, access revoke or a block that happened later.
+          const latestRoom = q.findRoomById?.get?.(auth.room.id) || auth.room;
+          if (typeof isRoomOpen === 'function' && !isRoomOpen(latestRoom)) {
+            throw reactionError('ROOM_CLOSED', 409, 'room closed');
+          }
+          const activeParticipant = q.findParticipant.get(auth.room.id, auth.deviceId);
+          if (!activeParticipant || Number(activeParticipant.id) !== Number(auth.participant.id)) {
+            throw reactionError('ACCESS_REVOKED', 403, 'forbidden');
+          }
+          if (operation === 'add') {
+            const guard = userBlocks?.roomSendGuard?.(auth.room.id, auth.deviceId);
+            if (guard && !guard.ok) throw reactionError(guard.code || 'REACTION_BLOCKED', 403, 'blocked');
+          }
+          return mutate({
+            roomId: auth.room.id,
+            messageId: auth.messageId,
+            participantId: auth.participant.id,
+            reactionId,
+            operation
+          });
+        });
 
         if (result.changed && typeof sendToRoomParticipants === 'function') {
           const neutral = summary(auth.room.id, auth.messageId, null);
