@@ -106,7 +106,7 @@
     if (!holdKey) return () => {};
     let set = holds.get(holdKey);
     if (!set) holds.set(holdKey, set = new Set());
-    const token = `${String(reason || 'feature')}:${crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`;
+    const token = `${String(reason || 'feature')}:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`}`;
     set.add(token);
     return () => {
       const current = holds.get(holdKey);
