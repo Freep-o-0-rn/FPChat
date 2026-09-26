@@ -496,7 +496,7 @@
       state.revision = Math.max(0, Number(data.reactionRevision || 0) || 0);
       state.cursor = data.nextCursor || null;
       state.hasMore = data.hasMore === true;
-      buildTabs(state, data.tabs);
+      if (reset || !state.tabs.childElementCount) buildTabs(state, data.tabs);
 
       const rows = Array.isArray(data.rows) ? data.rows : [];
       if (!rows.length && reset) {
