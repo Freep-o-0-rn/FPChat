@@ -217,6 +217,26 @@
       const index = Number(tile.dataset.mediaIndex);
       tile.classList.toggle('message-context-selected-media', index === selectedMediaIndex);
     });
+
+    // Canvas pixels are not copied by cloneNode(true). Restore presentation-only
+    // surfaces (voice waveform, etc.) directly from the source message. The clone
+    // never becomes a second media/player owner.
+    const sourceCanvases = [...messageEl.querySelectorAll('canvas')];
+    const cloneCanvases = [...clone.querySelectorAll('canvas')];
+    for (let i = 0; i < Math.min(sourceCanvases.length, cloneCanvases.length); i += 1) {
+      const source = sourceCanvases[i];
+      const target = cloneCanvases[i];
+      if (!(source instanceof HTMLCanvasElement) || !(target instanceof HTMLCanvasElement)) continue;
+      const width = Number(source.width) || 0;
+      const height = Number(source.height) || 0;
+      if (width <= 0 || height <= 0) continue;
+      target.width = width;
+      target.height = height;
+      try {
+        const ctx = target.getContext('2d');
+        if (ctx) ctx.drawImage(source, 0, 0, width, height);
+      } catch {}
+    }
     return clone;
   }
 
@@ -710,6 +730,12 @@
     }
 
     requestAnimationFrame(() => {
+      // Build 189.6: FPContextLayout189 is the sole geometry owner when present.
+      // Keep the old scroll fallback only for a failed/late manager load.
+      if (window.FPContextLayout189?.relayout) {
+        window.FPContextLayout189.relayout(root, 'context-open');
+        return;
+      }
       const menuRect = menu.getBoundingClientRect();
       const cloneRect = clone.getBoundingClientRect();
       const contentBottom = Math.max(menuRect.bottom, cloneRect.bottom);
