@@ -28,7 +28,10 @@
     closes: 0,
     renders: 0,
     renderedItems: 0,
-    selections: 0
+    selections: 0,
+    toggles: 0,
+    lastExpanded: false,
+    lastToggleAt: 0
   };
 
   function ensureStyle() {
@@ -284,8 +287,15 @@
     state.panel.hidden = !next;
     state.toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
     state.strip.classList.toggle('is-picker-open', next);
-    if (next) stats.opens += 1;
-    else stats.closes += 1;
+    stats.toggles += 1;
+    stats.lastExpanded = next;
+    stats.lastToggleAt = Date.now();
+    if (next) {
+      stats.opens += 1;
+      state.panel.scrollTop = 0;
+    } else {
+      stats.closes += 1;
+    }
     state.onExpandedChange?.(next, state.panel);
     return next;
   }
@@ -347,9 +357,18 @@
     attached.set(strip, state);
     stats.attached += 1;
 
+    let suppressSyntheticClickUntil = 0;
+    toggle.addEventListener('pointerup', (event) => {
+      if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressSyntheticClickUntil = Date.now() + 700;
+      publicApi.toggle();
+    });
     toggle.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (Date.now() < suppressSyntheticClickUntil) return;
       publicApi.toggle();
     });
 
