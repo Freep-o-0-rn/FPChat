@@ -254,14 +254,24 @@
     active = null;
   }
 
-  function resetOtherPlaybackUi(ownerRoot = null) {
+  function resetOtherPlaybackUi(ownerRoot = null, { resetProgress = false } = {}) {
     document.querySelectorAll('.fp-pins127-player').forEach((otherRoot) => {
       if (otherRoot === ownerRoot) return;
+      const otherMessageId = String(otherRoot.dataset.messageId || '');
+      const otherPin = pinMap.get(otherMessageId);
       const button = otherRoot.querySelector('.fp-pins127-play');
-      if (!button) return;
-      if (button.classList.contains('is-loading') || !button.classList.contains('is-play')) {
+      if (button && (button.classList.contains('is-loading') || !button.classList.contains('is-play'))) {
         setPlayState(otherRoot, 'play');
       }
+      if (!resetProgress || !otherPin) return;
+      positions.delete(pinKey(otherMessageId));
+      otherRoot.dataset.pendingSeek = '0';
+      renderProgress(
+        otherRoot,
+        otherPin,
+        0,
+        Number(otherRoot.dataset.duration || voiceMedia(otherPin)?.duration_seconds || 0) || 0
+      );
     });
   }
 
@@ -285,7 +295,9 @@
     stopPlayback(false);
     try { window.FPVoice?.stopPlayback?.(); } catch {}
     const generation = playbackGeneration;
-    resetOtherPlaybackUi(root);
+    // Only the selected pinned voice may carry playback progress. Starting a
+    // different voice clears stale/resume presentation from every other card.
+    resetOtherPlaybackUi(root, { resetProgress: true });
     setPlayState(root, 'loading');
     let url = '';
     try {
@@ -303,7 +315,7 @@
         return;
       }
       active = playback;
-      resetOtherPlaybackUi(root);
+      resetOtherPlaybackUi(root, { resetProgress: true });
 
       audio.addEventListener('loadedmetadata', () => {
         if (active !== playback || generation !== playbackGeneration) return;
@@ -322,7 +334,7 @@
       });
       audio.addEventListener('play', () => {
         if (active === playback && generation === playbackGeneration) {
-          resetOtherPlaybackUi(root);
+          resetOtherPlaybackUi(root, { resetProgress: true });
           setPlayState(root, 'pause');
         }
       });
@@ -355,7 +367,7 @@
         try { audio.pause(); } catch {}
         return;
       }
-      resetOtherPlaybackUi(root);
+      resetOtherPlaybackUi(root, { resetProgress: true });
       setPlayState(root, 'pause');
       renderProgress(root, pin, audio.currentTime, playback.duration || declared);
     } catch {
@@ -416,7 +428,13 @@
     if (!card || !publicId) return;
     if (card.dataset.fpPinsVoice127 === publicId) {
       const root = card.querySelector('.fp-pins127-player');
-      if (root) renderProgress(root, pin, Number(root.dataset.pendingSeek || 0) * Number(root.dataset.duration || 0));
+      if (root) {
+        const isActive = active?.messageId === String(pin.messageId);
+        const current = isActive
+          ? Number(active.audio?.currentTime || 0)
+          : Number(root.dataset.pendingSeek || 0) * Number(root.dataset.duration || 0);
+        renderProgress(root, pin, current, isActive ? active.duration : null);
+      }
       return;
     }
     card.dataset.fpPinsVoice127 = publicId;
