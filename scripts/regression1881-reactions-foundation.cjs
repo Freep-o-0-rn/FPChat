@@ -28,7 +28,7 @@ const clientArbiter = read('public/reaction-arbiter188.js');
 assert(clientArbiter.includes('const MAX_PER_MESSAGE = 20;'), 'client per-message queue cap changed');
 assert(clientArbiter.includes("owns: 'ordering only; no transport/retry/persistence'"), 'client arbiter ownership contract missing');
 const clientManager = read('public/reaction-manager188.js');
-assert(clientManager.includes("cache: 'RAM only; bounded by history lifecycle'"), 'reaction manager RAM-only contract missing');
+assert(clientManager.includes("cache: 'RAM only; bounded by FPHistory174 mounted numeric IDs'"), 'reaction manager RAM-only/history-bound contract missing');
 assert(!clientManager.includes('localStorage.'), 'reaction manager introduced persistent local queue/cache');
 assert(!clientManager.includes('indexedDB'), 'reaction manager introduced IndexedDB persistence');
 
