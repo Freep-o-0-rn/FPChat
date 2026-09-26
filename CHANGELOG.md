@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `187.1` — `build/187-development`; настройки видимости presence поверх стабильной базы 186.5.
+**Сборка разработки:** `188.1` — `build/188-reactions-development`; отдельная ветка Telegram-style reactions поверх Build 187.1.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,6 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
+| 26.09.2026 | **Build 188.1** | Reaction foundation: отдельные ReactionManager/Arbiter, каталог, SQLite, revision и ADD/REMOVE contract |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -49,6 +50,29 @@
 
 > [!NOTE]
 > В ранней истории использовались обозначения `Alpha` и `Beta`, а номера иногда откатывались или использовались повторно. Например, **Beta 50** из мая и современный **Build 50** из сентября — это разные этапы разработки.
+
+---
+
+# 😀 Build 188 — Telegram-style reactions
+
+**26 сентября 2026 · Build 188.1 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.1 — Reaction Foundation
+
+- Создан отдельный reaction-domain, не смешанный с `FPMessageStore172`, media cache, unread/read-state или lazy-history.
+- `FPReactionManager188` является клиентским владельцем reaction summary/revision и использует только RAM; persistent/offline queue не создаётся.
+- `FPReactionArbiter188` сериализует действия отдельно для каждого `roomId + messageId`; предел клиентской очереди — **20** операций на сообщение.
+- На сервере добавлен `FPReactionMutationArbiter188`: отдельные FIFO lanes для сообщений, без второго transport/DB owner.
+- Добавлен единый versioned reaction catalog. Quick-набор: **😂 ❤️ 👍 👎 🔥 🥰 👏**; каталог расширяемый через стабильный `reaction_id`.
+- SQLite получил `message_reactions` и `message_reaction_state`. Один участник может держать максимум **3 разные реакции** на сообщение; четвёртая вытесняет самую старую.
+- Протокол использует явные **ADD/REMOVE**, а не TOGGLE. No-op не увеличивает `reactionRevision` и не создаёт WebSocket-событие.
+- Реальный change возвращает authoritative summary и рассылает viewer-neutral `reaction:update`.
+- System/service и deleted-for-all сообщения не принимают реакции. `Delete for all` удаляет reaction-state в той же message-delete transaction; `Delete for self` реакции остальных не уничтожает.
+- Полное удаление комнаты очищает reaction rows/state и pending lanes.
+- Client reaction foundation загружается только после `fpchat:boot-ready`, поэтому Build 188.1 не расширяет critical startup path.
+- UI реакций, quick strip в message-context, picker, gesture integration, Reaction Details и bulk lazy-history summary намеренно вынесены в следующие шаги 188.
+- Добавлен `test:188:foundation`.
+- [Контракт Build 188.1](docs/Build188_1_ReactionFoundation.md).
 
 ---
 
