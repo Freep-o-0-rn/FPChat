@@ -25,8 +25,7 @@ const stable187 = Object.freeze({
   'public/work174.js': '37b1ab50',
   'public/send-manager177.js': 'b69a873e',
   'public/text-send170.js': 'd78b9bc2',
-  'public/media-send170.js': '818bab06',
-  'public/message-context.js': '222b4e49'
+  'public/media-send170.js': '818bab06'
 });
 
 for (const [file, expected] of Object.entries(stable187)) {
@@ -38,16 +37,36 @@ const appendStart = app.indexOf('function appendMessage(box,m,txt,mine,autoScrol
 const appendEnd = app.indexOf('\nfunction canonicalizeIncomingMessageForMount178', appendStart);
 assert(appendStart >= 0 && appendEnd > appendStart, 'appendMessage source not found');
 const append = app.slice(appendStart, appendEnd);
-const withoutReactionHook = append.replace('  window.FPReactionRenderer188?.mount?.(w,state.roomId,m);\n', '');
+const normalizedAppend = append
+  .replace("    if(e.target?.closest?.('.fp-reaction-pill188'))return;\n", '')
+  .replace('  window.FPReactionRenderer188?.mount?.(w,state.roomId,m);\n', '');
 assert.equal(
-  fnv1a(withoutReactionHook),
+  fnv1a(normalizedAppend),
   '7fce4d92',
-  'Build 188.3 changed stable Build 187 appendMessage behavior beyond the one reaction-render hook'
+  'Build 188 changed stable Build 187 appendMessage behavior beyond the reaction swipe guard/render hook'
 );
+assert.equal((append.match(/FPReactionRenderer188\?\.mount/g) || []).length, 1, 'appendMessage must contain exactly one reaction render hook');
+assert.equal((append.match(/fp-reaction-pill188/g) || []).length, 1, 'appendMessage must contain exactly one reaction swipe guard');
+
+const context = read('public/message-context.js');
+const contextHook = `    window.FPReactionInteractionManager188?.decorateContext?.(nextState, {
+      menu,
+      clone,
+      menuBefore,
+      sourceRect,
+      closeContext
+    });
+`;
+const normalizedContext = context
+  .replace("    if (event.target?.closest?.('.fp-reaction-pill188')) return;\n", '')
+  .replace("    if (event.target?.closest?.('.fp-reaction-pill188')) return;\n", '')
+  .replace(contextHook, '');
 assert.equal(
-  (append.match(/FPReactionRenderer188\?\.mount/g) || []).length,
-  1,
-  'appendMessage must contain exactly one additive reaction render hook'
+  fnv1a(normalizedContext),
+  '222b4e49',
+  'Build 188 changed stable Build 187 message-context beyond additive reaction guards/decorator hook'
 );
+assert.equal((context.match(/fp-reaction-pill188/g) || []).length, 2, 'message-context must contain exactly two reaction target guards');
+assert.equal((context.match(/FPReactionInteractionManager188\?\.decorateContext/g) || []).length, 1, 'message-context must contain exactly one reaction decorator hook');
 
 console.log('Build 188.3 compatibility guard vs stable 187: PASS');
