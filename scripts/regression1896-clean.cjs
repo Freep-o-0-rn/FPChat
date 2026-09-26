@@ -15,6 +15,7 @@ const swipe = read('public/swipe-fix.js');
 const context = read('public/context-layout189.js');
 const messageContext = read('public/message-context.js');
 const picker = read('public/reaction-picker188.js');
+const reactionInteraction = read('public/reaction-interaction188.js');
 const voicePins = read('public/voice-pins127.js');
 
 assert.equal(version.build, '189.6', 'version.json must expose Build 189.6');
@@ -45,6 +46,13 @@ assert.match(context, /pickerFrozen/, 'expanded reaction catalog must freeze aft
 assert.match(context, /picker-open/, 'picker opening must get an explicit relayout');
 assert.doesNotMatch(context, /visualViewport\?\.addEventListener\?\.\('scroll'/, 'picker scroll/browser chrome scroll must not feed context geometry');
 assert.match(picker, /overflow-y:auto/, 'full reaction catalog must remain internally scrollable');
-assert.match(picker, /delegateLayout\(st,'picker-open'\)/, 'picker must request one geometry pass after opening');
+assert.match(picker, /delegateLayout\(st,next\?'picker-open':'picker-close'\)/, 'picker must request one geometry pass after final expanded DOM state');
+assert.match(picker, /height:min\(360px,45vh\)/, 'mobile full reaction catalog must expose more than two rows');
+assert.match(reactionInteraction, /menu\.hidden = Boolean\(expanded\)/, 'context action menu must hide while full reactions are open');
+assert.match(reactionInteraction, /fp-reaction-picker-expanded188/, 'expanded reaction state must be explicit on the context cluster');
+
+assert.match(voicePins, /resetOtherPlaybackUi\(root, \{ resetProgress: true \}\)/, 'starting pinned audio must neutralize every other card');
+assert.match(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'non-active pinned voices must not inherit another voice progress');
+assert.match(voicePins, /const isActive = active\?\.messageId === String\(pin\.messageId\)/, 'existing cards must read the live Audio clock only for the active message');
 
 console.log('Build 189.6 clean regression contract: OK');
