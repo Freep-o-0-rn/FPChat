@@ -3,7 +3,7 @@
   if (window.__fpSettings131LoaderStarted) return;
   window.__fpSettings131LoaderStarted = true;
 
-  const BUILD = '188.4';
+  const BUILD = '188.5';
   let attempts = 0;
 
   const boot = () => {
