@@ -235,8 +235,10 @@
       preview.forEach((participantId) => {
         const provided = previewParticipants.find((entry) => Number(entry?.participantId) === participantId) || null;
         const avatar = makeAvatar(participantId, provided);
-        avatar.setAttribute('aria-hidden', 'false');
-        avatar.setAttribute('title', cleanName(provided?.displayName || participantPresentation(participantId)?.displayName || '') || 'Профиль');
+        // The compact avatar is presentation only. The whole reaction pill owns
+        // the tap and toggles the reaction; profiles live in Reaction Details.
+        avatar.setAttribute('aria-hidden', 'true');
+        avatar.removeAttribute('title');
         avatars.appendChild(avatar);
       });
       pill.appendChild(avatars);
