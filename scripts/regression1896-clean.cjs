@@ -18,8 +18,8 @@ const picker = read('public/reaction-picker188.js');
 const reactionInteraction = read('public/reaction-interaction188.js');
 const voicePins = read('public/voice-pins127.js');
 
-assert.equal(version.build, '189.6', 'version.json must expose Build 189.6');
-assert.match(updater, /EXPECTED_BUILD=189\.6/, 'safe updater must accept Build 189.6');
+assert.equal(version.build, '189.7', 'version.json must expose Build 189.7');
+assert.match(updater, /EXPECTED_BUILD=189\.6/, 'safe updater must accept Build 189.7');
 assert.match(buildUi, /BUILD_LABEL = 'Build 189\.6'/, 'UI build label must match version.json');
 assert.doesNotMatch(buildUi, /\?v=189\.5/, 'Build 189.5 fallback cache suffix must not survive');
 
@@ -55,4 +55,4 @@ assert.match(voicePins, /resetOtherPlaybackUi\(root, \{ resetProgress: true \}\)
 assert.match(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'non-active pinned voices must not inherit another voice progress');
 assert.match(voicePins, /const isActive = active\?\.messageId === String\(pin\.messageId\)/, 'existing cards must read the live Audio clock only for the active message');
 
-console.log('Build 189.6 clean regression contract: OK');
+console.log('Build 189.7 regression contract: OK');
