@@ -1,174 +1,27 @@
-/* Build 189.2: full reaction catalog picker UI worker.
-   Lives only inside the existing message-context layer.
-   FPReactionInteractionManager188 owns interaction semantics and mutation delegation.
-   Build 189.2 reserves room for the catalog as soon as context opens, without moving chat scroll. */
+/* Build 189.3: full reaction catalog picker UI worker.
+   Geometry is owned exclusively by FPContextLayout189. */
 (() => {
   if (window.FPReactionPicker188) return;
-
-  const PANEL_CLASS = 'fp-reaction-picker188';
-  const TOGGLE_CLASS = 'fp-reaction-picker-toggle188';
-  const ITEM_CLASS = 'fp-reaction-picker-item188';
-  const STYLE_ID = 'fp-reaction-picker188-style';
-  const attached = new WeakMap();
-  const SAFE_GAP_PX = 12;
-  const COLLAPSED_RESERVE_MAX_PX = 300;
-
-  const CATEGORY_LABELS = Object.freeze({
-    faces: 'Эмоции', hearts: 'Сердца', gestures: 'Жесты', symbols: 'Символы',
-    objects: 'Объекты', food: 'Еда', animals: 'Животные', seasonal: 'Праздничные', other: 'Другие'
-  });
-
-  const stats = {
-    attached: 0, opens: 0, closes: 0, renders: 0, renderedItems: 0,
-    selections: 0, toggles: 0, adaptiveShifts: 0, lastShiftPx: 0,
-    lastExpanded: false, lastToggleAt: 0
-  };
-
-  function ensureStyle() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-      .${TOGGLE_CLASS}{appearance:none;width:36px;height:36px;flex:0 0 36px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:50%;background:rgba(120,130,145,.13);color:var(--muted);cursor:pointer;touch-action:manipulation;transition:background .12s ease,transform .12s ease,color .12s ease}
-      .${TOGGLE_CLASS}:hover{background:rgba(120,130,145,.20);color:var(--text)}
-      .${TOGGLE_CLASS}:active{transform:scale(.92)}
-      .${TOGGLE_CLASS}:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-      .fp-reaction-picker-chevron188{width:10px;height:10px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .16s ease}
-      .${TOGGLE_CLASS}[aria-expanded='true'] .fp-reaction-picker-chevron188{transform:translateY(2px) rotate(225deg)}
-      .${PANEL_CLASS}{width:min(336px,calc(100vw - 28px));max-height:min(310px,52vh);box-sizing:border-box;margin:-2px 6px 8px auto;padding:8px 8px 10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;border:1px solid rgba(255,255,255,.28);border-radius:20px;background:color-mix(in srgb,var(--panel) 91%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.24);backdrop-filter:blur(24px) saturate(1.24);box-shadow:0 16px 38px rgba(0,0,0,.27);pointer-events:auto;scrollbar-width:thin}
-      .message-context-cluster.incoming .${PANEL_CLASS}{margin-left:6px;margin-right:auto}
-      :root[data-theme='dark'] .${PANEL_CLASS}{border-color:rgba(255,255,255,.10);background:color-mix(in srgb,var(--panel) 94%,transparent)}
-      .${PANEL_CLASS}[hidden]{display:none!important}
-      .message-context-cluster.fp-reaction-adaptive189{will-change:transform;transition:transform .2s cubic-bezier(.2,.8,.2,1)}
-      .fp-reaction-picker-section188 + .fp-reaction-picker-section188{margin-top:7px}
-      .fp-reaction-picker-title188{padding:4px 5px 5px;color:var(--muted);font-size:11px;font-weight:700;line-height:1.2;letter-spacing:.02em;text-transform:uppercase}
-      .fp-reaction-picker-grid188{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
-      .${ITEM_CLASS}{appearance:none;min-width:0;aspect-ratio:1;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:25px;line-height:1;cursor:pointer;touch-action:manipulation;transition:background .1s ease,transform .1s ease}
-      .${ITEM_CLASS}:hover{background:rgba(120,130,145,.13)}
-      .${ITEM_CLASS}:active{transform:scale(.88)}
-      .${ITEM_CLASS}.is-mine{background:var(--accent-soft)}
-      .${ITEM_CLASS}:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-      .fp-reaction-picker-empty188{padding:16px 10px;color:var(--muted);text-align:center;font-size:13px}
-      @media (max-width:900px){.${TOGGLE_CLASS}{width:34px;height:34px;flex-basis:34px}.${PANEL_CLASS}{width:min(336px,calc(100vw - 20px));max-height:min(300px,48vh);margin-right:8px}.message-context-cluster.incoming .${PANEL_CLASS}{margin-left:8px;margin-right:auto}}
-      @media (max-width:360px){.fp-reaction-picker-grid188{grid-template-columns:repeat(6,minmax(0,1fr))}.${ITEM_CLASS}{font-size:24px}}
-      @media (max-width:340px){.${TOGGLE_CLASS}{width:31px;height:34px;flex-basis:31px}}
-      @media (prefers-reduced-motion:reduce){.${TOGGLE_CLASS},.fp-reaction-picker-chevron188,.${ITEM_CLASS},.message-context-cluster.fp-reaction-adaptive189{transition:none}}
-    `;
-    document.head.appendChild(style);
-  }
-
-  function enabledCatalog(catalog) {
-    return (Array.isArray(catalog) ? catalog : []).filter((item) => item && item.enabled !== false && String(item.id || '').trim() && String(item.value || '').trim());
-  }
-  function categoryKey(value) { return String(value || 'other').trim().slice(0, 32) || 'other'; }
-  function groupedCatalog(catalog) {
-    const groups = [], byCategory = new Map();
-    for (const reaction of enabledCatalog(catalog)) {
-      const category = categoryKey(reaction.category);
-      let group = byCategory.get(category);
-      if (!group) { group = { category, label: CATEGORY_LABELS[category] || 'Другие', reactions: [] }; byCategory.set(category, group); groups.push(group); }
-      group.reactions.push(reaction);
-    }
-    return groups;
-  }
-  function bindActivation(button, activate) {
-    let suppressClickUntil = 0;
-    button.addEventListener('pointerup', (event) => { if (event.pointerType !== 'mouse' || event.button !== 0) return; event.preventDefault(); event.stopPropagation(); suppressClickUntil = Date.now() + 700; activate(event, true); });
-    button.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); if (Date.now() < suppressClickUntil) return; activate(event, false); });
-  }
-  function renderVisual(button, reaction) { button.dataset.reactionType = String(reaction?.type || 'emoji'); button.textContent = String(reaction?.value || ''); }
-  function syncSelectionForState(state, mineIds) {
-    if (!state?.panel) return;
-    const mine = mineIds instanceof Set ? mineIds : new Set(mineIds || []);
-    state.panel.querySelectorAll(`.${ITEM_CLASS}[data-reaction-id]`).forEach((button) => {
-      const selected = mine.has(String(button.dataset.reactionId || '')); button.classList.toggle('is-mine', selected); button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    });
-  }
-  function render(state) {
-    if (!state || state.rendered) return;
-    state.rendered = true; stats.renders += 1;
-    const groups = groupedCatalog(state.catalog);
-    if (!groups.length) { const empty = document.createElement('div'); empty.className = 'fp-reaction-picker-empty188'; empty.textContent = 'Нет доступных реакций'; state.panel.appendChild(empty); return; }
-    const fragment = document.createDocumentFragment();
-    for (const group of groups) {
-      const section = document.createElement('section'); section.className = 'fp-reaction-picker-section188'; section.dataset.category = group.category;
-      const title = document.createElement('div'); title.className = 'fp-reaction-picker-title188'; title.textContent = group.label; section.appendChild(title);
-      const grid = document.createElement('div'); grid.className = 'fp-reaction-picker-grid188'; grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', group.label);
-      for (const reaction of group.reactions) {
-        const button = document.createElement('button'); button.type = 'button'; button.className = ITEM_CLASS; button.dataset.reactionId = String(reaction.id || ''); button.setAttribute('aria-label', `Реакция ${String(reaction.value || '')}`); button.setAttribute('aria-pressed', 'false'); renderVisual(button, reaction);
-        bindActivation(button, (_event, fromMousePointer) => { stats.selections += 1; state.onSelect?.(reaction, { fromMousePointer: Boolean(fromMousePointer) }); }); grid.appendChild(button); stats.renderedItems += 1;
-      }
-      section.appendChild(grid); fragment.appendChild(section);
-    }
-    state.panel.appendChild(fragment); syncSelectionForState(state, state.getMineIds?.() || new Set());
-  }
-
-  function viewportBounds() {
-    const vv = window.visualViewport;
-    const top = Math.max(0, Number(vv?.offsetTop || 0)) + SAFE_GAP_PX;
-    const height = Math.max(0, Number(vv?.height || window.innerHeight));
-    return { top, bottom: top - SAFE_GAP_PX + height - SAFE_GAP_PX, height };
-  }
-  function applyShift(state, shift) {
-    const cluster = state?.cluster; if (!cluster) return;
-    const next = Math.max(0, Math.ceil(Number(shift) || 0));
-    state.shiftPx = next; stats.lastShiftPx = next;
-    if (next > 0) { stats.adaptiveShifts += 1; cluster.classList.add('fp-reaction-adaptive189'); cluster.style.transform = `translate3d(0, ${-next}px, 0)`; }
-    else { cluster.style.transform = ''; cluster.classList.remove('fp-reaction-adaptive189'); }
-  }
-  function adaptContextPosition(state) {
-    if (!state?.cluster?.isConnected || !state.clone?.isConnected) return;
-    const cluster = state.cluster;
-    cluster.style.transform = '';
-    const bounds = viewportBounds();
-    const clusterRect = cluster.getBoundingClientRect();
-    const cloneRect = state.clone.getBoundingClientRect();
-    let requiredBottom;
-    if (state.expanded) {
-      requiredBottom = clusterRect.bottom;
-    } else {
-      // Long-press mode reserves enough room below the selected message for the catalog.
-      // This is the key 189.2 change: the user sees the message move up before tapping the chevron.
-      const reserve = Math.min(COLLAPSED_RESERVE_MAX_PX, Math.max(180, bounds.height * 0.34));
-      requiredBottom = cloneRect.bottom + reserve;
-    }
-    const overflowBottom = Math.max(0, requiredBottom - bounds.bottom);
-    const availableUp = Math.max(0, clusterRect.top - bounds.top);
-    applyShift(state, Math.min(overflowBottom, availableUp));
-  }
-  function scheduleAdapt(state) { requestAnimationFrame(() => requestAnimationFrame(() => adaptContextPosition(state))); }
-
-  function setExpanded(state, expanded) {
-    if (!state) return false;
-    const next = Boolean(expanded);
-    if (next && !state.rendered) render(state);
-    if (state.expanded === next) return next;
-    state.expanded = next; state.panel.hidden = !next; state.toggle.setAttribute('aria-expanded', next ? 'true' : 'false'); state.strip.classList.toggle('is-picker-open', next);
-    stats.toggles += 1; stats.lastExpanded = next; stats.lastToggleAt = Date.now();
-    if (next) { stats.opens += 1; state.panel.scrollTop = 0; } else { stats.closes += 1; }
-    scheduleAdapt(state);
-    state.onExpandedChange?.(next, state.panel);
-    return next;
-  }
-
-  function attach({ strip, clone, catalog, getMineIds, onSelect, onExpandedChange } = {}) {
-    if (!(strip instanceof Element) || !(clone instanceof Element)) return null;
-    const existing = attached.get(strip); if (existing) return existing.publicApi;
-    ensureStyle();
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = TOGGLE_CLASS; toggle.setAttribute('aria-label', 'Все реакции'); toggle.setAttribute('aria-expanded', 'false'); toggle.innerHTML = '<span class="fp-reaction-picker-chevron188" aria-hidden="true"></span>';
-    const panel = document.createElement('div'); panel.className = PANEL_CLASS; panel.hidden = true; panel.setAttribute('role', 'group'); panel.setAttribute('aria-label', 'Все реакции');
-    strip.appendChild(toggle); strip.insertAdjacentElement('afterend', panel);
-    const state = { strip, clone, toggle, panel, cluster: strip.closest('.message-context-cluster'), catalog: enabledCatalog(catalog), getMineIds, onSelect, onExpandedChange, expanded: false, rendered: false, shiftPx: 0, publicApi: null };
-    const publicApi = Object.freeze({ open: () => setExpanded(state, true), close: () => setExpanded(state, false), toggle: () => setExpanded(state, !state.expanded), isOpen: () => state.expanded, syncSelection: (mineIds) => syncSelectionForState(state, mineIds), panel, toggleButton: toggle });
-    state.publicApi = publicApi; attached.set(strip, state); stats.attached += 1;
-    let suppressSyntheticClickUntil = 0;
-    toggle.addEventListener('pointerup', (event) => { if (!['mouse', 'touch', 'pen'].includes(event.pointerType) || (event.pointerType === 'mouse' && event.button !== 0)) return; event.preventDefault(); event.stopPropagation(); suppressSyntheticClickUntil = Date.now() + 700; publicApi.toggle(); });
-    toggle.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); if (Date.now() < suppressSyntheticClickUntil) return; publicApi.toggle(); });
-    scheduleAdapt(state);
-    return publicApi;
-  }
-
-  function syncSelection(strip, mineIds) { const state = attached.get(strip); if (!state) return false; syncSelectionForState(state, mineIds); return true; }
-  window.FPReactionPicker188 = Object.freeze({ attach, syncSelection, snapshot: () => ({ owner: 'FPReactionPicker188', parentOwner: 'FPReactionInteractionManager188', ...stats }) });
-  try { window.FPRuntime?.registerOwner?.('reaction-picker188', { role: 'reaction-catalog-ui-worker', mode: 'thin-worker', parentOwner: 'FPReactionInteractionManager188', layer: 'existing message-context only', catalogSource: 'FPReactionManager188', owns: 'expand button + lazy full-catalog DOM + adaptive context translation', transport: false, gestures: false, persistentState: false }); } catch {}
+  const PANEL_CLASS='fp-reaction-picker188',TOGGLE_CLASS='fp-reaction-picker-toggle188',ITEM_CLASS='fp-reaction-picker-item188',STYLE_ID='fp-reaction-picker188-style';
+  const attached=new WeakMap();
+  const CATEGORY_LABELS=Object.freeze({faces:'Эмоции',hearts:'Сердца',gestures:'Жесты',symbols:'Символы',objects:'Объекты',food:'Еда',animals:'Животные',seasonal:'Праздничные',other:'Другие'});
+  const stats={attached:0,opens:0,closes:0,renders:0,renderedItems:0,selections:0,toggles:0,lastExpanded:false,lastToggleAt:0,layoutDelegations:0};
+  function ensureStyle(){if(document.getElementById(STYLE_ID))return;const s=document.createElement('style');s.id=STYLE_ID;s.textContent=`
+.${TOGGLE_CLASS}{appearance:none;width:36px;height:36px;flex:0 0 36px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:50%;background:rgba(120,130,145,.13);color:var(--muted);cursor:pointer;touch-action:manipulation;transition:background .12s ease,transform .12s ease,color .12s ease}
+.${TOGGLE_CLASS}:hover{background:rgba(120,130,145,.20);color:var(--text)}.${TOGGLE_CLASS}:active{transform:scale(.92)}.${TOGGLE_CLASS}:focus-visible{outline:2px solid var(--accent);outline-offset:1px}.fp-reaction-picker-chevron188{width:10px;height:10px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .16s ease}.${TOGGLE_CLASS}[aria-expanded='true'] .fp-reaction-picker-chevron188{transform:translateY(2px) rotate(225deg)}
+.${PANEL_CLASS}{width:min(336px,calc(100vw - 28px));max-height:min(310px,52vh);box-sizing:border-box;margin:-2px 6px 8px auto;padding:8px 8px 10px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;border:1px solid rgba(255,255,255,.28);border-radius:20px;background:color-mix(in srgb,var(--panel) 91%,transparent);-webkit-backdrop-filter:blur(24px) saturate(1.24);backdrop-filter:blur(24px) saturate(1.24);box-shadow:0 16px 38px rgba(0,0,0,.27);pointer-events:auto;scrollbar-width:thin}.message-context-cluster.incoming .${PANEL_CLASS}{margin-left:6px;margin-right:auto}:root[data-theme='dark'] .${PANEL_CLASS}{border-color:rgba(255,255,255,.10);background:color-mix(in srgb,var(--panel) 94%,transparent)}.${PANEL_CLASS}[hidden]{display:none!important}
+.fp-reaction-picker-section188+.fp-reaction-picker-section188{margin-top:7px}.fp-reaction-picker-title188{padding:4px 5px 5px;color:var(--muted);font-size:11px;font-weight:700;line-height:1.2;letter-spacing:.02em;text-transform:uppercase}.fp-reaction-picker-grid188{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}.${ITEM_CLASS}{appearance:none;min-width:0;aspect-ratio:1;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:25px;line-height:1;cursor:pointer;touch-action:manipulation;transition:background .1s ease,transform .1s ease}.${ITEM_CLASS}:hover{background:rgba(120,130,145,.13)}.${ITEM_CLASS}:active{transform:scale(.88)}.${ITEM_CLASS}.is-mine{background:var(--accent-soft)}.${ITEM_CLASS}:focus-visible{outline:2px solid var(--accent);outline-offset:1px}.fp-reaction-picker-empty188{padding:16px 10px;color:var(--muted);text-align:center;font-size:13px}
+@media(max-width:900px){.${TOGGLE_CLASS}{width:34px;height:34px;flex-basis:34px}.${PANEL_CLASS}{width:min(336px,calc(100vw - 20px));max-height:min(300px,48vh);margin-right:8px}.message-context-cluster.incoming .${PANEL_CLASS}{margin-left:8px;margin-right:auto}}@media(max-width:360px){.fp-reaction-picker-grid188{grid-template-columns:repeat(6,minmax(0,1fr))}.${ITEM_CLASS}{font-size:24px}}@media(max-width:340px){.${TOGGLE_CLASS}{width:31px;height:34px;flex-basis:31px}}@media(prefers-reduced-motion:reduce){.${TOGGLE_CLASS},.fp-reaction-picker-chevron188,.${ITEM_CLASS}{transition:none}}`;document.head.appendChild(s)}
+  const enabledCatalog=c=>(Array.isArray(c)?c:[]).filter(i=>i&&i.enabled!==false&&String(i.id||'').trim()&&String(i.value||'').trim());
+  const categoryKey=v=>String(v||'other').trim().slice(0,32)||'other';
+  function groupedCatalog(c){const groups=[],map=new Map();for(const r of enabledCatalog(c)){const k=categoryKey(r.category);let g=map.get(k);if(!g){g={category:k,label:CATEGORY_LABELS[k]||'Другие',reactions:[]};map.set(k,g);groups.push(g)}g.reactions.push(r)}return groups}
+  function bindActivation(b,activate){let until=0;b.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse'||e.button!==0)return;e.preventDefault();e.stopPropagation();until=Date.now()+700;activate(e,true)});b.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(Date.now()<until)return;activate(e,false)})}
+  function syncSelectionForState(st,mineIds){if(!st?.panel)return;const mine=mineIds instanceof Set?mineIds:new Set(mineIds||[]);st.panel.querySelectorAll(`.${ITEM_CLASS}[data-reaction-id]`).forEach(b=>{const selected=mine.has(String(b.dataset.reactionId||''));b.classList.toggle('is-mine',selected);b.setAttribute('aria-pressed',selected?'true':'false')})}
+  function render(st){if(!st||st.rendered)return;st.rendered=true;stats.renders++;const groups=groupedCatalog(st.catalog);if(!groups.length){const e=document.createElement('div');e.className='fp-reaction-picker-empty188';e.textContent='Нет доступных реакций';st.panel.appendChild(e);return}const f=document.createDocumentFragment();for(const g of groups){const sec=document.createElement('section');sec.className='fp-reaction-picker-section188';sec.dataset.category=g.category;const title=document.createElement('div');title.className='fp-reaction-picker-title188';title.textContent=g.label;sec.appendChild(title);const grid=document.createElement('div');grid.className='fp-reaction-picker-grid188';grid.setAttribute('role','group');grid.setAttribute('aria-label',g.label);for(const r of g.reactions){const b=document.createElement('button');b.type='button';b.className=ITEM_CLASS;b.dataset.reactionId=String(r.id||'');b.dataset.reactionType=String(r.type||'emoji');b.textContent=String(r.value||'');b.setAttribute('aria-label',`Реакция ${String(r.value||'')}`);b.setAttribute('aria-pressed','false');bindActivation(b,(_e,mouse)=>{stats.selections++;st.onSelect?.(r,{fromMousePointer:Boolean(mouse)})});grid.appendChild(b);stats.renderedItems++}sec.appendChild(grid);f.appendChild(sec)}st.panel.appendChild(f);syncSelectionForState(st,st.getMineIds?.()||new Set())}
+  function delegateLayout(st){stats.layoutDelegations++;window.FPContextLayout189?.relayout?.(st?.strip?.closest('.message-context-root'))}
+  function setExpanded(st,expanded){if(!st)return false;const next=Boolean(expanded);if(next&&!st.rendered)render(st);if(st.expanded===next)return next;st.expanded=next;st.panel.hidden=!next;st.toggle.setAttribute('aria-expanded',next?'true':'false');st.strip.classList.toggle('is-picker-open',next);stats.toggles++;stats.lastExpanded=next;stats.lastToggleAt=Date.now();if(next){stats.opens++;st.panel.scrollTop=0}else stats.closes++;delegateLayout(st);st.onExpandedChange?.(next,st.panel);return next}
+  function attach({strip,clone,catalog,getMineIds,onSelect,onExpandedChange}={}){if(!(strip instanceof Element)||!(clone instanceof Element))return null;const old=attached.get(strip);if(old)return old.publicApi;ensureStyle();const toggle=document.createElement('button');toggle.type='button';toggle.className=TOGGLE_CLASS;toggle.setAttribute('aria-label','Все реакции');toggle.setAttribute('aria-expanded','false');toggle.innerHTML='<span class="fp-reaction-picker-chevron188" aria-hidden="true"></span>';const panel=document.createElement('div');panel.className=PANEL_CLASS;panel.hidden=true;panel.setAttribute('role','group');panel.setAttribute('aria-label','Все реакции');strip.appendChild(toggle);strip.insertAdjacentElement('afterend',panel);const st={strip,clone,toggle,panel,catalog:enabledCatalog(catalog),getMineIds,onSelect,onExpandedChange,expanded:false,rendered:false,publicApi:null};const api=Object.freeze({open:()=>setExpanded(st,true),close:()=>setExpanded(st,false),toggle:()=>setExpanded(st,!st.expanded),isOpen:()=>st.expanded,syncSelection:m=>syncSelectionForState(st,m),panel,toggleButton:toggle});st.publicApi=api;attached.set(strip,st);stats.attached++;let until=0;toggle.addEventListener('pointerup',e=>{if(!['mouse','touch','pen'].includes(e.pointerType)||(e.pointerType==='mouse'&&e.button!==0))return;e.preventDefault();e.stopPropagation();until=Date.now()+700;api.toggle()});toggle.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if(Date.now()<until)return;api.toggle()});delegateLayout(st);return api}
+  function syncSelection(strip,mineIds){const st=attached.get(strip);if(!st)return false;syncSelectionForState(st,mineIds);return true}
+  window.FPReactionPicker188=Object.freeze({attach,syncSelection,snapshot:()=>({owner:'FPReactionPicker188',parentOwner:'FPReactionInteractionManager188',geometryOwner:'FPContextLayout189',...stats})});
+  try{window.FPRuntime?.registerOwner?.('reaction-picker188',{role:'reaction-catalog-ui-worker',mode:'thin-worker',parentOwner:'FPReactionInteractionManager188',geometryOwner:'FPContextLayout189',owns:'expand button + lazy full-catalog DOM',gestures:false,persistentState:false})}catch{}
 })();
