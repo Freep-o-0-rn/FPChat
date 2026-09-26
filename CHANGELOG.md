@@ -69,6 +69,8 @@
 - Added <=340px quick/picker sizing so the 7 quick reactions + expand button cannot be clipped on 320px-class screens.
 - `message-actions.js` now receives the same 188.8 acceptance revision cache-bust because its delete-for-self reaction lifecycle changed without changing the build number.
 - Added `regression1888-desktop-races.cjs` and included it in `npm run test:188.8`.
+- Reaction Details now acquires/releases the existing ReactionManager hold while the modal is open, so the bounded history window cannot evict its compact reaction summary mid-session.
+- Added a real Chromium desktop acceptance `regression1888-desktop-browser.cjs`: message right-click → chevron expansion → quick reaction → compact-pill toggle → full-picker reaction.
 - [Desktop/race audit](docs/Build188_8_Physical_Acceptance_Audit.md).
 
 ### Build 188.8 — physical acceptance fixes
