@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.2` — `build/188-reactions-development`; Telegram-style reactions, bounded history/RAM integration поверх Build 188.1.
+**Сборка разработки:** `188.3` — `build/188-reactions-development`; Telegram-style reactions, compact renderer поверх Build 188.2.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.2–188.1** | Reactions: foundation, bulk summary, lazy-history integration, bounded RAM и WS/reconnect state |
+| 26.09.2026 | **Build 188.3–188.1** | Reactions: foundation, bounded history/RAM, compact pills и стабильный Build 187 compatibility guard |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,22 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.2 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.3 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.3 — compact reaction pills
+
+- Добавлен `FPReactionRenderer188` как тонкий DOM-worker под существующим `FPMessageRender178`.
+- Рабочий `appendMessage(...)` не переписан: после уже существующего `box.appendChild(w)` добавлен ровно один reaction render hook.
+- Добавлен отдельный compatibility regression: после удаления этого hook исходник `appendMessage` совпадает со стабильным Build 187; ключевые owner-файлы 187 также зафиксированы checksum-проверками.
+- Reaction renderer не владеет transport, history, scroll или gestures; не создаёт timer/observer.
+- В 188.3 pills специально имеют `pointer-events:none`, поэтому swipe reply, message long press, ПКМ и текущие tap-механики остаются у старых владельцев без перехвата реакциями.
+- Компактный вид: count=1 → emoji + 1 профильный кружок; count=2 → emoji + 2 кружка; count>=3 → emoji + число.
+- Свои реакции получают accent-highlight, чужие остаются нейтральными.
+- Pills обновляются keyed-patch по `reactionId`; сообщение, media/voice/reply DOM не remountятся.
+- Для profile circles в participant DTO добавлен только additive `participantId`; старые поля presence/privacy не менялись.
+- Renderer загружается после `FPReactionManager188` и при старте один раз сканирует только текущий mounted history window; polling/MutationObserver нет.
+- Добавлен `test:188.3`.
+- [Контракт Build 188.3](docs/Build188_3_ReactionRenderer.md).
 
 ### Build 188.2 — reaction history / bounded RAM
 
