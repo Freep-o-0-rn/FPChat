@@ -48,7 +48,7 @@ run(async ({newClient, errors}) => {
   await message.waitFor();
 
   const openContext = async () => {
-    await message.locator(':scope > .bubble').click({button:'right'});
+    await message.locator('.bubble').first().click({button:'right'});
     await page.waitForSelector('.message-context-root');
     await page.waitForFunction(() =>
       document.querySelectorAll('.fp-reaction-quick188 .fp-reaction-quick-button188').length === 7 &&
