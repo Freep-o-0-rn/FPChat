@@ -48,8 +48,10 @@ assert(interaction.includes('closeContext?.();'), 'reaction selection no longer 
 
 assert(index.includes('reaction-picker188.js'), 'picker asset missing from known boot assets');
 assert(index.includes('renderer.onload = loadReactionPicker188;'), 'picker is not ordered after renderer');
-assert(index.includes('picker.onload = loadReactionInteraction188;'), 'interaction owner is not ordered after picker');
-assert(index.includes('picker.onerror = loadReactionInteraction188;'), 'quick reactions are not preserved if optional picker fails');
+assert(index.includes('picker.onload = loadReactionDetails188;'), 'Details is not ordered after picker');
+assert(index.includes('picker.onerror = loadReactionDetails188;'), 'Details/quick reactions are not preserved if optional picker fails');
+assert(index.includes('details.onload = loadReactionInteraction188;'), 'interaction owner is not ordered after Details');
+assert(index.includes('details.onerror = loadReactionInteraction188;'), 'quick reactions are not preserved if optional Details fails');
 
 assert(Number.isSafeInteger(catalog.version) && catalog.version > 0, 'catalog version invalid');
 assert(Number.isSafeInteger(catalog.quickLimit) && catalog.quickLimit > 0, 'catalog quickLimit invalid');
