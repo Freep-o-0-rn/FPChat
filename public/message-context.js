@@ -678,6 +678,13 @@
       cluster.appendChild(clone);
       cluster.appendChild(menu);
     }
+    window.FPReactionInteractionManager188?.decorateContext?.(nextState, {
+      menu,
+      clone,
+      menuBefore,
+      sourceRect,
+      closeContext
+    });
     stage.appendChild(cluster);
     document.body.appendChild(root);
     document.body.classList.add('message-context-open');
@@ -713,6 +720,7 @@
   }
 
   document.addEventListener('contextmenu', (event) => {
+    if (event.target?.closest?.('.fp-reaction-pill188')) return;
     const messageEl = getMessageElement(event.target);
     if (!messageEl) return;
     event.preventDefault();
@@ -722,6 +730,7 @@
 
   document.addEventListener('touchstart', (event) => {
     if (contextState || event.touches?.length !== 1) return;
+    if (event.target?.closest?.('.fp-reaction-pill188')) return;
     if(window.FPGesture135&&FPGesture135.currentLayer(event,event.target)!=='chat')return;
     const messageEl = getMessageElement(event.target);
     if (!messageEl) return;
