@@ -1239,6 +1239,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   const replyRowIsCurrent=()=>w.isConnected&&w.parentElement===document.getElementById('messages')&&isRoomViewCurrent170(swipeRoomView);
   w.addEventListener('touchstart',(e)=>{
     cancelReplySwipe();
+    if(e.target?.closest?.('.fp-reaction-pill188'))return;
     if(e.touches.length!==1||!bubble)return;
     if(window.FPGesture135&&FPGesture135.currentLayer(e,e.target)!=='chat')return;
     const t=e.touches[0];
