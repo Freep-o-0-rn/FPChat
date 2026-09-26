@@ -207,6 +207,7 @@
     }
 
     if (editState?.roomId === roomId && editState.messageId === id) cancelEdit(true);
+    window.FPReactionManager188?.destroyMessage?.(roomId, id);
     tombstoneCache(roomId, id, author, scope);
     markReplyBlocksDeleted(id);
     clearReplyDraftIfNeeded(roomId, id);
