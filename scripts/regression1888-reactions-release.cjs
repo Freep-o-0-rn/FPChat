@@ -7,6 +7,7 @@ const root = process.env.FPCHAT_TEST_ROOT || path.resolve(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8').replace(/\r\n/g, '\n');
 
 const reactionServer = read('src/message-reactions188.js');
+const catalogServer = read('src/reactions-catalog188.js');
 const serverArbiter = read('src/reaction-mutation-arbiter188.js');
 const clientArbiter = read('public/reaction-arbiter188.js');
 const clientManager = read('public/reaction-manager188.js');
@@ -26,6 +27,7 @@ const settingsUi = read('public/settings-ui131.js');
 
 for (const source of [
   reactionServer,
+  catalogServer,
   serverArbiter,
   clientArbiter,
   clientManager,
@@ -85,6 +87,10 @@ assert(interaction.includes('const LONG_PRESS_MS = 450;'), 'reaction long press 
 assert(interaction.includes('const MOVE_CANCEL_PX = 12;'), 'reaction long press movement threshold changed');
 assert(interaction.includes("watchAction?.('reaction-long-press'"), 'reaction long press bypasses FPGesture135');
 assert(interaction.includes('manager.getQuickReactions()'), 'quick reactions no longer use canonical catalog');
+assert(clientManager.includes('item?.quickOrder == null'), 'null quickOrder can leak full catalog into quick strip');
+assert(clientManager.includes('.slice(0, quickLimit)'), 'quick strip is not capped to the catalog quickLimit');
+assert(catalogServer.includes("...(item.quickOrder != null ? { quickOrder: item.quickOrder } : {})"), 'public catalog serializes null quickOrder values');
+assert(interaction.includes('Не удалось изменить реакцию'), 'reaction mutation failures are again invisible during physical acceptance');
 assert(interaction.includes('manager.getAvailableReactions()'), 'full picker no longer uses canonical catalog');
 assert(picker.includes('if (next && !state.rendered) render(state);'), 'full picker no longer lazy-renders');
 assert(details.includes('const PAGE_SIZE = 30;'), 'Reaction Details lazy page size changed');
