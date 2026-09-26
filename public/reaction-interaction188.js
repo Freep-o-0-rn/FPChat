@@ -202,6 +202,23 @@
     } catch {}
   }
 
+  function bindDesktopActivation(button, activate) {
+    let suppressClickUntil = 0;
+    button.addEventListener('pointerup', (event) => {
+      if (event.pointerType !== 'mouse' || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClickUntil = Date.now() + 700;
+      activate(event, true);
+    });
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (Date.now() < suppressClickUntil) return;
+      activate(event, false);
+    });
+  }
+
   function toggle(info, reaction = null) {
     const manager = window.FPReactionManager188;
     if (!manager?.toggleReaction) return Promise.reject(new Error('reaction manager unavailable'));
@@ -415,9 +432,7 @@
         button.dataset.reactionId = String(reaction.id || '');
         button.textContent = String(reaction.value || '');
         button.setAttribute('aria-label', `Реакция ${String(reaction.value || '')}`);
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
+        bindDesktopActivation(button, (_event, fromMousePointer) => {
           const info = {
             roomId,
             messageId,
@@ -432,7 +447,10 @@
             value: String(reaction.value || ''),
             enabled: reaction.enabled !== false
           }).catch((error) => reportMutationFailure(error, info));
-          closeContext?.();
+          // On desktop keep the context alive until the synthetic click has passed;
+          // this prevents a removed overlay from turning that click into an underlying-message click.
+          if (fromMousePointer) setTimeout(() => closeContext?.(), 0);
+          else closeContext?.();
         });
         strip.appendChild(button);
       }
