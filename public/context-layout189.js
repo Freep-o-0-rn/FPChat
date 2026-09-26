@@ -1,4 +1,4 @@
-/* Build 189.6: single owner for message-context geometry and smooth visual transition.
+/* Build 189.8: single owner for message-context geometry and smooth visual transition.
    FPGesture135 arbitrates gesture admission; FPLayer173 arbitrates the active UI layer.
    This manager never changes chat/history/message state or media playback. */
 (() => {
@@ -70,8 +70,8 @@
     const surroundingHeight = Math.max(0, clusterRect.height - pickerRect.height);
     const mobile = window.matchMedia('(max-width: 900px)').matches;
     const cssCap = Math.min(
-      mobile ? 360 : 420,
-      viewportHeight * (mobile ? 0.45 : 0.50)
+      mobile ? 390 : 440,
+      viewportHeight * (mobile ? 0.48 : 0.52)
     );
     const available = Math.max(96, viewportHeight - surroundingHeight - 10);
     const height = Math.max(96, Math.min(cssCap, available));
@@ -109,6 +109,16 @@
     const pickerOpen = Boolean(picker && !picker.hidden);
     if (pickerOpen && state.pickerFrozen && !['picker-open', 'viewport-resize'].includes(reason)) {
       return true;
+    }
+
+    if (pickerOpen) {
+      if (state.savedPaddingTop === null) state.savedPaddingTop = cluster.style.paddingTop || '';
+      // Expanded reactions replace the action menu. Remove source-position reserve
+      // so the catalog can use the viewport for 4-5 visible rows.
+      cluster.style.paddingTop = `${SAFE_GAP}px`;
+    } else if (state.savedPaddingTop !== null) {
+      cluster.style.paddingTop = state.savedPaddingTop;
+      state.savedPaddingTop = null;
     }
 
     if (scroll && scroll.scrollTop !== 0) scroll.scrollTop = 0;
@@ -194,7 +204,8 @@
       pendingReason: '',
       placed: false,
       shift: 0,
-      pickerFrozen: false
+      pickerFrozen: false,
+      savedPaddingTop: null
     };
     states.set(root, state);
     stats.mounts += 1;
@@ -257,7 +268,7 @@
       mode: 'active-owner',
       gestureArbiter: 'FPGesture135',
       layerArbiter: 'FPLayer173',
-      owns: 'context clone centering + context overlay geometry + transition + picker viewport budget + mobile message callout suppression',
+      owns: 'context clone centering + context overlay geometry + transition + expanded-picker viewport budget/reserve + mobile message callout suppression',
       doesNotOwn: 'chat scroll/history/message state/audio playback/reaction mutations/reaction picker internal scroll'
     });
   } catch {}
