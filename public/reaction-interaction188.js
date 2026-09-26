@@ -420,7 +420,7 @@
     window.FPReactionPicker188?.syncSelection?.(strip, mine);
   }
 
-  function decorateContext(contextState, { clone, sourceRect, closeContext } = {}) {
+  function decorateContext(contextState, { menu, clone, sourceRect, closeContext } = {}) {
     const manager = window.FPReactionManager188;
     const roomId = String(state?.roomId || '').trim();
     const messageId = numericId(contextState?.messageId);
@@ -488,10 +488,12 @@
           getMineIds: () => mineIds(roomId, messageId),
           onExpandedChange: (expanded) => {
             if (expanded) stats.pickerOpens += 1;
-            // Telegram-like context mode: the full catalog replaces the action
-            // menu while it is open. Quick reactions + selected message stay visible.
-            menu.hidden = Boolean(expanded);
-            menu.setAttribute('aria-hidden', expanded ? 'true' : 'false');
+            // Full reactions are an interaction-manager state. The action menu is
+            // intentionally removed from layout while the catalog is expanded.
+            if (menu instanceof Element) {
+              menu.hidden = Boolean(expanded);
+              menu.setAttribute('aria-hidden', expanded ? 'true' : 'false');
+            }
             contextState.cluster?.classList.toggle('fp-reaction-picker-expanded188', Boolean(expanded));
           },
           onSelect: (reaction, activation = {}) => {
