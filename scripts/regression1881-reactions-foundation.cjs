@@ -34,6 +34,12 @@ assert(!clientManager.includes('indexedDB'), 'reaction manager introduced Indexe
 
 const messageActions = read('src/message-actions-server.js');
 assert(messageActions.includes('messageReactions?.deleteForAll?.(auth.room.id, messageId);'), 'delete-for-all does not delete reaction domain');
+const reactionServer = read('src/message-reactions188.js');
+assert(reactionServer.includes('ORDER BY count DESC, first_seen_at ASC, reaction_id ASC'), 'stable reaction tie ordering changed');
+assert(reactionServer.includes("const latestRoom = q.findRoomById?.get?.(auth.room.id) || auth.room;"), 'queued mutation does not recheck room state');
+assert(reactionServer.includes("const activeParticipant = q.findParticipant.get(auth.room.id, auth.deviceId);"), 'queued mutation does not recheck participant access');
+assert(reactionServer.includes("userBlocks?.roomSendGuard?.(auth.room.id, auth.deviceId)"), 'queued ADD does not recheck block admission');
+
 const server = read('server.js');
 assert(server.includes("const { createMessageReactions188 } = require('./src/message-reactions188');"), 'reaction server owner not composed');
 assert(server.includes('fpMessageReactions188.installRoutes(app);'), 'reaction routes not installed');
