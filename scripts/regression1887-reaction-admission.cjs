@@ -221,6 +221,35 @@ function createFakeClock() {
     assert.equal(afterWindow, 'accepted', 'per-user reaction burst did not recover after the window');
   }
 
+  // A delete-for-all cancellation removes a mutation that is still waiting for a room permit.
+  {
+    const clock = createFakeClock();
+    const blockers = [];
+    const never = () => new Promise((resolve) => blockers.push(resolve));
+    const arbiter = createReactionMutationArbiter188({
+      getOnlineParticipantCount: () => 2,
+      now: clock.now,
+      schedule: clock.schedule,
+      cancelSchedule: clock.cancelSchedule
+    });
+
+    for (let i = 1; i <= 40; i += 1) {
+      void arbiter.enqueue(35, 3500 + i, never, { actorId: i });
+    }
+    const waiting = arbiter.enqueue(35, 3999, async () => 'must-not-run', { actorId: 999 });
+    await clock.flush();
+
+    const cancelled = arbiter.cancelMessage(35, 3999, 'MESSAGE_DELETED');
+    await assert.rejects(waiting, (error) => error?.code === 'MESSAGE_DELETED');
+    await clock.flush();
+
+    assert.equal(cancelled, 1, 'waiting room-admission mutation was not counted as cancelled');
+    const room = arbiter.snapshot().rooms.find((item) => item.roomId === 35);
+    assert.equal(room?.pending, 40, 'cancelled admission waiter leaked pending room capacity');
+    assert.equal(room?.waiters, 0, 'cancelled admission waiter remained queued');
+    assert.equal(arbiter.snapshot().stats.cancelled, 1, 'cancelled admission waiter was classified as a failure');
+  }
+
   // Same-message FIFO remains intact under the new room admission layer.
   {
     const clock = createFakeClock();
