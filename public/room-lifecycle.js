@@ -135,6 +135,7 @@
   }
 
   function removeLocalRoom(roomId, { permanent = false } = {}) {
+    window.FPReactionManager188?.releaseRoom?.(roomId);
     state.chats = state.chats.filter((chat) => chat.roomId !== roomId);
     if (permanent) {
       delete state.roomNames[roomId];
