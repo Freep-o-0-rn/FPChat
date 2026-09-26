@@ -265,6 +265,7 @@ let summary = service.summary(1, 11, 1);
 let heart = summary.reactions.find((item) => item.reactionId === 'heart');
 assert.equal(heart.count, 2);
 assert.deepEqual(heart.previewParticipantIds, [2, 1], 'two-person preview order changed');
+assert.deepEqual(heart.previewParticipants.map((item) => [item.participantId, item.displayName]), [[2, 'Ivan'], [1, 'Vadim']], 'two-person compact preview lost participant presentation');
 
 service.mutate({ roomId: 1, messageId: 11, participantId: 3, reactionId: 'heart', operation: 'add' });
 service.mutate({ roomId: 1, messageId: 11, participantId: 4, reactionId: 'fire', operation: 'add' });
@@ -277,6 +278,7 @@ assert.equal(heart.count, 3);
 assert.equal(Object.prototype.hasOwnProperty.call(heart, 'previewParticipantIds'), false, '3+ reaction still carries avatar preview');
 const fire = summary.reactions[1];
 assert.deepEqual(fire.previewParticipantIds, [5, 4]);
+assert.deepEqual(fire.previewParticipants.map((item) => [item.participantId, item.displayName]), [[5, 'Anna'], [4, 'Oleg']], 'compact preview participant names/order changed');
 
 // Delete-for-all destroys rows and reaction revision.
 service.deleteForAll(1, 11);
