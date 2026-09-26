@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `188.4` — `build/188-reactions-development`; Telegram-style reactions, interaction/quick reactions поверх Build 188.3.
+**Сборка разработки:** `188.5` — `build/188-reactions-development`; Telegram-style reactions, полный каталог реакций поверх Build 188.4.
 
 **Текущая сборка на сервере:** `186.5` — рабочая стабильная контрольная точка, но Build 186 ещё не завершён и не слит в `main`.
 
@@ -22,7 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
-| 26.09.2026 | **Build 188.4–188.1** | Reactions: foundation, bounded history/RAM, compact pills, tap/long-press guards и quick reactions |
+| 26.09.2026 | **Build 188.5–188.1** | Reactions: foundation, bounded history/RAM, compact pills, quick reactions и раскрываемый полный каталог |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
 | 24–25.09.2026 | **Build 186.5–186.1** | Диагностика загрузки, media cache, ускорение startup, приоритет media I/O и preload storage |
 | 24.09.2026 | **Build 185.1** | Pinch-to-zoom фото 1×–4× и pan внутри существующего media viewer |
@@ -55,7 +55,23 @@
 
 # 😀 Build 188 — Telegram-style reactions
 
-**26 сентября 2026 · Build 188.4 · ветка `build/188-reactions-development` · база: Build 187.1**
+**26 сентября 2026 · Build 188.5 · ветка `build/188-reactions-development` · база: Build 187.1**
+
+### Build 188.5 — full reaction catalog picker
+
+- В quick-панель добавлена круглая кнопка раскрытия полного каталога реакций.
+- Добавлен `FPReactionPicker188` как тонкий UI-worker под `FPReactionInteractionManager188`; отдельный manager/arbiter, transport или layer не создаются.
+- Picker живёт только внутри уже открытого `message-context`, поэтому `FPGesture135` и `FPLayer173` не менялись.
+- Полный список берётся из того же versioned reaction catalog через `FPReactionManager188.getAvailableReactions()`; отдельного списка emoji в UI нет.
+- Каталог группируется по category: эмоции, сердца, жесты, символы, объекты, еда, животные и праздничные реакции.
+- Full grid создаётся лениво только при первом раскрытии; при обычном long press сообщения лишний DOM полного каталога не строится.
+- Выбор реакции из picker использует тот же `toggleReaction()` → optimistic state → per-message FIFO → explicit ADD/REMOVE путь, что quick reaction и compact pill.
+- Свои реакции подсвечиваются и внутри полного каталога; состояние синхронизируется тем же `fpchat:reaction188-changed`, второго reaction-store нет.
+- На узких экранах quick-кнопки уменьшаются так, чтобы семь быстрых реакций и chevron помещались без горизонтального скролла; full picker имеет bounded height и собственный вертикальный scroll.
+- Picker загружается после renderer и до InteractionManager, но остаётся optional: если его asset не загрузится, InteractionManager всё равно запускается и поведение 188.4 сохраняется.
+- Stable Build 187 core и уже принятые reaction hooks 188.4 не переписывались.
+- Добавлен `test:188.5`.
+- [Контракт Build 188.5](docs/Build188_5_ReactionPicker.md).
 
 ### Build 188.4 — interaction / quick reactions
 
