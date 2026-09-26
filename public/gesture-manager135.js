@@ -68,13 +68,10 @@
   }
 
   function detectLayer(target = null) {
-    // Build 173: use explicit layer state when available. This removes repeated
-    // document-wide selector/layout scans from touchmove/pointermove hot paths.
     try {
       if (window.FPLayer173?.currentLayer) return window.FPLayer173.currentLayer(target);
     } catch {}
 
-    // Compatibility fallback for a failed Build 173 owner asset.
     if (firstVisible('.media-viewer-overlay')) return 'viewer';
 
     if (firstVisible(MODAL_SELECTORS)) return 'modal';
@@ -116,8 +113,6 @@
   }
 
   function blocksLegacyDrawer(layer) {
-    // The legacy drawer is valid only on main screens. Chat, settings and all
-    // overlays have their own gesture semantics and must never leak into it.
     return layer !== 'base' && layer !== 'drawer';
   }
 
@@ -145,8 +140,6 @@
     if (!session || session.ended || session.cancelled || typeof cancel !== 'function') return null;
     if (session.action && session.action !== owner) { cancel('claimed'); return null; }
     session.actions.set(owner, cancel);
-    // Build 185: explicit viewer-only opt-in. Other recognizers retain their
-    // single-contact start/end semantics. The arbiter stores IDs, not geometry.
     if (options.multiPointer && session.kind === 'pointer' && session.layer === 'viewer') {
       session.multiPointer = true;
       session.pointerEnd = { owner, run: options.onPointerEnd };
@@ -161,7 +154,6 @@
         if (session.actions.get(owner) !== cancel) return;
         session.actions.delete(owner);
         if (session.pointerEnd?.owner === owner) session.pointerEnd = null;
-        // Drain remaining fingers even if the viewer closes/replaces its DOM.
         if (session.multiPointer && session.pointers.size) session.cancelled = true;
       }
     };
@@ -171,8 +163,6 @@
     if (!session) return null;
     const manager = window.FPLayer173;
     const managerVersion = manager?.version?.();
-    // Build 173 freezes gesture ownership for the session unless the explicit
-    // layer stack itself changes (for example a modal/viewer opens mid-gesture).
     if (Number.isFinite(managerVersion) && session.layerVersion === managerVersion) return session;
     const next = detectLayer(target);
     if ((PRIORITY[next] ?? 0) > (PRIORITY[session.layer] ?? 0)) {
@@ -205,8 +195,6 @@
     syncBodyLayer(layer);
     if (blocksLegacyDrawer(layer)) {
       resetLegacyDrawerSwipe();
-      // app.js has an older document-level drawer touchstart handler. It runs
-      // later in the same event; clear it once all synchronous handlers finish.
       queueMicrotask(resetLegacyDrawerSwipe);
     }
     return session;
@@ -221,8 +209,6 @@
       const cancelled = event.type === 'pointercancel';
       const finish = session.pointerEnd;
       if (!session.cancelled && finish && session.actions.has(finish.owner)) {
-        // Finish before teardown in this same listener: a microtask can run
-        // between native event listeners and would otherwise cancel too early.
         try { finish.run?.(event, cancelled); }
         catch (error) { cancelActions(session, 'error'); console.error('[FPGesture135] viewer finish failed', error); }
       }
@@ -260,6 +246,9 @@
     if (mode === 'chat') return layer === 'chat';
     if (mode === 'settings') return layer === 'settings';
     if (mode === 'drawer') return layer === 'base' || layer === 'drawer';
+    // Build 189.5: pins are an existing modal, not a new layer/owner. Admit only
+    // the pinned-messages screen; every other modal remains blocked as before.
+    if (mode === 'pins') return layer === 'modal' && Boolean(document.querySelector('.fp-pins114-screen'));
     return false;
   }
 
