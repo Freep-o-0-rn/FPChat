@@ -32,6 +32,8 @@ assert(detailsSource.includes('window.FPNetwork171'), 'Reaction Details bypasses
 assert(detailsSource.includes("response.status === 409 && data?.code === 'REACTION_DETAILS_STALE'"), 'stale pagination response not handled');
 assert(detailsSource.includes("markStale(state);"), 'live reaction changes do not mark Details snapshot stale');
 assert(detailsSource.includes("window.FPUsernameSearch143?.openProfile"), 'participant rows do not delegate to existing profile owner');
+assert(detailsSource.includes('async function openParticipantProfile'), 'compact reaction avatar cannot resolve participant profile');
+assert(detailsSource.includes("reactionId: reaction"), 'compact profile bridge does not reuse reaction-specific Details projection');
 assert(detailsSource.includes("roomContext.signal.addEventListener('abort'"), 'Reaction Details is not bound to RoomContext');
 assert(detailsSource.includes('SCROLL_THRESHOLD_PX = 120'), 'lazy scroll threshold changed');
 assert(!detailsSource.includes('new WebSocket'), 'Reaction Details creates a second socket');
