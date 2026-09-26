@@ -246,9 +246,13 @@
     if (mode === 'chat') return layer === 'chat';
     if (mode === 'settings') return layer === 'settings';
     if (mode === 'drawer') return layer === 'base' || layer === 'drawer';
-    // Build 189.5: pins are an existing modal, not a new layer/owner. Admit only
-    // the pinned-messages screen; every other modal remains blocked as before.
-    if (mode === 'pins') return layer === 'modal' && Boolean(document.querySelector('.fp-pins114-screen'));
+    // Build 189.6: pins remain an existing modal. Admit only the main pinned
+    // messages screen; action/delete overlays keep modal precedence and block back.
+    if (mode === 'pins') {
+      const pins = firstVisible('.fp-pins114-screen');
+      const blockingPinsModal = firstVisible('.fp-pins114-action-overlay,.fp-pins114-delete-overlay');
+      return layer === 'modal' && Boolean(pins) && !blockingPinsModal;
+    }
     return false;
   }
 
