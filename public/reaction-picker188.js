@@ -1,7 +1,7 @@
-/* Build 189.1: full reaction catalog picker UI worker.
+/* Build 189.2: full reaction catalog picker UI worker.
    Lives only inside the existing message-context layer.
    FPReactionInteractionManager188 owns interaction semantics and mutation delegation.
-   Build 189 adds viewport-safe adaptive positioning of the existing context cluster. */
+   Build 189.2 reserves room for the catalog as soon as context opens, without moving chat scroll. */
 (() => {
   if (window.FPReactionPicker188) return;
 
@@ -11,6 +11,7 @@
   const STYLE_ID = 'fp-reaction-picker188-style';
   const attached = new WeakMap();
   const SAFE_GAP_PX = 12;
+  const COLLAPSED_RESERVE_MAX_PX = 300;
 
   const CATEGORY_LABELS = Object.freeze({
     faces: 'Эмоции', hearts: 'Сердца', gestures: 'Жесты', symbols: 'Символы',
@@ -59,109 +60,83 @@
   function enabledCatalog(catalog) {
     return (Array.isArray(catalog) ? catalog : []).filter((item) => item && item.enabled !== false && String(item.id || '').trim() && String(item.value || '').trim());
   }
-
   function categoryKey(value) { return String(value || 'other').trim().slice(0, 32) || 'other'; }
-
   function groupedCatalog(catalog) {
     const groups = [], byCategory = new Map();
     for (const reaction of enabledCatalog(catalog)) {
       const category = categoryKey(reaction.category);
       let group = byCategory.get(category);
-      if (!group) {
-        group = { category, label: CATEGORY_LABELS[category] || 'Другие', reactions: [] };
-        byCategory.set(category, group); groups.push(group);
-      }
+      if (!group) { group = { category, label: CATEGORY_LABELS[category] || 'Другие', reactions: [] }; byCategory.set(category, group); groups.push(group); }
       group.reactions.push(reaction);
     }
     return groups;
   }
-
   function bindActivation(button, activate) {
     let suppressClickUntil = 0;
-    button.addEventListener('pointerup', (event) => {
-      if (event.pointerType !== 'mouse' || event.button !== 0) return;
-      event.preventDefault(); event.stopPropagation(); suppressClickUntil = Date.now() + 700; activate(event, true);
-    });
-    button.addEventListener('click', (event) => {
-      event.preventDefault(); event.stopPropagation(); if (Date.now() < suppressClickUntil) return; activate(event, false);
-    });
+    button.addEventListener('pointerup', (event) => { if (event.pointerType !== 'mouse' || event.button !== 0) return; event.preventDefault(); event.stopPropagation(); suppressClickUntil = Date.now() + 700; activate(event, true); });
+    button.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); if (Date.now() < suppressClickUntil) return; activate(event, false); });
   }
-
-  function renderVisual(button, reaction) {
-    button.dataset.reactionType = String(reaction?.type || 'emoji');
-    button.textContent = String(reaction?.value || '');
-  }
-
+  function renderVisual(button, reaction) { button.dataset.reactionType = String(reaction?.type || 'emoji'); button.textContent = String(reaction?.value || ''); }
   function syncSelectionForState(state, mineIds) {
     if (!state?.panel) return;
     const mine = mineIds instanceof Set ? mineIds : new Set(mineIds || []);
     state.panel.querySelectorAll(`.${ITEM_CLASS}[data-reaction-id]`).forEach((button) => {
-      const selected = mine.has(String(button.dataset.reactionId || ''));
-      button.classList.toggle('is-mine', selected);
-      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      const selected = mine.has(String(button.dataset.reactionId || '')); button.classList.toggle('is-mine', selected); button.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
   }
-
   function render(state) {
     if (!state || state.rendered) return;
     state.rendered = true; stats.renders += 1;
     const groups = groupedCatalog(state.catalog);
-    if (!groups.length) {
-      const empty = document.createElement('div'); empty.className = 'fp-reaction-picker-empty188'; empty.textContent = 'Нет доступных реакций'; state.panel.appendChild(empty); return;
-    }
+    if (!groups.length) { const empty = document.createElement('div'); empty.className = 'fp-reaction-picker-empty188'; empty.textContent = 'Нет доступных реакций'; state.panel.appendChild(empty); return; }
     const fragment = document.createDocumentFragment();
     for (const group of groups) {
       const section = document.createElement('section'); section.className = 'fp-reaction-picker-section188'; section.dataset.category = group.category;
       const title = document.createElement('div'); title.className = 'fp-reaction-picker-title188'; title.textContent = group.label; section.appendChild(title);
       const grid = document.createElement('div'); grid.className = 'fp-reaction-picker-grid188'; grid.setAttribute('role', 'group'); grid.setAttribute('aria-label', group.label);
       for (const reaction of group.reactions) {
-        const button = document.createElement('button'); button.type = 'button'; button.className = ITEM_CLASS; button.dataset.reactionId = String(reaction.id || '');
-        button.setAttribute('aria-label', `Реакция ${String(reaction.value || '')}`); button.setAttribute('aria-pressed', 'false'); renderVisual(button, reaction);
-        bindActivation(button, (_event, fromMousePointer) => { stats.selections += 1; state.onSelect?.(reaction, { fromMousePointer: Boolean(fromMousePointer) }); });
-        grid.appendChild(button); stats.renderedItems += 1;
+        const button = document.createElement('button'); button.type = 'button'; button.className = ITEM_CLASS; button.dataset.reactionId = String(reaction.id || ''); button.setAttribute('aria-label', `Реакция ${String(reaction.value || '')}`); button.setAttribute('aria-pressed', 'false'); renderVisual(button, reaction);
+        bindActivation(button, (_event, fromMousePointer) => { stats.selections += 1; state.onSelect?.(reaction, { fromMousePointer: Boolean(fromMousePointer) }); }); grid.appendChild(button); stats.renderedItems += 1;
       }
       section.appendChild(grid); fragment.appendChild(section);
     }
-    state.panel.appendChild(fragment);
-    syncSelectionForState(state, state.getMineIds?.() || new Set());
+    state.panel.appendChild(fragment); syncSelectionForState(state, state.getMineIds?.() || new Set());
   }
 
   function viewportBounds() {
     const vv = window.visualViewport;
     const top = Math.max(0, Number(vv?.offsetTop || 0)) + SAFE_GAP_PX;
     const height = Math.max(0, Number(vv?.height || window.innerHeight));
-    return { top, bottom: top - SAFE_GAP_PX + height - SAFE_GAP_PX };
+    return { top, bottom: top - SAFE_GAP_PX + height - SAFE_GAP_PX, height };
   }
-
-  function resetAdaptivePosition(state) {
-    const cluster = state?.cluster;
-    if (!cluster) return;
-    state.shiftPx = 0;
-    stats.lastShiftPx = 0;
-    cluster.style.transform = '';
-    cluster.classList.remove('fp-reaction-adaptive189');
+  function applyShift(state, shift) {
+    const cluster = state?.cluster; if (!cluster) return;
+    const next = Math.max(0, Math.ceil(Number(shift) || 0));
+    state.shiftPx = next; stats.lastShiftPx = next;
+    if (next > 0) { stats.adaptiveShifts += 1; cluster.classList.add('fp-reaction-adaptive189'); cluster.style.transform = `translate3d(0, ${-next}px, 0)`; }
+    else { cluster.style.transform = ''; cluster.classList.remove('fp-reaction-adaptive189'); }
   }
-
-  function adaptExpandedPosition(state) {
-    if (!state?.expanded || !state.cluster?.isConnected || !state.panel?.isConnected) return;
+  function adaptContextPosition(state) {
+    if (!state?.cluster?.isConnected || !state.clone?.isConnected) return;
     const cluster = state.cluster;
-    // Measure from the unshifted baseline so repeated opens/reflows never accumulate translation.
     cluster.style.transform = '';
-    const rect = cluster.getBoundingClientRect();
     const bounds = viewportBounds();
-    const overflowBottom = Math.max(0, rect.bottom - bounds.bottom);
-    const availableUp = Math.max(0, rect.top - bounds.top);
-    const shift = Math.ceil(Math.min(overflowBottom, availableUp));
-    state.shiftPx = shift;
-    stats.lastShiftPx = shift;
-    if (shift > 0) {
-      stats.adaptiveShifts += 1;
-      cluster.classList.add('fp-reaction-adaptive189');
-      cluster.style.transform = `translate3d(0, ${-shift}px, 0)`;
+    const clusterRect = cluster.getBoundingClientRect();
+    const cloneRect = state.clone.getBoundingClientRect();
+    let requiredBottom;
+    if (state.expanded) {
+      requiredBottom = clusterRect.bottom;
     } else {
-      cluster.classList.remove('fp-reaction-adaptive189');
+      // Long-press mode reserves enough room below the selected message for the catalog.
+      // This is the key 189.2 change: the user sees the message move up before tapping the chevron.
+      const reserve = Math.min(COLLAPSED_RESERVE_MAX_PX, Math.max(180, bounds.height * 0.34));
+      requiredBottom = cloneRect.bottom + reserve;
     }
+    const overflowBottom = Math.max(0, requiredBottom - bounds.bottom);
+    const availableUp = Math.max(0, clusterRect.top - bounds.top);
+    applyShift(state, Math.min(overflowBottom, availableUp));
   }
+  function scheduleAdapt(state) { requestAnimationFrame(() => requestAnimationFrame(() => adaptContextPosition(state))); }
 
   function setExpanded(state, expanded) {
     if (!state) return false;
@@ -170,12 +145,8 @@
     if (state.expanded === next) return next;
     state.expanded = next; state.panel.hidden = !next; state.toggle.setAttribute('aria-expanded', next ? 'true' : 'false'); state.strip.classList.toggle('is-picker-open', next);
     stats.toggles += 1; stats.lastExpanded = next; stats.lastToggleAt = Date.now();
-    if (next) {
-      stats.opens += 1; state.panel.scrollTop = 0;
-      requestAnimationFrame(() => requestAnimationFrame(() => adaptExpandedPosition(state)));
-    } else {
-      stats.closes += 1; resetAdaptivePosition(state);
-    }
+    if (next) { stats.opens += 1; state.panel.scrollTop = 0; } else { stats.closes += 1; }
+    scheduleAdapt(state);
     state.onExpandedChange?.(next, state.panel);
     return next;
   }
@@ -184,31 +155,20 @@
     if (!(strip instanceof Element) || !(clone instanceof Element)) return null;
     const existing = attached.get(strip); if (existing) return existing.publicApi;
     ensureStyle();
-    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = TOGGLE_CLASS; toggle.setAttribute('aria-label', 'Все реакции'); toggle.setAttribute('aria-expanded', 'false');
-    toggle.innerHTML = '<span class="fp-reaction-picker-chevron188" aria-hidden="true"></span>';
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = TOGGLE_CLASS; toggle.setAttribute('aria-label', 'Все реакции'); toggle.setAttribute('aria-expanded', 'false'); toggle.innerHTML = '<span class="fp-reaction-picker-chevron188" aria-hidden="true"></span>';
     const panel = document.createElement('div'); panel.className = PANEL_CLASS; panel.hidden = true; panel.setAttribute('role', 'group'); panel.setAttribute('aria-label', 'Все реакции');
     strip.appendChild(toggle); strip.insertAdjacentElement('afterend', panel);
     const state = { strip, clone, toggle, panel, cluster: strip.closest('.message-context-cluster'), catalog: enabledCatalog(catalog), getMineIds, onSelect, onExpandedChange, expanded: false, rendered: false, shiftPx: 0, publicApi: null };
     const publicApi = Object.freeze({ open: () => setExpanded(state, true), close: () => setExpanded(state, false), toggle: () => setExpanded(state, !state.expanded), isOpen: () => state.expanded, syncSelection: (mineIds) => syncSelectionForState(state, mineIds), panel, toggleButton: toggle });
     state.publicApi = publicApi; attached.set(strip, state); stats.attached += 1;
     let suppressSyntheticClickUntil = 0;
-    toggle.addEventListener('pointerup', (event) => {
-      if (!['mouse', 'touch', 'pen'].includes(event.pointerType) || (event.pointerType === 'mouse' && event.button !== 0)) return;
-      event.preventDefault(); event.stopPropagation(); suppressSyntheticClickUntil = Date.now() + 700; publicApi.toggle();
-    });
+    toggle.addEventListener('pointerup', (event) => { if (!['mouse', 'touch', 'pen'].includes(event.pointerType) || (event.pointerType === 'mouse' && event.button !== 0)) return; event.preventDefault(); event.stopPropagation(); suppressSyntheticClickUntil = Date.now() + 700; publicApi.toggle(); });
     toggle.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); if (Date.now() < suppressSyntheticClickUntil) return; publicApi.toggle(); });
+    scheduleAdapt(state);
     return publicApi;
   }
 
-  function syncSelection(strip, mineIds) {
-    const state = attached.get(strip); if (!state) return false; syncSelectionForState(state, mineIds); return true;
-  }
-
+  function syncSelection(strip, mineIds) { const state = attached.get(strip); if (!state) return false; syncSelectionForState(state, mineIds); return true; }
   window.FPReactionPicker188 = Object.freeze({ attach, syncSelection, snapshot: () => ({ owner: 'FPReactionPicker188', parentOwner: 'FPReactionInteractionManager188', ...stats }) });
-  try {
-    window.FPRuntime?.registerOwner?.('reaction-picker188', {
-      role: 'reaction-catalog-ui-worker', mode: 'thin-worker', parentOwner: 'FPReactionInteractionManager188', layer: 'existing message-context only',
-      catalogSource: 'FPReactionManager188', owns: 'expand button + lazy full-catalog DOM + adaptive context translation', transport: false, gestures: false, persistentState: false
-    });
-  } catch {}
+  try { window.FPRuntime?.registerOwner?.('reaction-picker188', { role: 'reaction-catalog-ui-worker', mode: 'thin-worker', parentOwner: 'FPReactionInteractionManager188', layer: 'existing message-context only', catalogSource: 'FPReactionManager188', owns: 'expand button + lazy full-catalog DOM + adaptive context translation', transport: false, gestures: false, persistentState: false }); } catch {}
 })();
