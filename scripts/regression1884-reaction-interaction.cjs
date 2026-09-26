@@ -24,7 +24,8 @@ assert(interaction.includes("document.addEventListener('click'"), 'reaction pill
 assert(interaction.includes('manager.toggleReaction({'), 'interaction manager does not delegate mutation state to ReactionManager');
 assert(interaction.includes('manager.getQuickReactions()'), 'message context quick strip does not use catalog');
 assert(interaction.includes('closeContext?.();'), 'quick reaction does not close message context');
-assert(interaction.includes("window.FPReactionDetails188?.open"), 'future Reaction Details handoff missing');
+assert(interaction.includes("const detailsOwner = window.FPReactionDetails188;"), 'future Reaction Details handoff missing');
+assert(interaction.includes("typeof detailsOwner?.open === 'function'"), 'future Reaction Details owner contract missing');
 assert(interaction.includes('fallbackToMessageContext'), 'Build 188.4 has no safe pre-Details long-press fallback');
 assert(!interaction.includes('new WebSocket'), 'reaction interaction creates a second socket');
 assert(!interaction.includes('localStorage'), 'reaction interaction introduced persistent state');
