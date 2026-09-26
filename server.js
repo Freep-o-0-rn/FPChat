@@ -217,9 +217,10 @@ function serializeMessages(messages) {
     read_at: toIsoUtc(m.read_at)
   }));
 }
-function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE, viewerParticipantId = null) {
+function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE_SIZE, viewerParticipantId = null, includeReactions = true) {
   const safeLimit = normalizeHistoryLimit(limit);
   const page = fpHistoryRead179.readPage({ roomId, beforeCursor, safeLimit, serializeMessages });
+  if (!includeReactions) return page;
   const reactionSummaries = fpMessageReactions188.summariesForMessages(
     roomId,
     page.messages.map((message) => Number(message.id)),
@@ -227,18 +228,22 @@ function getMessageHistoryPage(roomId, beforeCursor = null, limit = HISTORY_PAGE
   );
   return { ...page, reactionSummaries };
 }
-function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE, viewerParticipantId = null) {
+function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE, viewerParticipantId = null, includeReactions = false) {
   const safeLimit = normalizeHistoryLimit(limit);
   const rows = q.listMessagesAfter.all(roomId, afterCursor, safeLimit + 1);
   const hasMore = rows.length > safeLimit;
   const pageRows = rows.slice(0, safeLimit);
   const messages = serializeMessages(pageRows);
-  const reactionSummaries = fpMessageReactions188.summariesForMessages(
-    roomId,
-    messages.map((message) => Number(message.id)),
-    viewerParticipantId
-  );
-  return { messages, reactionSummaries, hasMore, nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor };
+  const result = { messages, hasMore, nextCursor: messages.length ? Number(messages[messages.length - 1].id) : afterCursor };
+  if (!includeReactions) return result;
+  return {
+    ...result,
+    reactionSummaries: fpMessageReactions188.summariesForMessages(
+      roomId,
+      messages.map((message) => Number(message.id)),
+      viewerParticipantId
+    )
+  };
 }
 function normalizeViewState(row) {
   if (!row) return null;
@@ -662,12 +667,14 @@ app.get('/api/rooms/:publicId/messages', (req, res) => {
   if (req.query?.after !== undefined) {
     const afterCursor = Number.parseInt(req.query.after, 10);
     if (!Number.isSafeInteger(afterCursor) || afterCursor < 0) return res.status(400).json({ ok: false, error: 'invalid after cursor' });
-    const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit, participant.id);
+    const includeReactions = String(req.query?.reactions || '') === '1';
+    const sync = getMessageSyncPage(room.id, afterCursor, req.query?.limit, participant.id, includeReactions);
     const unread = getUnreadState(room.id, participant.id);
     return res.json({ ok: true, ...sync, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) });
   }
   const beforeCursor = normalizeHistoryCursor(req.query?.before);
-  const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit, participant.id);
+  const includeReactions = String(req.query?.reactions || '') === '1';
+  const history = getMessageHistoryPage(room.id, beforeCursor, req.query?.limit, participant.id, includeReactions);
   const unread = getUnreadState(room.id, participant.id);
   return res.json({ ok: true, ...history, unreadCount: unread.unreadCount, firstUnreadMessageId: unread.firstUnreadMessageId, ...roomStatePayload(room) });
 });
