@@ -252,6 +252,12 @@
         font-weight:650;
         text-align:center;
         pointer-events:none;
+        animation:fp-reaction-profile-toast188 2.6s ease both;
+      }
+      @keyframes fp-reaction-profile-toast188{
+        0%{opacity:0;transform:translate(-50%,6px)}
+        8%,82%{opacity:1;transform:translate(-50%,0)}
+        100%{opacity:0;transform:translate(-50%,4px)}
       }
       @media(max-width:600px){
         .fp-reaction-details188-overlay{
@@ -346,7 +352,7 @@
     toast.setAttribute('role', 'status');
     toast.textContent = String(text || 'Профиль недоступен');
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2600);
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
   }
 
   function openProfile(row) {
