@@ -810,7 +810,7 @@
     });
     window.FPRuntime?.registerOwner?.('media-gallery185', {
       role: 'viewer-interaction-executor', mode: 'active-owner',
-      owns: 'photo transform + local geometry + viewer swipe execution; video tap stays native until axis lock; admission/claim FPGesture135; viewer lifetime FPMediaManager177'
+      owns: 'photo transform + local geometry + viewer swipe execution + active-video picture gesture surface; video drag claims after axis lock while native control strip stays outside the surface; admission/claim FPGesture135; viewer lifetime FPMediaManager177'
     });
   }
 
