@@ -927,6 +927,10 @@ app.post('/api/rooms/:publicId/media/upload', upload.fields([{ name: 'encryptedF
   const encryptedFile = req.files?.encryptedFile?.[0];
   if (!encryptedFile) return res.status(400).json({ ok: false, error: 'encryptedFile required' });
   const encryptedThumb = req.files?.encryptedThumbnail?.[0] || null;
+  const thumbSizeBytes = Number(req.body?.thumbSizeBytes || 0);
+  if (!encryptedThumb || !Number.isFinite(thumbSizeBytes) || thumbSizeBytes <= 0 || Number(encryptedThumb.size || 0) <= 28) {
+    return res.status(400).json({ ok: false, error: 'thumbnail invalid' });
+  }
   const uploadId = String(req.body?.uploadId || '');
   if (uploadId && !/^[a-f0-9]{32}$/.test(uploadId)) return res.status(400).json({ ok: false, error: 'invalid uploadId' });
   const publicId = uploadId || randomToken(24);
