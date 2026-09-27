@@ -326,7 +326,27 @@
           video.muted = true;
         }
         diagnostic186?.watchElement(trace186,video);
-        container.replaceChildren(video);
+        if (active) {
+          // Native <video controls> may consume one-finger move before Pointer Events
+          // expose it (notably mobile WebKit/Chromium controls). Keep the native
+          // control strip, but route the picture area through the existing viewer
+          // executor. A tap toggles playback; a drag is admitted by FPGesture135.
+          const frame = document.createElement('div');
+          frame.className = 'fp-gallery134-video-frame';
+          const surface = document.createElement('div');
+          surface.className = 'fp-gallery134-video-gesture190';
+          surface.setAttribute('aria-hidden', 'true');
+          surface.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (video.paused || video.ended) video.play().catch(() => {});
+            else video.pause();
+          });
+          frame.append(video, surface);
+          container.replaceChildren(frame);
+        } else {
+          container.replaceChildren(video);
+        }
       } else {
         const image = document.createElement('img');
         diagnostic186?.watchElement(trace186,image);
@@ -726,7 +746,7 @@
       if (!g) {
         const stage = overlay.querySelector('.fp-gallery134-stage');
         const track = overlay.querySelector('.fp-gallery134-track');
-        const deferredClaim = Boolean(event.target?.closest?.('video'));
+        const deferredClaim = Boolean(event.target?.closest?.('video,.fp-gallery134-video-gesture190'));
         g = { interaction: z, overlay, stage, track, pointers: new Map(), pair: null,
           startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY,
           startedAt: performance.now(), axis: 'pending', moved: false, multi: false, mode: 'swipe',
