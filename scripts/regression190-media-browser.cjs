@@ -115,6 +115,20 @@ run(async ({newClient, errors}) => {
 
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+  await page.evaluate(() => {
+    window.media190NativeEvents=[];
+    for (const type of ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel']) {
+      window.addEventListener(type,event => {
+        const touch=event.touches?.[0]||event.changedTouches?.[0];
+        media190NativeEvents.push({
+          type,target:event.target?.className||event.target?.tagName||'',
+          x:event.clientX??touch?.clientX??null,y:event.clientY??touch?.clientY??null,
+          pointerAction:FPGesture135.snapshot().pointer?.action??null,
+          touchAction:FPGesture135.snapshot().touch?.action??null
+        });
+      },{capture:true,passive:true});
+    }
+  });
   const native = (type,points) => cdp.send('Input.dispatchTouchEvent',{
     type,
     touchPoints:points.map(([id,x,y])=>({id,x,y,radiusX:4,radiusY:4,force:1}))
@@ -133,7 +147,15 @@ run(async ({newClient, errors}) => {
   await native('touchMove',[[1,hx1,hy]]);
   await page.waitForTimeout(25);
   await native('touchMove',[[1,hx2,hy]]);
-  await page.waitForFunction(() => FPGesture135.snapshot().pointer?.action === 'viewer:interaction');
+  await page.waitForTimeout(80);
+  const nativeClaim=await page.evaluate(({x,y})=>({
+    pointer:FPGesture135.snapshot().pointer,
+    touch:FPGesture135.snapshot().touch,
+    hit:(()=>{const n=document.elementFromPoint(x,y);return {tag:n?.tagName||'',cls:n?.className||''};})(),
+    events:media190NativeEvents
+  }),{x:hx2,y:hy});
+  if(nativeClaim.pointer?.action!=='viewer:interaction')console.log('Build 190 picture-surface diagnostic',JSON.stringify(nativeClaim));
+  assert.equal(nativeClaim.pointer?.action,'viewer:interaction','native picture drag must claim viewer pointer session');
   await page.waitForTimeout(25);
   await native('touchEnd',[]);
   await page.waitForFunction(() => mediaViewerState?.messageMedia?.[mediaViewerState.index]?.public_id === 'media190-b');
