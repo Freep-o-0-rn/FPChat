@@ -9,7 +9,7 @@
 | Зона | Ответственный | Контракт Build 190 |
 |---|---|---|
 | Приоритет слоя и допуск жеста | `FPLayer173 + FPGesture135` | Только существующий arbiter может выдать `viewer:interaction`. Видео не захватывает жест на tap; claim происходит только после axis-lock реального drag. |
-| Исполнение жеста viewer | `media-gallery134.js` / runtime owner `media-gallery185` | Исполняет horizontal prev/next, vertical dismiss и существующий photo pinch/pan. Не становится новым arbiter. |
+| Исполнение жеста viewer | `media-gallery134.js` / runtime owner `media-gallery185` | Исполняет horizontal prev/next, vertical dismiss, существующий photo pinch/pan и локальную video picture-surface. Не становится новым arbiter. |
 | Жизненный цикл viewer | `FPMediaManager177` | По-прежнему только identity/open/close delegation viewer и уже закреплённый lifecycle preview. Build 190 не переносит сюда codec/thumbnail generation. |
 | Подготовка thumbnail перед preview | существующие workers `createImageThumbBlob / createVideoThumbBlob / openMediaPreviewFromFiles` | Дожидаются декодируемого video frame; zero-byte thumbnail больше не создаётся. При невозможности снять кадр создаётся валидный локальный video placeholder. |
 | Отправка медиа | `FPMediaSend170 + FPSendManager177` | Перед encryption/upload проверяет, что подготовленный thumbnail непустой. Не создаёт thumbnail и не меняет codec. |
@@ -45,6 +45,8 @@ FPGesture135.watchAction(viewer:interaction)
 ```
 
 Для фото существующее поведение Build 185 сохраняется: первый pointer по-прежнему допускается сразу, pinch/pan остаются внутри `media-gallery134.js`, а lifecycle viewer остаётся у `FPMediaManager177`.
+
+На реальном мобильном браузере встроенные `<video controls>` могут забрать одно-пальцевый move внутрь UA controls до того, как страница получит `pointermove`. Поэтому активное видео получает локальную `.fp-gallery134-video-gesture190` поверх области изображения, но **не поверх нижней полосы native controls**. Эта поверхность не является новым arbiter: она только доставляет pointer stream существующему `FPGesture135`. Tap по области изображения не claim-ит swipe и переключает play/pause; нижние native controls (timeline и системные кнопки) остаются доступны напрямую.
 
 ## Thumbnail pipeline
 
@@ -87,7 +89,7 @@ Fallback не выполняется для обычных изображени�
 
 Build 190 считается готовым только если:
 
-1. tap по video не claim-ит `viewer:interaction` и native controls остаются кликабельны;
+1. tap по video/picture-surface не commit-ит swipe; область изображения сохраняет play/pause, а нижняя полоса native controls остаётся кликабельна;
 2. swipe left/right, начатый по video, переключает media;
 3. swipe up/down, начатый по video, закрывает viewer;
 4. photo pinch/pan Build 185 остаётся зелёным;
