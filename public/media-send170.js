@@ -92,6 +92,11 @@
         guard();
         const item = items[i];
         if (item.uploadedMedia) continue;
+        if (!item.thumbnailBlob?.size) {
+          if (mediaPreviewState === preview) alert('Не удалось подготовить превью медиафайла. Удалите файл и добавьте его снова.');
+          status = 'thumbnail-invalid';
+          return;
+        }
         if (btn?.isConnected) btn.textContent = '…';
         safeProgress(prog, `Загрузка ${Math.round(i / total * 100)}%`);
         const encryptedFile = await encryptBlobForKey(context.key, item.file); guard();
@@ -178,5 +183,5 @@
   sendMediaFromPreview.__fpLegacy = legacySendMediaFromPreview;
   window.FPMediaSend170 = Object.freeze({active:true, cancelPreview});
   window.dispatchEvent(new Event('fpchat:send-owners-ready174'));
-  try { window.FPRuntime?.registerOwner?.('media-send170', {role:'media-submit',mode:'active-owner',transport:'FPNetwork171.upload + stable WS',dispatcher:'FPSendManager177'}); } catch {}
+  try { window.FPRuntime?.registerOwner?.('media-send170', {role:'media-submit',mode:'active-owner',owns:'outbound media validation + encryption/upload dispatch; rejects empty prepared thumbnail',transport:'FPNetwork171.upload + stable WS',dispatcher:'FPSendManager177'}); } catch {}
 })();
