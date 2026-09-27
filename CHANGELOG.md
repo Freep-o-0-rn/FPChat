@@ -60,12 +60,12 @@
 **27 сентября 2026 · ветка `build/190-media-swipe-preview` · база: Build 189.11**
 
 - Архитектура не расширяется новым manager/arbiter: `FPLayer173 + FPGesture135` остаются владельцами допуска/claim жеста, `media-gallery134.js` — executor viewer, `FPMediaManager177` — lifecycle viewer, `FPNetwork171` — единственный media network/cache owner, `FPMediaSend170` — submit owner.
-- Tap по `<video>` больше не блокируется viewer-жестом: `viewer:interaction` claim выполняется только после axis-lock реального horizontal/vertical drag. Native controls сохраняются; после claim работают prev/next и dismiss вверх/вниз.
+- Для активного video область изображения получает локальную gesture-surface внутри существующего gallery executor: она не является новым arbiter и делает `viewer:interaction` claim через `FPGesture135` только после axis-lock реального drag. Tap по области изображения остаётся play/pause, нижняя полоса native controls не перекрывается; после claim работают prev/next и dismiss вверх/вниз.
 - Video thumbnail теперь снимается только после готовности декодируемого кадра (`loadeddata/seeked`, при наличии — `requestVideoFrameCallback`). Zero-byte WebP больше не создаётся; при невозможности снять кадр используется валидный локальный placeholder.
 - Для уже существующих сообщений отсутствующий, пустой или недекодируемый video thumbnail получает один ленивый fallback: original `/blob` читается через существующий `readEncryptedMedia174 -> FPNetwork171`, локально снимается кадр и монтируется в tile. Исправный `/thumb` не вызывает загрузку original video.
 - `FPMediaSend170` не отправляет item с пустым prepared thumbnail; сервер дополнительно отклоняет отсутствующий/нулевой thumbnail invariant.
 - Media tile остаётся кликабельным во время долгого fallback preview, поэтому открытие самого video не зависит от готовности poster.
-- Контракты и ответственные закреплены в `docs/Build190_MediaSwipePreview.md`; добавлены `test:190:contract` и Chromium `test:190:browser` плюс повторный прогон Build 189.11, MediaManager177, photo zoom 185 и media cache 186.
+- Контракты и ответственные закреплены в `docs/Build190_MediaSwipePreview.md`; `test:190:browser` проверяет прямой Pointer Events path и нативный one-finger touch по video picture-surface, а `test:190` повторно прогоняет Build 189.11, MediaManager177, photo zoom 185 и media cache 186.
 
 ---
 
