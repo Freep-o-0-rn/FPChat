@@ -2224,7 +2224,7 @@ async function createVideoThumbBlob(file){
     let timer=0,settled=false;
     const cleanup=()=>{clearTimeout(timer);for(const name of events)video.removeEventListener(name,onReady);video.removeEventListener('error',onError);};
     const done=(fn,value)=>{if(settled)return;settled=true;cleanup();fn(value);};
-    const onReady=()=>done(resolve);
+    const onReady=()=>{if(!ready||ready())done(resolve);};
     const onError=()=>done(reject,new Error('video frame decode failed'));
     for(const name of events)video.addEventListener(name,onReady,{once:true});
     video.addEventListener('error',onError,{once:true});
