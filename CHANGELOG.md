@@ -2,7 +2,7 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `189.11` — `build/189.9`; исправление открытия приглашений из push поверх Build 189.10.
+**Сборка разработки:** `190` — `build/190-media-swipe-preview`; media swipe по видео и восстановление video thumbnail поверх Build 189.11.
 
 **Текущая сборка на сервере:** `189.10` — подтверждено пользователем 27.09.2026; установка `189.11` ещё не подтверждена.
 
@@ -22,6 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
+| 27.09.2026 | **Build 190** | Свайпы video viewer через существующий FPGesture135, frame-safe thumbnail и fallback для битых превью |
 | 27.09.2026 | **Build 189.11** | Единый экран приглашений для push и списка, готовность UI и защита от устаревших ответов |
 | 26.09.2026 | **Build 188.8–188.1** | Reactions: полный Telegram-style reaction-domain, финальная архитектурная/регрессионная приёмка и release candidate |
 | 25.09.2026 | **Build 187.1** | Privacy presence: toggle онлайн/оффлайн, точное/приблизительное время посещения, server-side projection |
@@ -51,6 +52,20 @@
 
 > [!NOTE]
 > В ранней истории использовались обозначения `Alpha` и `Beta`, а номера иногда откатывались или использовались повторно. Например, **Beta 50** из мая и современный **Build 50** из сентября — это разные этапы разработки.
+
+---
+
+# 🎞 Build 190 — свайпы video viewer и восстановление превью
+
+**27 сентября 2026 · ветка `build/190-media-swipe-preview` · база: Build 189.11**
+
+- Архитектура не расширяется новым manager/arbiter: `FPLayer173 + FPGesture135` остаются владельцами допуска/claim жеста, `media-gallery134.js` — executor viewer, `FPMediaManager177` — lifecycle viewer, `FPNetwork171` — единственный media network/cache owner, `FPMediaSend170` — submit owner.
+- Tap по `<video>` больше не блокируется viewer-жестом: `viewer:interaction` claim выполняется только после axis-lock реального horizontal/vertical drag. Native controls сохраняются; после claim работают prev/next и dismiss вверх/вниз.
+- Video thumbnail теперь снимается только после готовности декодируемого кадра (`loadeddata/seeked`, при наличии — `requestVideoFrameCallback`). Zero-byte WebP больше не создаётся; при невозможности снять кадр используется валидный локальный placeholder.
+- Для уже существующих сообщений отсутствующий, пустой или недекодируемый video thumbnail получает один ленивый fallback: original `/blob` читается через существующий `readEncryptedMedia174 -> FPNetwork171`, локально снимается кадр и монтируется в tile. Исправный `/thumb` не вызывает загрузку original video.
+- `FPMediaSend170` не отправляет item с пустым prepared thumbnail; сервер дополнительно отклоняет отсутствующий/нулевой thumbnail invariant.
+- Media tile остаётся кликабельным во время долгого fallback preview, поэтому открытие самого video не зависит от готовности poster.
+- Контракты и ответственные закреплены в `docs/Build190_MediaSwipePreview.md`; добавлены `test:190:contract` и Chromium `test:190:browser` плюс повторный прогон Build 189.11, MediaManager177, photo zoom 185 и media cache 186.
 
 ---
 
