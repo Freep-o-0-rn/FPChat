@@ -608,6 +608,19 @@
     }
   }
 
+  function claimGesture190(g) {
+    if (g.claimed) return true;
+    if (!g.lease?.claim()) {
+      cancelGesture185(g.interaction);
+      return false;
+    }
+    g.claimed = true;
+    for (const pointerId of g.pointers.keys()) {
+      try { g.stage.setPointerCapture(pointerId); } catch {}
+    }
+    return true;
+  }
+
   function moveGesture185(g, event) {
     const z = g.interaction;
     if (!isLive185(z) || !g.lease?.active()) { cancelGesture185(z); return; }
@@ -638,6 +651,9 @@
         else if (ay > ax * 1.08) g.axis = 'vertical';
         else return;
       }
+      // Build 190: a video tap keeps native controls. Only a real swipe
+      // crosses the axis-lock threshold and claims the viewer gesture.
+      if (!claimGesture190(g)) return;
       g.moved = true;
       if (g.axis === 'horizontal') {
         const v = z.viewer;
@@ -651,6 +667,7 @@
         g.stage.style.opacity = String(1 - .34 * progress);
       }
     }
+    if (!g.claimed) return;
     if (event.cancelable) event.preventDefault();
     event.stopPropagation();
   }
@@ -702,20 +719,23 @@
       if (!overlay || !isLive185(z) || z.transition || event.pointerType === 'mouse' || event.button !== 0) return;
       const arbiter = window.FPGesture135;
       if (!arbiter || arbiter.currentLayer(event, event.target) !== 'viewer') return;
-      if (event.target?.closest?.('button,video,input,a')) return;
+      if (event.target?.closest?.('button,input,a')) return;
       if (!event.target?.closest?.('.fp-gallery134-stage')) return;
       if (pointerGesture && pointerGesture.interaction !== z) return;
       let g = pointerGesture;
       if (!g) {
         const stage = overlay.querySelector('.fp-gallery134-stage');
         const track = overlay.querySelector('.fp-gallery134-track');
+        const deferredClaim = Boolean(event.target?.closest?.('video'));
         g = { interaction: z, overlay, stage, track, pointers: new Map(), pair: null,
           startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY,
-          startedAt: performance.now(), axis: 'pending', moved: false, multi: false, mode: 'swipe' };
+          startedAt: performance.now(), axis: 'pending', moved: false, multi: false, mode: 'swipe',
+          deferredClaim, claimed: false };
         g.lease = arbiter.watchAction('viewer:interaction', event, () => cancelGesture185(z),
           { multiPointer: true, onPointerEnd: finishGesture185 });
-        if (!g.lease?.claim()) { g.lease?.release(); return; }
+        if (!g.lease) return;
         pointerGesture = g;
+        if (!deferredClaim && !claimGesture190(g)) return;
         resetHorizontalVisual(overlay, false);
         resetVerticalVisual(overlay, false);
       } else if (!g.lease.active()) return;
@@ -723,7 +743,9 @@
       // A third contact must not change the established pinch anchor.
       if (g.pointers.size <= 2) rebaseGesture185(g);
       if (z.image) z.image.style.willChange = 'transform';
-      try { g.stage.setPointerCapture(event.pointerId); } catch {}
+      if (g.claimed) {
+        try { g.stage.setPointerCapture(event.pointerId); } catch {}
+      }
     }, { capture: true, passive: true });
 
     window.addEventListener('pointermove', event => {
@@ -734,7 +756,7 @@
       if (pointerGesture?.pointers.has(event.pointerId)) cancelGesture185(pointerGesture.interaction);
     }, { capture: true, passive: true });
     window.addEventListener('click', event => {
-      if (Date.now() >= suppressClickUntil || event.target?.closest?.('button,video,input,a')) return;
+      if (Date.now() >= suppressClickUntil || event.target?.closest?.('button,input,a')) return;
       if (!event.target?.closest?.('.media-viewer-overlay.fp-gallery134')) return;
       event.preventDefault();
       event.stopPropagation();
@@ -763,14 +785,14 @@
     });
     window.FPRuntime?.registerOwner?.('media-gallery185', {
       role: 'viewer-interaction-executor', mode: 'active-owner',
-      owns: 'photo transform + local geometry + gesture execution; admission FPGesture135; lifetime FPMediaManager177'
+      owns: 'photo transform + local geometry + viewer swipe execution; video tap stays native until axis lock; admission/claim FPGesture135; viewer lifetime FPMediaManager177'
     });
   }
 
   function installTouchGuard() {
     window.addEventListener('touchstart', (event) => {
       const overlay = event.target?.closest?.('.media-viewer-overlay.fp-gallery134');
-      if (!overlay || event.target?.closest?.('button,video,input,a') || event.touches?.length !== 1) {
+      if (!overlay || event.target?.closest?.('button,input,a') || event.touches?.length !== 1) {
         touchGuard = null;
         return;
       }
