@@ -112,6 +112,26 @@ run(async ({newClient, errors}) => {
   await page.waitForSelector('.fp-gallery134',{state:'detached'});
   pass('upward swipe starting on video closes viewer');
 
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
+  const native = (type,points) => cdp.send('Input.dispatchTouchEvent',{
+    type,
+    touchPoints:points.map(([id,x,y])=>({id,x,y,radiusX:4,radiusY:4,force:1}))
+  });
+  await openVideo();
+  await native('touchStart',[[1,300,420]]);
+  await native('touchMove',[[1,120,420]]);
+  await native('touchEnd',[]);
+  await page.waitForFunction(() => mediaViewerState?.messageMedia?.[mediaViewerState.index]?.public_id === 'media190-b');
+  pass('native touch horizontal drag on video reaches existing viewer arbiter');
+
+  await openVideo();
+  await native('touchStart',[[1,195,360]]);
+  await native('touchMove',[[1,195,510]]);
+  await native('touchEnd',[]);
+  await page.waitForSelector('.fp-gallery134',{state:'detached'});
+  pass('native touch vertical drag on video dismisses viewer');
+
   // The chat thumbnail path must recover both a missing primary thumb and a
   // primary URL that decodes as an invalid image. Fallback is deliberately
   // lazy and runs only for video.
