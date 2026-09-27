@@ -4,6 +4,10 @@
 
 Ветка Build 190 ответвлена от `build/189.9` в точке, где `public/version.json` уже содержит Build 189.11. Build 190 не вводит новый manager/arbiter и не переносит существующие обязанности между доменами.
 
+## Build 190.2 — video-only badge hotfix
+
+В Build 190.1 проявилась CSS-регрессия: `.hidden{display:none}` объявлен раньше `.media-video-badge{display:grid}`, поэтому при одинаковой специфичности более поздний `display:grid` делал badge видимым и на image tile. В 190.2 renderer создаёт `.media-video-badge` только когда `item.media_kind === 'video'`; дополнительно оставлен defensive `.media-video-badge.hidden{display:none}`. Владельцы media/network/gesture/viewer не меняются.
+
 ## Build 190.1 — presentation-only video badge
 
 Build 190.1 не меняет media ownership. В message tile существующий `.media-video-badge` остаётся дочерним presentation-элементом существующего `.media-tile`: у него `pointer-events:none`, поэтому открытие media по-прежнему принадлежит текущему message renderer. Символ `▶` удалён из DOM и рисуется CSS-triangle, чтобы внешний вид не зависел от системного glyph/emoji. `FPMediaManager177`, `FPGesture135`, `FPNetwork171`, thumbnail generation/fallback и viewer не затрагиваются.
