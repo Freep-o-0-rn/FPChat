@@ -104,9 +104,34 @@
 }
 
 .fp-gallery134 .media-viewer-content video {
-  /* Build 190: the gallery owns drag gestures after FPGesture135 admits them.
-     A stationary tap is not prevented, so native video controls remain usable. */
+  /* Direct-video Pointer Events remain an accepted path. The active viewer also
+     mounts a picture-area gesture surface because native controls may consume
+     one-finger move before it reaches page Pointer Events. */
   touch-action: none;
+}
+
+.fp-gallery134-video-frame {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.fp-gallery134-video-frame > video {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.fp-gallery134-video-gesture190 {
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 54px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .fp-gallery134 .media-error-box {
