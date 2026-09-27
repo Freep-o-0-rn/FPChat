@@ -65,6 +65,7 @@ run(async ({newClient, errors}) => {
   const openVideo = async () => {
     await page.evaluate(() => openMediaViewer(media190.items, 1));
     await page.waitForSelector('[data-slot="current"] video');
+    await page.waitForSelector('[data-slot="current"] .fp-gallery134-video-gesture190');
   };
   const pointerOnVideo = (type,id,x,y) => page.evaluate(({type,id,x,y}) => {
     const video = document.querySelector('[data-slot="current"] video');
@@ -112,18 +113,6 @@ run(async ({newClient, errors}) => {
   await page.waitForSelector('.fp-gallery134',{state:'detached'});
   pass('upward swipe starting on video closes viewer');
 
-  await page.evaluate(() => {
-    window.media190NativeEvents=[];
-    for (const type of ['pointerdown','pointermove','pointerup','pointercancel','touchstart','touchmove','touchend','touchcancel']) {
-      document.addEventListener(type,event => {
-        const touch=event.touches?.[0] || event.changedTouches?.[0];
-        media190NativeEvents.push({
-          type,target:event.target?.tagName || '',x:event.clientX ?? touch?.clientX ?? null,y:event.clientY ?? touch?.clientY ?? null,
-          prevented:event.defaultPrevented,action:FPGesture135.snapshot().pointer?.action ?? null
-        });
-      },{capture:true,passive:true});
-    }
-  });
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:5});
   const native = (type,points) => cdp.send('Input.dispatchTouchEvent',{
@@ -131,26 +120,27 @@ run(async ({newClient, errors}) => {
     touchPoints:points.map(([id,x,y])=>({id,x,y,radiusX:4,radiusY:4,force:1}))
   });
   await openVideo();
-  await native('touchStart',[[1,300,420]]);
-  await native('touchMove',[[1,120,420]]);
+  const nativeSurface = async () => {
+    const box=await page.locator('[data-slot="current"] .fp-gallery134-video-gesture190').boundingBox();
+    assert.ok(box && box.width > 80 && box.height > 40,'video gesture surface must have usable geometry');
+    return box;
+  };
+  let surface=await nativeSurface();
+  const hy=surface.y+surface.height*0.45;
+  await native('touchStart',[[1,surface.x+surface.width*0.82,hy]]);
+  await native('touchMove',[[1,surface.x+surface.width*0.18,hy]]);
   await native('touchEnd',[]);
-  await page.waitForTimeout(120);
-  const nativeHorizontal=await snap();
-  if(nativeHorizontal.key!=='media190-b'){
-    console.log('Build 190 native video diagnostic',JSON.stringify({
-      snapshot:nativeHorizontal,
-      events:await page.evaluate(()=>media190NativeEvents)
-    }));
-  }
-  assert.equal(nativeHorizontal.key,'media190-b','native horizontal video drag did not navigate');
-  pass('native touch horizontal drag on video reaches existing viewer arbiter');
+  await page.waitForFunction(() => mediaViewerState?.messageMedia?.[mediaViewerState.index]?.public_id === 'media190-b');
+  pass('native touch horizontal drag on video picture reaches existing viewer arbiter');
 
   await openVideo();
-  await native('touchStart',[[1,195,360]]);
-  await native('touchMove',[[1,195,510]]);
+  surface=await nativeSurface();
+  const vx=surface.x+surface.width*0.5;
+  await native('touchStart',[[1,vx,surface.y+surface.height*0.2]]);
+  await native('touchMove',[[1,vx,surface.y+surface.height*0.85]]);
   await native('touchEnd',[]);
   await page.waitForSelector('.fp-gallery134',{state:'detached'});
-  pass('native touch vertical drag on video dismisses viewer');
+  pass('native touch vertical drag on video picture dismisses viewer');
 
   // The chat thumbnail path must recover both a missing primary thumb and a
   // primary URL that decodes as an invalid image. Fallback is deliberately
