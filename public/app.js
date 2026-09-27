@@ -1140,9 +1140,64 @@ box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnrea
 document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
 renderPresenceStatus();
 const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form); window.FPComposer177?.bind?.(form,view.roomId); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'draft-start');await loadDraftForCurrentRoom();window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'draft-ready');if(!isRoomViewCurrent170(view))return;syncSendBtn();window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'composer-ready');}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
- async function fetchMediaThumbUrl(media,trace=null){const view=captureRoomView170();const diagnostic=window.FPRuntime169?.loading;const persisted=STORAGE.get(STORAGE.roomState(view.roomId));if(!persisted?.deviceId||!media?.public_id){diagnostic?.fail(trace,'fetch');return'';}try{const dec=await readEncryptedMedia174(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`,'image/webp',view.key,{signal:view.context?.signal,fpTrace186:trace,fpConsumer186:'chat-thumbnail'});if(!isRoomViewCurrent170(view)){diagnostic?.finish(trace,'cancelled');return'';}const url=URL.createObjectURL(dec);diagnostic?.step(trace,'url-ready');return url;}catch(error){diagnostic?.fail(trace,'fetch',error);return'';}}
+ async function fetchMediaThumbUrl(media,trace=null){
+  const view=captureRoomView170(),diagnostic=window.FPRuntime169?.loading;
+  const persisted=STORAGE.get(STORAGE.roomState(view.roomId));
+  if(!persisted?.deviceId||!media?.public_id){diagnostic?.fail(trace,'fetch');return'';}
+  try{
+    const dec=await readEncryptedMedia174(`/api/media/${media.public_id}/thumb?deviceId=${encodeURIComponent(persisted.deviceId)}`,'image/webp',view.key,{signal:view.context?.signal,fpTrace186:trace,fpConsumer186:'chat-thumbnail'});
+    if(!isRoomViewCurrent170(view)){diagnostic?.finish(trace,'cancelled');return'';}
+    if(!dec?.size)throw new Error('empty media thumbnail');
+    const url=URL.createObjectURL(dec);diagnostic?.step(trace,'url-ready');return url;
+  }catch(error){diagnostic?.fail(trace,'fetch',error);return'';}
+}
+async function fetchVideoFallbackThumbUrl(media,trace=null){
+  const view=captureRoomView170(),diagnostic=window.FPRuntime169?.loading;
+  const persisted=STORAGE.get(STORAGE.roomState(view.roomId));
+  if(!persisted?.deviceId||!media?.public_id){diagnostic?.fail(trace,'fetch');return'';}
+  try{
+    const plain=await readEncryptedMedia174(`/api/media/${media.public_id}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,media.mime_type||'video/mp4',view.key,{signal:view.context?.signal,fpTrace186:trace,fpConsumer186:'chat-thumbnail-fallback'});
+    if(!isRoomViewCurrent170(view)){diagnostic?.finish(trace,'cancelled');return'';}
+    let generated;
+    try{generated=await createVideoThumbBlob(plain);}
+    catch{generated={thumbnailBlob:await createVideoPlaceholderThumbBlob(),width:null,height:null,durationSeconds:null};}
+    if(!generated?.thumbnailBlob?.size)throw new Error('video fallback thumbnail unavailable');
+    if(!isRoomViewCurrent170(view)){diagnostic?.finish(trace,'cancelled');return'';}
+    const url=URL.createObjectURL(generated.thumbnailBlob);diagnostic?.step(trace,'url-ready');return url;
+  }catch(error){diagnostic?.fail(trace,'element',error);return'';}
+}
 const fetchMediaThumbUrlWithoutTracking=fetchMediaThumbUrl;
 fetchMediaThumbUrl=async function(...args){pendingMediaThumbLoads+=1;try{return await fetchMediaThumbUrlWithoutTracking(...args);}finally{pendingMediaThumbLoads=Math.max(0,pendingMediaThumbLoads-1);}};
+const fetchVideoFallbackThumbUrlWithoutTracking=fetchVideoFallbackThumbUrl;
+fetchVideoFallbackThumbUrl=async function(...args){pendingMediaThumbLoads+=1;try{return await fetchVideoFallbackThumbUrlWithoutTracking(...args);}finally{pendingMediaThumbLoads=Math.max(0,pendingMediaThumbLoads-1);}};
+async function mountChatMediaThumb190(img,item,row,context,primaryTrace){
+  if(!img||!item||!row)return;
+  const diagnostic=window.FPRuntime169?.loading;
+  const alive=()=>row.isConnected&&!row.dataset.fpEvicted174&&context===window.FPRoomContext170?.current?.()&&!context?.signal?.aborted;
+  const useUrl=(url,trace)=>{
+    if(!url)return false;
+    if(!alive()){diagnostic?.finish(trace,'cancelled');URL.revokeObjectURL(url);return false;}
+    diagnostic?.watchElement(trace,img,context?.signal);
+    img.src=url;
+    return true;
+  };
+  const loadFallback=async()=>{
+    if(item.media_kind!=='video'||img.dataset.fpFallback190==='1')return false;
+    img.dataset.fpFallback190='1';
+    const trace=diagnostic?.begin('media',{endpoint:'blob',consumer:'chat-thumbnail-fallback',parent:diagnostic?.roomToken(context)?.id,mediaType:'video'});
+    const url=await fetchVideoFallbackThumbUrl(item,trace);
+    return useUrl(url,trace);
+  };
+  const primary=await fetchMediaThumbUrl(item,primaryTrace);
+  if(!primary){await loadFallback();return;}
+  if(!alive()){diagnostic?.finish(primaryTrace,'cancelled');URL.revokeObjectURL(primary);return;}
+  img.addEventListener('error',()=>{
+    try{URL.revokeObjectURL(primary);}catch{}
+    if(img.src)img.removeAttribute('src');
+    void loadFallback();
+  },{once:true});
+  useUrl(primary,primaryTrace);
+}
 function openMediaViewer(messageMedia,startIndex=0){mediaViewerState={messageMedia,index:startIndex,loaded:new Map()};renderMediaViewer();}
 function renderMediaViewer(){const root=document.getElementById('mediaViewerRoot')||document.body.appendChild(Object.assign(document.createElement('div'),{id:'mediaViewerRoot'}));const v=mediaViewerState;if(!v){root.innerHTML='';return;}const m=v.messageMedia[v.index];root.innerHTML=`<div class="media-viewer-overlay"><button class="media-viewer-close" type="button">×</button><div class="media-viewer-content"><div class="media-progress-ring">Загрузка...</div></div>${v.messageMedia.length>1?'<button class="media-viewer-nav prev">←</button><button class="media-viewer-nav next">→</button>':''}</div>`;root.querySelector('.media-viewer-overlay').onclick=(e)=>{if(e.target.classList.contains('media-viewer-overlay')){mediaViewerState=null;renderMediaViewer();}};root.querySelector('.media-viewer-close').onclick=()=>{mediaViewerState=null;renderMediaViewer();};root.querySelector('.prev')?.addEventListener('click',(e)=>{e.stopPropagation();if(v.index>0){v.index--;renderMediaViewer();}});root.querySelector('.next')?.addEventListener('click',(e)=>{e.stopPropagation();if(v.index<v.messageMedia.length-1){v.index++;renderMediaViewer();}});loadViewerMedia(m,root.querySelector('.media-viewer-content'));}
 async function loadViewerMedia(media,container){try{const persisted=STORAGE.get(STORAGE.roomState(state.roomId));const key=state.key;const plain=await readEncryptedMedia174(`/api/media/${media.public_id}/blob?deviceId=${encodeURIComponent(persisted.deviceId)}`,media.mime_type,key);const url=URL.createObjectURL(plain);container.innerHTML=media.media_kind==='video'?`<video controls autoplay src="${url}"></video>`:`<img src="${url}" alt="media">`;}catch{container.innerHTML='<div class="media-error-box">Не удалось загрузить медиа <button type="button" class="btn btn-secondary">Повторить</button></div>';container.querySelector('button')?.addEventListener('click',()=>loadViewerMedia(media,container));}}
@@ -1296,8 +1351,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
       const img=el.querySelector('img');
       const diagnostic=window.FPRuntime169?.loading,context=window.FPRoomContext170?.current?.();
       const trace=diagnostic?.begin('media',{endpoint:'thumb',consumer:'chat-thumbnail',parent:diagnostic?.roomToken(context)?.id,mediaType:item?.media_kind});
-      const u=await fetchMediaThumbUrl(item,trace);
-      if(u){if(w.dataset.fpEvicted174){diagnostic?.finish(trace,'cancelled');URL.revokeObjectURL(u);}else{diagnostic?.watchElement(trace,img,context?.signal);img.src=u;}}
+      await mountChatMediaThumb190(img,item,w,context,trace);
       el.addEventListener('click',(e)=>{
         e.preventDefault();e.stopPropagation();
         if(w.dataset.incoming==='1'&&w.dataset.read!=='1')markMessageRead(m.id);
