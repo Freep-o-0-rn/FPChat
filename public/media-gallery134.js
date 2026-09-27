@@ -635,8 +635,13 @@
       return false;
     }
     g.claimed = true;
-    for (const pointerId of g.pointers.keys()) {
-      try { g.stage.setPointerCapture(pointerId); } catch {}
+    // Photo pinch/pan keeps the proven Build 185 capture path. For deferred
+    // video gestures, mobile UA controls can implicitly drop capture before
+    // pointerup; the window-level executor already receives the full stream.
+    if (!g.deferredClaim) {
+      for (const pointerId of g.pointers.keys()) {
+        try { g.stage.setPointerCapture(pointerId); } catch {}
+      }
     }
     return true;
   }
@@ -763,7 +768,7 @@
       // A third contact must not change the established pinch anchor.
       if (g.pointers.size <= 2) rebaseGesture185(g);
       if (z.image) z.image.style.willChange = 'transform';
-      if (g.claimed) {
+      if (g.claimed && !g.deferredClaim) {
         try { g.stage.setPointerCapture(event.pointerId); } catch {}
       }
     }, { capture: true, passive: true });
