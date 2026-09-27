@@ -2,9 +2,9 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `190.1` — `build/190-media-swipe-preview`; Telegram-like play badge поверх завершённого Build 190.
+**Сборка разработки:** `190.2` — `build/190-media-swipe-preview`; video-only play badge hotfix поверх Build 190.1.
 
-**Текущая сборка на сервере:** `190` — подтверждено пользователем 27.09.2026 после физической проверки нового video thumbnail.
+**Текущая сборка на сервере:** `190.1` — подтверждено пользователем 27.09.2026; обнаружен UI-регресс: play badge виден и на фото.
 
 **Сборка в main:** `188.9` — по `public/version.json` на 27.09.2026.
 
@@ -22,6 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
+| 27.09.2026 | **Build 190.2** | Исправление video-only play badge: badge больше не создаётся для фото + defensive CSS guard |
 | 27.09.2026 | **Build 190.1** | Telegram-like круглый play badge на video tile; presentation-only, без смены владельцев |
 | 27.09.2026 | **Build 190** | Свайпы video viewer через существующий FPGesture135, frame-safe thumbnail и fallback для битых превью |
 | 27.09.2026 | **Build 189.11** | Единый экран приглашений для push и списка, готовность UI и защита от устаревших ответов |
@@ -56,9 +57,15 @@
 
 ---
 
-# 🎞 Build 190.1–190 — video UX, свайпы viewer и восстановление превью
+# 🎞 Build 190.2–190 — video UX, свайпы viewer и восстановление превью
 
 **27 сентября 2026 · ветка `build/190-media-swipe-preview` · база: Build 189.11**
+
+### Build 190.2 — video-only play badge hotfix
+
+- Причина регресса: глобальный `.hidden{display:none}` объявлен раньше, а новый `.media-video-badge{display:grid}` — позже с той же специфичностью, поэтому `display:grid` побеждал по порядку каскада и badge становился видимым даже у фото.
+- Исправление сделано на двух уровнях: `appendMessage` теперь вообще не создаёт `.media-video-badge` для `image`, а CSS содержит защитный `.media-video-badge.hidden{display:none}` на случай legacy/альтернативного renderer.
+- Версия, cache suffix и updater gate подняты до `190.2`, чтобы клиент гарантированно получил исправленный CSS/JS без зависимости от старого кэша.
 
 ### Build 190.1 — Telegram-like video play badge
 
