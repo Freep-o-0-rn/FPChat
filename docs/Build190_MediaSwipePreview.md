@@ -48,6 +48,8 @@ FPGesture135.watchAction(viewer:interaction)
 
 На реальном мобильном браузере встроенные `<video controls>` могут забрать одно-пальцевый move внутрь UA controls до того, как страница получит `pointermove`. Поэтому активное видео получает локальную `.fp-gallery134-video-gesture190` поверх области изображения, но **не поверх нижней полосы native controls**. Эта поверхность не является новым arbiter: она только доставляет pointer stream существующему `FPGesture135`. Tap по области изображения не claim-ит swipe и переключает play/pause; нижние native controls (timeline и системные кнопки) остаются доступны напрямую.
 
+После claim deferred-video жест **не переводится на `setPointerCapture`**: продолжение потока уже принимает window-level executor, а мобильные UA controls способны неявно сбросить capture до `pointerup`. Это правило относится только к video. Фото сохраняет проверенный Build 185 capture path для pinch/pan.
+
 ## Thumbnail pipeline
 
 Новый исходящий media item не должен достигать upload с пустым preview:
