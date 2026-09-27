@@ -7,6 +7,7 @@ on:
       - build/190-media-swipe-preview
     paths:
       - 'public/app.js'
+      - 'public/styles.css'
       - 'public/media-gallery134.js'
       - 'public/media-gallery134.css'
       - 'public/media-send170.js'

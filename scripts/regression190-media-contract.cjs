@@ -9,6 +9,7 @@ const read = file => fs.readFileSync(path.join(root,file),'utf8').replace(/\r\n/
 const gallery = read('public/media-gallery134.js');
 const galleryCss = read('public/media-gallery134.css');
 const app = read('public/app.js');
+const styles = read('public/styles.css');
 const mediaSend = read('public/media-send170.js');
 const network = read('public/network171.js');
 const server = read('server.js');
@@ -54,6 +55,17 @@ assert.doesNotMatch(app,/new Blob\(\[\],\s*\{type:'image\/webp'\}\)/,
 assert.match(app,/async function mountChatMediaThumb190/,'chat thumbnail mount/fallback worker missing');
 assert.match(app,/img\.dataset\.fpFallback190==='1'/,'video fallback must be single-shot per tile');
 
+assert.match(app,/class="media-video-badge \$\{item\.media_kind==='video'\?'':'hidden'\}" aria-hidden="true"><\/span>/,
+  'Build 190.1 message video badge must be presentation-only markup');
+assert.doesNotMatch(app,/media-video-badge[^>]*>▶<\/span>/,
+  'Build 190.1 must not depend on a font/emoji play glyph');
+assert.match(styles,/\.media-video-badge\s*\{[\s\S]*?width:32px;[\s\S]*?height:32px;[\s\S]*?backdrop-filter:blur\(6px\);[\s\S]*?pointer-events:none;/,
+  'Build 190.1 Telegram-like circular badge presentation missing');
+assert.match(styles,/\.media-video-badge::before\s*\{[\s\S]*?border-left:9px solid #fff;/,
+  'Build 190.1 CSS play triangle missing');
+assert.match(styles,/\.media-tile:active \.media-video-badge\{transform:scale\(\.94\)\}/,
+  'Build 190.1 pressed feedback missing');
+
 assert.match(mediaSend,/if \(!item\.thumbnailBlob\?\.size\)/,
   'FPMediaSend170 must reject an empty prepared thumbnail');
 assert.match(mediaSend,/role:'media-submit'/,'existing media submit owner must remain');
@@ -73,3 +85,4 @@ assert.match(docs,/FPNetwork171/);
 console.log('PASS Build 190 owner/arbiter contract');
 console.log('PASS Build 190 video swipe deferred claim contract');
 console.log('PASS Build 190 thumbnail generation/fallback/upload invariants');
+console.log('PASS Build 190.1 Telegram-like video badge presentation contract');

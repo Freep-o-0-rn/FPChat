@@ -1241,7 +1241,7 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
   const captionHtml=caption?`<div class="message-text">${safeText(caption)}</div>`:'';
   const mediaGridClass=mediaList.length===1?'one':(mediaList.length<=4?'few':'many');
   const contentHtml=isMedia
-    ?`<div class="media-grid ${mediaGridClass}">${mediaList.map((item,idx)=>`<button type="button" class="media-tile" data-media-index="${idx}"><img class="media-thumb" alt="media"><span class="media-video-badge ${item.media_kind==='video'?'':'hidden'}">▶</span></button>`).join('')}</div>${captionHtml}`
+    ?`<div class="media-grid ${mediaGridClass}">${mediaList.map((item,idx)=>`<button type="button" class="media-tile" data-media-index="${idx}"><img class="media-thumb" alt="media"><span class="media-video-badge ${item.media_kind==='video'?'':'hidden'}" aria-hidden="true"></span></button>`).join('')}</div>${captionHtml}`
     :`<div class="message-text">${safeText(renderText)}</div>`;
   w.innerHTML=`<div class='bubble'><div><b>${safeText(m.sender_name)}</b></div>${replyHtml}${contentHtml}<div class='meta'>${formatMessageTime(m.created_at)} ${mine?deliveryIcon(m.status):''}</div></div>`;
 

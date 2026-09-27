@@ -2,9 +2,9 @@
 
 > История FPChat от актуальной сборки к самым ранним прототипам. Близкие версии объединены в крупные этапы, чтобы changelog показывал развитие продукта, а не превращался в список технических `bump version` и `cache-bust` коммитов.
 
-**Сборка разработки:** `190` — `build/190-media-swipe-preview`; media swipe по видео и восстановление video thumbnail поверх Build 189.11.
+**Сборка разработки:** `190.1` — `build/190-media-swipe-preview`; Telegram-like play badge поверх завершённого Build 190.
 
-**Текущая сборка на сервере:** `189.10` — подтверждено пользователем 27.09.2026; установка `189.11` ещё не подтверждена.
+**Текущая сборка на сервере:** `190` — подтверждено пользователем 27.09.2026 после физической проверки нового video thumbnail.
 
 **Сборка в main:** `188.9` — по `public/version.json` на 27.09.2026.
 
@@ -22,6 +22,7 @@
 
 | Период | Версии | Основной фокус |
 |---|---|---|
+| 27.09.2026 | **Build 190.1** | Telegram-like круглый play badge на video tile; presentation-only, без смены владельцев |
 | 27.09.2026 | **Build 190** | Свайпы video viewer через существующий FPGesture135, frame-safe thumbnail и fallback для битых превью |
 | 27.09.2026 | **Build 189.11** | Единый экран приглашений для push и списка, готовность UI и защита от устаревших ответов |
 | 26.09.2026 | **Build 188.8–188.1** | Reactions: полный Telegram-style reaction-domain, финальная архитектурная/регрессионная приёмка и release candidate |
@@ -55,9 +56,18 @@
 
 ---
 
-# 🎞 Build 190 — свайпы video viewer и восстановление превью
+# 🎞 Build 190.1–190 — video UX, свайпы viewer и восстановление превью
 
 **27 сентября 2026 · ветка `build/190-media-swipe-preview` · база: Build 189.11**
+
+### Build 190.1 — Telegram-like video play badge
+
+- В message video tile текстовый символ `▶` заменён CSS-triangle внутри круглого badge: одинаковая геометрия на iOS/Android/desktop и отсутствие зависимости от emoji/font glyph.
+- Badge увеличен до 32×32 px, получил полупрозрачный фон, тонкую светлую обводку, blur/shadow и короткий pressed feedback. Он остаётся в правом нижнем углу preview и не перекрывает обработчик открытия media tile.
+- Это presentation-only патч: `FPMediaManager177`, `FPNetwork171`, `FPGesture135`, thumbnail pipeline и viewer lifecycle не меняются. Badge имеет `pointer-events:none`, клик по-прежнему принадлежит существующему `.media-tile`.
+- Версия интерфейса, cache suffix и updater gate синхронизированы на `190.1`; Build 190 regression дополнен контрактом нового badge.
+
+### Build 190 — video swipe + preview recovery
 
 - Архитектура не расширяется новым manager/arbiter: `FPLayer173 + FPGesture135` остаются владельцами допуска/claim жеста, `media-gallery134.js` — executor viewer, `FPMediaManager177` — lifecycle viewer, `FPNetwork171` — единственный media network/cache owner, `FPMediaSend170` — submit owner.
 - Для активного video область изображения получает локальную gesture-surface внутри существующего gallery executor: она не является новым arbiter и делает `viewer:interaction` claim через `FPGesture135` только после axis-lock реального drag. Tap по области изображения остаётся play/pause, нижняя полоса native controls не перекрывается; после claim работают prev/next и dismiss вверх/вниз.
