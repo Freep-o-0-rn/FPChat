@@ -14,8 +14,8 @@ const network = read('public/network171.js');
 const server = read('server.js');
 const docs = read('docs/Build190_MediaSwipePreview.md');
 
-assert.match(gallery,/const deferredClaim = Boolean\(event\.target\?\.closest\?\.\('video'\)\)/,
-  'video pointerdown must use deferred claim');
+assert.match(gallery,/const deferredClaim = Boolean\(event\.target\?\.closest\?\.\('video,\.fp-gallery134-video-gesture190'\)\)/,
+  'video and its picture gesture surface must use deferred claim');
 assert.match(gallery,/function claimGesture190\(g\)/,'Build 190 claim helper missing');
 assert.match(gallery,/if \(!claimGesture190\(g\)\) return;/,'axis-locked drag must claim through FPGesture135');
 assert.match(gallery,/arbiter\.watchAction\('viewer:interaction'/,'gallery must still watch existing gesture arbiter');
@@ -24,7 +24,10 @@ assert.match(gallery,/admission\/claim FPGesture135; viewer lifetime FPMediaMana
 assert.doesNotMatch(gallery,/closest\?\.\('button,video,input,a'\)/,
   'video must not remain excluded from viewer gesture admission');
 assert.match(galleryCss,/\.media-viewer-content video \{[\s\S]*?touch-action: none;/,
-  'video surface must keep pointer stream for the admitted viewer drag');
+  'direct video surface must keep pointer stream for the admitted viewer drag');
+assert.match(gallery,/fp-gallery134-video-gesture190/,'active video picture gesture surface missing');
+assert.match(galleryCss,/\.fp-gallery134-video-gesture190 \{[\s\S]*?inset: 0 0 54px;[\s\S]*?touch-action: none;/,
+  'picture gesture surface must leave the native control strip uncovered');
 
 const managerStart = app.indexOf('class FPMediaManager177Class {');
 const managerEnd = app.indexOf('\nconst FPMediaManager177 =',managerStart);
