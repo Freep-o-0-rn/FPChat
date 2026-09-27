@@ -18,6 +18,8 @@ assert.match(gallery,/const deferredClaim = Boolean\(event\.target\?\.closest\?\
   'video and its picture gesture surface must use deferred claim');
 assert.match(gallery,/function claimGesture190\(g\)/,'Build 190 claim helper missing');
 assert.match(gallery,/if \(!claimGesture190\(g\)\) return;/,'axis-locked drag must claim through FPGesture135');
+assert.match(gallery,/if \(!g\.deferredClaim\) \{[\s\S]*?setPointerCapture\(pointerId\)/,
+  'deferred video drag must avoid pointer capture while photo gestures retain it');
 assert.match(gallery,/arbiter\.watchAction\('viewer:interaction'/,'gallery must still watch existing gesture arbiter');
 assert.match(gallery,/admission\/claim FPGesture135; viewer lifetime FPMediaManager177/,
   'runtime owner map must name existing arbiter/lifecycle owners');
