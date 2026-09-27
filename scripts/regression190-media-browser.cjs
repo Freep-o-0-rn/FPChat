@@ -158,7 +158,15 @@ run(async ({newClient, errors}) => {
   assert.equal(nativeClaim.pointer?.action,'viewer:interaction','native picture drag must claim viewer pointer session');
   await page.waitForTimeout(25);
   await native('touchEnd',[]);
-  await page.waitForFunction(() => mediaViewerState?.messageMedia?.[mediaViewerState.index]?.public_id === 'media190-b');
+  await page.waitForTimeout(320);
+  const nativeAfterEnd=await page.evaluate(()=>({
+    key:mediaViewerState?.messageMedia?.[mediaViewerState.index]?.public_id||null,
+    pointer:FPGesture135.snapshot().pointer,
+    touch:FPGesture135.snapshot().touch,
+    events:media190NativeEvents
+  }));
+  if(nativeAfterEnd.key!=='media190-b')console.log('Build 190 picture-surface end diagnostic',JSON.stringify(nativeAfterEnd));
+  assert.equal(nativeAfterEnd.key,'media190-b','native horizontal video drag did not navigate after touch end');
   pass('native touch horizontal drag on video picture reaches existing viewer arbiter');
 
   await openVideo();
