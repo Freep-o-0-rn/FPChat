@@ -104,7 +104,9 @@
 }
 
 .fp-gallery134 .media-viewer-content video {
-  touch-action: manipulation;
+  /* Build 190: the gallery owns drag gestures after FPGesture135 admits them.
+     A stationary tap is not prevented, so native video controls remain usable. */
+  touch-action: none;
 }
 
 .fp-gallery134 .media-error-box {
