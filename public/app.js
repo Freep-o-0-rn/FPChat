@@ -1351,12 +1351,12 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
       const img=el.querySelector('img');
       const diagnostic=window.FPRuntime169?.loading,context=window.FPRoomContext170?.current?.();
       const trace=diagnostic?.begin('media',{endpoint:'thumb',consumer:'chat-thumbnail',parent:diagnostic?.roomToken(context)?.id,mediaType:item?.media_kind});
-      await mountChatMediaThumb190(img,item,w,context,trace);
       el.addEventListener('click',(e)=>{
         e.preventDefault();e.stopPropagation();
         if(w.dataset.incoming==='1'&&w.dataset.read!=='1')markMessageRead(m.id);
         openMediaViewer(mediaList,idx);
       });
+      await mountChatMediaThumb190(img,item,w,context,trace);
     });
   }
 
