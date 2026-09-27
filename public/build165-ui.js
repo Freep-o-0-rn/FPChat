@@ -1,13 +1,13 @@
-/* Build 189.10: presentation bridge with Build 169-189 owners and Layer/Gesture/Scroll/Viewport ownership. */
+/* Build 189.11: presentation bridge with Build 169-189 owners and Layer/Gesture/Scroll/Viewport ownership. */
 (() => {
   if (window.__fpBuild165UiInstalled) return;
   window.__fpBuild165UiInstalled = true;
 
-  const BUILD_LABEL = 'Build 189.10';
+  const BUILD_LABEL = 'Build 189.11';
   const currentScript = document.currentScript;
   const storageSuffix = (() => {
-    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=189.10'; }
-    catch { return '?v=189.10'; }
+    try { return new URL(currentScript?.src || '', window.location.href).search || '?v=189.11'; }
+    catch { return '?v=189.11'; }
   })();
   let voiceBlockNoticeUntil = 0;
   let voiceNoticeTimer = 0;

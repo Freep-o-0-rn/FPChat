@@ -20,10 +20,11 @@ const reactionRenderer = read('public/reaction-renderer188.js');
 const reactionDetails = read('public/reaction-details188.js');
 const voicePins = read('public/voice-pins127.js');
 
-assert.equal(version.build, '189.10', 'version.json must expose Build 189.10');
-assert.match(updater, /EXPECTED_BUILD=189\.10/, 'safe updater must accept Build 189.10');
-assert.match(buildUi, /BUILD_LABEL = 'Build 189\.10'/, 'UI build label must match version.json');
-assert.doesNotMatch(buildUi, /\?v=189\.9/, 'Build 189.9 fallback cache suffix must not survive');
+const build = String(version.build);
+assert.match(build, /^\d+(?:\.\d+)*$/, 'release build must be a valid cache id');
+assert.ok(updater.includes(`EXPECTED_BUILD=${build}`), 'safe updater must match version.json');
+assert.ok(buildUi.includes(`BUILD_LABEL = 'Build ${build}'`), 'UI build label must match version.json');
+assert.ok(buildUi.includes(`?v=${build}`), 'fallback cache suffix must match version.json');
 
 assert.equal(
   fs.existsSync(path.join(root, 'public/voice-playback-arbiter189.js')),
@@ -71,4 +72,4 @@ assert.match(voicePins, /active\.root === root && active\.messageId === messageI
 assert.match(voicePins, /const safe = ownsPlayback \? requested : 0/, 'inactive pinned voices must render neutral 0:00 progress');
 assert.doesNotMatch(voicePins, /positions\.delete\(pinKey\(otherMessageId\)\)/, 'neutralizing another card must not destroy its private resume position');
 
-console.log('Build 189.10 regression contract: OK');
+console.log(`Build ${build} accumulated 189.10 regression contract: OK`);

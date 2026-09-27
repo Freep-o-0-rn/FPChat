@@ -309,7 +309,8 @@
     const api = window.FPSystem144;
     if (!api?.open) return false;
     try {
-      api.open({ eventId: target.systemEventId, refType: target.refType, refId: target.refId });
+      const opened = api.open({ eventId: target.systemEventId, refType: target.refType, refId: target.refId });
+      if (opened === false) return false;
       sessionStorage.removeItem(PENDING_SYSTEM_KEY);
       return true;
     } catch {

@@ -1,4 +1,4 @@
-/* Build 165: request decisions plus personal blocked-invite notifications in the system chat. */
+/* Build 189.11: single actionable system-chat view for list and push entry. */
 (() => {
   if (window.__fpChatRequestSystem147Installed) return;
   window.__fpChatRequestSystem147Installed = true;
@@ -25,6 +25,8 @@
   let overlay = null;
   let requests = new Map();
   let syncPromise = null;
+  let renderGeneration = 0;
+  let focusTarget = null;
   let countdownTimer = 0;
   let refreshAtZero = false;
   let hostObserver = null;
@@ -99,8 +101,14 @@
     }, OUTGOING_WATCH_MS);
   }
 
-  async function syncRequests() {
-    if (syncPromise) return syncPromise;
+  async function syncRequests({ fresh = false } = {}) {
+    if (syncPromise) {
+      if (!fresh) return syncPromise;
+      // A focus/poll request may predate the push or a completed decision.
+      // Queue one new snapshot after it; concurrent callers still share that fetch.
+      await syncPromise.catch(() => {});
+      return syncRequests();
+    }
     syncPromise = (async () => {
       try {
         const rows = await fetchRequests();
@@ -366,7 +374,7 @@
       else other.push({ event, request:null, at:event.createdAt });
     }
     for (const [id,event] of linked) other.push({ event, request:requests.get(id) || null, at:event.createdAt });
-    for (const request of rows || []) if (request.direction === 'outgoing' && request.status === 'pending' && !linked.has(String(request.requestId))) other.push({ request, event:{ type:'chat_request_pending_outgoing', createdAt:request.createdAt, refId:request.requestId, payload:{} }, at:request.createdAt });
+    for (const request of rows || []) if (request.status === 'pending' && !linked.has(String(request.requestId))) other.push({ request, event:{ type:request.direction === 'outgoing' ? 'chat_request_pending_outgoing' : 'chat_request_received', createdAt:request.createdAt, refId:request.requestId, payload:{} }, at:request.createdAt });
     return other.sort((a,b) => (dateOf(a.at)?.getTime() || 0) - (dateOf(b.at)?.getTime() || 0));
   }
 
@@ -386,19 +394,46 @@
   function stopCountdown() { clearInterval(countdownTimer); countdownTimer=0; }
 
   async function render(root, feed) {
-    const [events, rows] = await Promise.all([api().getEvents(100), syncRequests()]);
-    if (overlay !== root) return;
+    const generation = ++renderGeneration;
+    const current = () => overlay === root && generation === renderGeneration;
+    let events, rows;
+    try {
+      [events, rows] = await Promise.all([api().getEvents(100), syncRequests({ fresh: true })]);
+    } catch (error) {
+      if (!current()) return;
+      throw error;
+    }
+    if (!current()) return;
     const items = timeline(events, rows); feed.replaceChildren();
     if (!items.length) { const e=document.createElement('div'); e.className='fp-system145-empty'; e.textContent='Системных уведомлений пока нет.'; feed.appendChild(e); }
-    else { for (const item of items) feed.appendChild(item.request || reqId(item.event) ? card(item.event,item.request || reqFor(item.event)) : generic(item.event)); feed.scrollTop=feed.scrollHeight; }
+    else {
+      let focused = null;
+      for (const item of items) {
+        const node = item.request || reqId(item.event) ? card(item.event,item.request || reqFor(item.event)) : generic(item.event);
+        if (item.event?.id != null) node.dataset.systemEventId = String(item.event.id);
+        const requestId = String(item.request?.requestId || reqId(item.event));
+        if (requestId) node.dataset.requestId = requestId;
+        feed.appendChild(node);
+        const focusEventId = Number(focusTarget?.eventId || 0);
+        if ((focusEventId > 0 && Number(item.event?.id) === focusEventId)
+          || (focusTarget?.refType === 'chat_request' && requestId === String(focusTarget.refId))) focused = node;
+      }
+      if (focused) {
+        focused.scrollIntoView({ block: 'center' });
+        focused.classList.add('fp-system145-event-focus');
+        setTimeout(() => focused.classList.remove('fp-system145-event-focus'), 1600);
+        focusTarget = null;
+      } else feed.scrollTop=feed.scrollHeight;
+    }
     const unread = events.filter((e)=>!e.readAt).map((e)=>e.id);
-    if (unread.length) { try { await api().markRead(unread); } catch {} try { await api().refresh(); } catch {} ensureSystemRow(rows); applyAuthoritativeRowPreview(); }
+    if (unread.length) { try { await api().markRead(unread); } catch {} if (!current()) return; try { await api().refresh(); } catch {} if (!current()) return; ensureSystemRow(rows); applyAuthoritativeRowPreview(); }
     startCountdown();
   }
-  function closeOverlay() { if (!overlay) return; document.removeEventListener('keydown', keydown,true); stopCountdown(); overlay.remove(); overlay=null; }
+  function closeOverlay() { ++renderGeneration; focusTarget=null; document.removeEventListener('keydown', keydown,true); stopCountdown(); overlay?.remove(); overlay=null; }
   function keydown(event) { if (event.key === 'Escape') { event.preventDefault(); closeOverlay(); } }
-  async function openOverlay() {
-    api()?.close?.(); closeOverlay();
+  async function openOverlay(options = {}) {
+    closeOverlay();
+    focusTarget = options;
     const root=document.createElement('div'); root.className='fp-system145-overlay';
     const sheet=document.createElement('section'); sheet.className='fp-system145-sheet'; sheet.setAttribute('role','dialog'); sheet.setAttribute('aria-modal','true');
     const header=document.createElement('div'); header.className='fp-system145-header';
@@ -410,13 +445,14 @@
     try { await render(root,feed); } catch { if (overlay===root) feed.innerHTML='<div class="fp-system145-empty">Не удалось загрузить системный чат.</div>'; }
   }
   async function refreshOverlay() {
-    const rows=await syncRequests().catch(()=>[]); if (!overlay) { ensureSystemRow(rows); applyAuthoritativeRowPreview(); return; }
-    const feed=overlay.querySelector('.fp-system145-feed'); if (feed) await render(overlay,feed).catch(()=>{});
+    const root=overlay;
+    if (!root) { const rows=await syncRequests().catch(()=>[]); ensureSystemRow(rows); applyAuthoritativeRowPreview(); return; }
+    const feed=root.querySelector('.fp-system145-feed'); if (feed) await render(root,feed).catch(()=>{});
   }
 
   function install() {
-    document.addEventListener('click',(event)=>{const row=event.target?.closest?.('.fp-system145-row');if(!row)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();void openOverlay();},true);
-    document.addEventListener('keydown',(event)=>{const row=event.target?.closest?.('.fp-system145-row');if(!row||!['Enter',' '].includes(event.key))return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();void openOverlay();},true);
+    document.addEventListener('click',(event)=>{const row=event.target?.closest?.('.fp-system145-row');if(!row)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();api().open();},true);
+    document.addEventListener('keydown',(event)=>{const row=event.target?.closest?.('.fp-system145-row');if(!row||!['Enter',' '].includes(event.key))return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();api().open();},true);
     const host=document.getElementById('fpSystemChatHost145');
     if (host) {
       hostObserver=new MutationObserver(()=>{
@@ -428,11 +464,12 @@
     document.getElementById('chatSearch')?.addEventListener('input',()=>queueMicrotask(()=>{ensureSystemRow();applyAuthoritativeRowPreview();}));
     const periodic=async()=>{if(!api())return;try{const rows=await syncRequests();await api().refresh();ensureSystemRow(rows);applyAuthoritativeRowPreview();if(overlay)await refreshOverlay();}catch{}};
     void periodic();
-    window.addEventListener('fpchat:chat-request-changed',()=>{if(document.visibilityState==='visible')void syncRequests().catch(()=>{});});
+    window.addEventListener('fpchat:chat-request-changed',()=>{if(document.visibilityState==='visible')void refreshOverlay();});
     window.addEventListener('focus',()=>{if(document.visibilityState==='visible')void periodic();});
     window.addEventListener('pageshow',()=>void periodic());
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void periodic();else scheduleOutgoingWatch([]);});
     setInterval(()=>{if(document.visibilityState==='visible')void periodic();},10000);
+    api().registerView({ open: openOverlay, close: closeOverlay });
   }
   function wait(n=0){if(api())install();else if(n<100)setTimeout(()=>wait(n+1),100);}
   wait();

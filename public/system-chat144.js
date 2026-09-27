@@ -1,5 +1,5 @@
-/* Build 145: isolated system chat UI over the Build 144 system-event channel.
-   It renders outside normal rooms/messages and never enters existing room state. */
+/* Build 189.11: system-event data and navigation facade.
+   chat-request-system147 owns the single system-chat view for list and push entry. */
 (() => {
   if (window.FPSystem144) return;
 
@@ -55,7 +55,7 @@
 
   let cachedState = { ok: true, hasEvents: false, total: 0, unread: 0, latestAt: null };
   let latestEvent = null;
-  let overlay = null;
+  let view = null;
   let refreshInFlight = null;
 
   function getDeviceId() {
@@ -128,15 +128,6 @@
     return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}`;
   }
 
-  function initials(value) {
-    const clean = String(value || '').trim().replace(/\s+/g, ' ');
-    const parts = clean.split(' ').filter(Boolean);
-    const raw = parts.length > 1
-      ? `${parts[0][0] || ''}${parts[1][0] || ''}`
-      : (parts[0] || 'FP').slice(0, 2);
-    return raw.toUpperCase() || 'FP';
-  }
-
   function previewFor(event) {
     if (event?.type === 'chat_request_received') {
       const sender = event.payload?.sender || {};
@@ -179,145 +170,22 @@
     host.replaceChildren(row);
   }
 
-  function renderEvent(event) {
-    const card = document.createElement('div');
-    card.className = 'fp-system145-event';
-    if (event?.id != null) card.dataset.systemEventId = String(event.id);
-
-    if (event?.type === 'chat_request_received') {
-      const sender = event.payload?.sender || {};
-      const head = document.createElement('div');
-      head.className = 'fp-system145-request-head';
-
-      const avatar = document.createElement('div');
-      avatar.className = 'fp-system145-avatar';
-      avatar.textContent = initials(sender.displayName || sender.username);
-
-      const copy = document.createElement('div');
-      copy.className = 'fp-system145-request-copy';
-      const name = document.createElement('b');
-      name.textContent = sender.displayName || 'Пользователь FPChat';
-      const handle = document.createElement('span');
-      handle.textContent = sender.username ? `@${sender.username}` : 'Пользователь FPChat';
-      copy.append(name, handle);
-      head.append(avatar, copy);
-
-      const text = document.createElement('div');
-      text.className = 'fp-system145-request-text';
-      text.textContent = 'Хочет начать с вами новый приватный чат.';
-
-      const state = document.createElement('div');
-      state.className = 'fp-system145-request-state';
-      state.textContent = 'Ожидает решения';
-
-      card.append(head, text, state);
-    } else {
-      const generic = document.createElement('div');
-      generic.className = 'fp-system145-generic';
-      generic.textContent = 'Системное уведомление FPChat';
-      card.appendChild(generic);
-    }
-
-    const time = document.createElement('div');
-    time.className = 'fp-system145-event-time';
-    time.textContent = formatTime(event?.createdAt);
-    card.appendChild(time);
-    return card;
+  function openSystemChat(options = {}) {
+    // The notification owner retains its target until the actionable view is ready.
+    if (!view) return false;
+    void view.open(options);
+    return true;
   }
 
   function closeSystemChat() {
-    if (!overlay) return;
-    document.removeEventListener('keydown', onKeyDown, true);
-    overlay.remove();
-    overlay = null;
+    view?.close();
   }
 
-  function onKeyDown(event) {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closeSystemChat();
-    }
-  }
-
-  async function openSystemChat(options = {}) {
-    closeSystemChat();
-
-    const root = document.createElement('div');
-    root.className = 'fp-system145-overlay';
-    root.setAttribute('role', 'presentation');
-
-    const sheet = document.createElement('section');
-    sheet.className = 'fp-system145-sheet';
-    sheet.setAttribute('role', 'dialog');
-    sheet.setAttribute('aria-modal', 'true');
-    sheet.setAttribute('aria-label', 'Системный чат FPChat');
-
-    const header = document.createElement('div');
-    header.className = 'fp-system145-header';
-    const back = document.createElement('button');
-    back.className = 'fp-system145-back';
-    back.type = 'button';
-    back.setAttribute('aria-label', 'Назад');
-    back.textContent = '‹';
-    const title = document.createElement('div');
-    title.className = 'fp-system145-title';
-    title.innerHTML = '<b>FPChat</b><span>Системный чат</span>';
-    header.append(back, title, document.createElement('span'));
-
-    const feed = document.createElement('div');
-    feed.className = 'fp-system145-feed';
-    const loading = document.createElement('div');
-    loading.className = 'fp-system145-empty';
-    loading.textContent = 'Загружаем системные события…';
-    feed.appendChild(loading);
-
-    sheet.append(header, feed);
-    root.appendChild(sheet);
-    document.body.appendChild(root);
-    overlay = root;
-
-    back.onclick = closeSystemChat;
-    root.addEventListener('click', (event) => {
-      if (event.target === root && window.matchMedia('(min-width:601px)').matches) closeSystemChat();
-    });
-    document.addEventListener('keydown', onKeyDown, true);
-
-    try {
-      const events = await getEvents(100);
-      if (overlay !== root) return;
-      feed.replaceChildren();
-      if (!events.length) {
-        const emptyState = document.createElement('div');
-        emptyState.className = 'fp-system145-empty';
-        emptyState.textContent = 'Системных уведомлений пока нет.';
-        feed.appendChild(emptyState);
-      } else {
-        [...events].reverse().forEach((event) => feed.appendChild(renderEvent(event)));
-        const focusEventId = Number(options?.eventId || 0);
-        const focusTarget = Number.isSafeInteger(focusEventId) && focusEventId > 0
-          ? feed.querySelector(`[data-system-event-id="${focusEventId}"]`)
-          : null;
-        if (focusTarget) {
-          focusTarget.scrollIntoView({ block: 'center' });
-          focusTarget.classList.add('fp-system145-event-focus');
-          setTimeout(() => focusTarget.classList.remove('fp-system145-event-focus'), 1600);
-        } else {
-          feed.scrollTop = feed.scrollHeight;
-        }
-        const unreadIds = events.filter((event) => !event.readAt).map((event) => event.id);
-        if (unreadIds.length) {
-          try { await markRead(unreadIds); } catch {}
-          void refresh();
-        }
-      }
-    } catch {
-      if (overlay !== root) return;
-      feed.replaceChildren();
-      const error = document.createElement('div');
-      error.className = 'fp-system145-empty';
-      error.textContent = 'Не удалось загрузить системный чат.';
-      feed.appendChild(error);
-    }
+  function registerView(owner) {
+    if (view || typeof owner?.open !== 'function' || typeof owner?.close !== 'function') return false;
+    view = Object.freeze({ open: owner.open, close: owner.close });
+    window.dispatchEvent(new Event('fpchat:system-ready181'));
+    return true;
   }
 
   async function refresh() {
@@ -348,7 +216,6 @@
     if (document.visibilityState === 'visible') void refresh();
   }, 10000);
 
-  window.FPSystem144 = Object.freeze({ getState, getEvents, markRead, refresh, open: openSystemChat, close: closeSystemChat });
-  window.dispatchEvent(new Event('fpchat:system-ready181'));
+  window.FPSystem144 = Object.freeze({ getState, getEvents, markRead, refresh, open: openSystemChat, close: closeSystemChat, registerView });
   void refresh();
 })();

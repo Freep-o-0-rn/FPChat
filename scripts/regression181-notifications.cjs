@@ -12,6 +12,7 @@ const files = {
   lifecycle: read('public/room-lifecycle.js'),
   sw: read('public/sw.js'),
   systemChat: read('public/system-chat144.js'),
+  systemView: read('public/chat-request-system147.js'),
   server: read('server.js'),
   service: read('src/notification-service181.js'),
   systemEvents: read('src/system-events-server.js'),
@@ -98,8 +99,8 @@ check('pending chat request click does not require room id',
   files.manager.includes('openSystemTarget')
   && files.manager.includes('systemEventId'));
 check('system chat can focus a specific durable event',
-  files.systemChat.includes('data-system-event-id')
-  && files.systemChat.includes('focusEventId'));
+  files.systemView.includes('dataset.systemEventId')
+  && files.systemView.includes('focusEventId'));
 const releaseBuild = String(JSON.parse(files.version).build);
 check('release build has a valid cache-bust id', /^\d+(?:\.\d+)*$/.test(releaseBuild));
 check('updater matches current release build', read('update.bat').includes(`set "EXPECTED_BUILD=${releaseBuild}"`));
