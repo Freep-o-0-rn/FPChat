@@ -2207,19 +2207,61 @@ async function compressImageFile(file){
   alert('Не удалось сжать фото до 10 МБ без сильной потери качества.');
   return null;
 }
+async function createVideoPlaceholderThumbBlob(){
+  const c=document.createElement('canvas');c.width=480;c.height=270;
+  const ctx=c.getContext('2d');if(!ctx)throw new Error('video placeholder canvas unavailable');
+  ctx.fillStyle='#26384a';ctx.fillRect(0,0,c.width,c.height);
+  ctx.fillStyle='rgba(255,255,255,.9)';ctx.beginPath();ctx.moveTo(205,80);ctx.lineTo(205,190);ctx.lineTo(305,135);ctx.closePath();ctx.fill();
+  const blob=await new Promise(r=>c.toBlob(r,'image/webp',0.75));
+  if(!blob?.size)throw new Error('video placeholder thumbnail empty');
+  return blob;
+}
 async function createVideoThumbBlob(file){
   const objectUrl=URL.createObjectURL(file);
+  const video=document.createElement('video');
+  const waitFor=(events,timeout,ready)=>new Promise((resolve,reject)=>{
+    if(ready?.()){resolve();return;}
+    let timer=0,settled=false;
+    const cleanup=()=>{clearTimeout(timer);for(const name of events)video.removeEventListener(name,onReady);video.removeEventListener('error',onError);};
+    const done=(fn,value)=>{if(settled)return;settled=true;cleanup();fn(value);};
+    const onReady=()=>done(resolve);
+    const onError=()=>done(reject,new Error('video frame decode failed'));
+    for(const name of events)video.addEventListener(name,onReady,{once:true});
+    video.addEventListener('error',onError,{once:true});
+    timer=setTimeout(()=>done(reject,new Error('video frame timeout')),timeout);
+  });
   try{
-    const video=document.createElement('video');video.preload='metadata';video.src=objectUrl;video.muted=true;video.playsInline=true;
-    await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('video metadata failed'));});
+    video.preload='auto';video.muted=true;video.playsInline=true;video.src=objectUrl;video.load();
+    await waitFor(['loadedmetadata'],3000,()=>video.readyState>=1);
     const durationSeconds=Number.isFinite(video.duration)?video.duration:null;
-    const seekTime=durationSeconds&&durationSeconds>0.2?0.2:0;
-    await new Promise((resolve)=>{const done=()=>resolve();video.onseeked=done;try{video.currentTime=seekTime;}catch{resolve();}setTimeout(resolve,600);});
-    const d=fitSize(video.videoWidth||640,video.videoHeight||360,480);
-    const c=document.createElement('canvas');c.width=d.w;c.height=d.h;const ctx=c.getContext('2d');ctx.drawImage(video,0,0,d.w,d.h);
-    const thumbnailBlob=await new Promise(r=>c.toBlob(r,'image/webp',0.75));
-    return {thumbnailBlob:thumbnailBlob||new Blob([], {type:'image/webp'}),width:video.videoWidth||null,height:video.videoHeight||null,durationSeconds};
-  }finally{URL.revokeObjectURL(objectUrl);}
+    const seekTime=durationSeconds&&durationSeconds>0.25?Math.min(0.25,Math.max(0,durationSeconds-0.05)):0;
+    if(seekTime>0){
+      try{video.currentTime=seekTime;}catch{}
+      await waitFor(['seeked','loadeddata'],3000,()=>video.readyState>=2&&!video.seeking);
+    }else{
+      await waitFor(['loadeddata','canplay'],3000,()=>video.readyState>=2);
+    }
+    if(typeof video.requestVideoFrameCallback==='function'){
+      await Promise.race([
+        new Promise(resolve=>video.requestVideoFrameCallback(()=>resolve())),
+        new Promise(resolve=>setTimeout(resolve,500))
+      ]);
+    }else{
+      await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+    }
+    const width=Number(video.videoWidth)||0,height=Number(video.videoHeight)||0;
+    if(width<=0||height<=0)throw new Error('video frame dimensions unavailable');
+    const d=fitSize(width,height,MEDIA_LIMITS.thumbMaxSide);
+    const c=document.createElement('canvas');c.width=d.w;c.height=d.h;
+    const ctx=c.getContext('2d');if(!ctx)throw new Error('video thumbnail canvas unavailable');
+    ctx.drawImage(video,0,0,d.w,d.h);
+    const thumbnailBlob=await new Promise(r=>c.toBlob(r,'image/webp',MEDIA_LIMITS.thumbQuality));
+    if(!thumbnailBlob?.size)throw new Error('video thumbnail empty');
+    return {thumbnailBlob,width,height,durationSeconds};
+  }finally{
+    try{video.pause();video.removeAttribute('src');video.load();}catch{}
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 async function deleteUploadedPendingMedia(items,roomId=state.roomId,deviceId=STORAGE.get(STORAGE.roomState(roomId))?.deviceId){
   if(!roomId||!deviceId)return;
@@ -2228,7 +2270,7 @@ async function deleteUploadedPendingMedia(items,roomId=state.roomId,deviceId=STO
   if(!mediaIds.length&&!uploadIds.length)return;
   await fetch(`/api/rooms/${roomId}/media/pending`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,mediaIds,uploadIds})}).catch(()=>{});
 }
-async function openMediaPreviewFromFiles(rawFiles){const view=captureRoomView170();let files=[...rawFiles];if(files.length>MEDIA_LIMITS.maxFiles){alert('Можно отправить максимум 10 файлов за раз.');files=files.slice(0,MEDIA_LIMITS.maxFiles);}const items=[];let total=0;for(const originalFile of files){let f=originalFile;const type=f.type||'';const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');const isVid=ALLOWED_VIDEO_TYPES.has(type)||type.startsWith('video/');if(!isImg&&!isVid)continue;if(isVid&&f.size>MEDIA_LIMITS.maxVideoSize){alert('Видео больше 100 МБ. Сожмите его перед отправкой.');continue;}if(isImg&&f.size>MEDIA_LIMITS.maxImageSize){const shouldCompress=confirm('Фото больше 10 МБ. Сжать перед отправкой?');if(!shouldCompress)continue;const compressed=await compressImageFile(f);if(!compressed)continue;f=compressed;}if(total+f.size>MEDIA_LIMITS.maxTotalSize)break;const objectUrl=URL.createObjectURL(f);let thumb;let meta={width:null,height:null,durationSeconds:null};if(isImg){const t=await createImageThumbBlob(f);thumb=t.thumbnailBlob;meta=t;}else{const t=await createVideoThumbBlob(f).catch(()=>null);if(t){thumb=t.thumbnailBlob;meta=t;}else{thumb=new Blob([],{type:'image/webp'});}}const thumbUrl=thumb.size?URL.createObjectURL(thumb):objectUrl;const item={id:crypto.randomUUID(),file:f,kind:isVid?'video':'image',objectUrl,thumbnailBlob:thumb,thumbnailObjectUrl:thumbUrl,width:meta.width,height:meta.height,durationSeconds:meta.durationSeconds,uploadedMedia:null,uploadError:null};FPMediaManager177.ownPreviewThumbnailObjectUrl(item);items.push(item);total+=f.size;}
+async function openMediaPreviewFromFiles(rawFiles){const view=captureRoomView170();let files=[...rawFiles];if(files.length>MEDIA_LIMITS.maxFiles){alert('Можно отправить максимум 10 файлов за раз.');files=files.slice(0,MEDIA_LIMITS.maxFiles);}const items=[];let total=0;for(const originalFile of files){let f=originalFile;const type=f.type||'';const isImg=ALLOWED_IMAGE_TYPES.has(type)||type.startsWith('image/');const isVid=ALLOWED_VIDEO_TYPES.has(type)||type.startsWith('video/');if(!isImg&&!isVid)continue;if(isVid&&f.size>MEDIA_LIMITS.maxVideoSize){alert('Видео больше 100 МБ. Сожмите его перед отправкой.');continue;}if(isImg&&f.size>MEDIA_LIMITS.maxImageSize){const shouldCompress=confirm('Фото больше 10 МБ. Сжать перед отправкой?');if(!shouldCompress)continue;const compressed=await compressImageFile(f);if(!compressed)continue;f=compressed;}if(total+f.size>MEDIA_LIMITS.maxTotalSize)break;const objectUrl=URL.createObjectURL(f);let thumb;let meta={width:null,height:null,durationSeconds:null};if(isImg){const t=await createImageThumbBlob(f);thumb=t.thumbnailBlob;meta=t;}else{const t=await createVideoThumbBlob(f).catch(()=>null);if(t){thumb=t.thumbnailBlob;meta=t;}else{thumb=await createVideoPlaceholderThumbBlob();}}if(!thumb?.size){URL.revokeObjectURL(objectUrl);alert('Не удалось подготовить превью медиафайла.');continue;}const thumbUrl=URL.createObjectURL(thumb);const item={id:crypto.randomUUID(),file:f,kind:isVid?'video':'image',objectUrl,thumbnailBlob:thumb,thumbnailObjectUrl:thumbUrl,width:meta.width,height:meta.height,durationSeconds:meta.durationSeconds,uploadedMedia:null,uploadError:null};FPMediaManager177.ownPreviewThumbnailObjectUrl(item);items.push(item);total+=f.size;}
 if(!isRoomViewCurrent170(view)){for(const item of items){URL.revokeObjectURL(item.objectUrl);if(item.thumbnailObjectUrl===item.objectUrl)URL.revokeObjectURL(item.thumbnailObjectUrl);else FPMediaManager177.releasePreviewThumbnailObjectUrl(item);}return;}if(!items.length)return;const preview={roomId:view.roomId,items,caption:'',sending:false,failedIndex:null};return FPMediaManager177.open(preview,(next)=>{mediaPreviewState=next;renderMediaPreviewModal();});}
 function closeMediaPreviewModalWorker177(preview){if(!preview||mediaPreviewState!==preview)return false;preview.items.forEach((i)=>{try{URL.revokeObjectURL(i.objectUrl);}catch{}if(i.thumbnailObjectUrl===i.objectUrl){try{URL.revokeObjectURL(i.thumbnailObjectUrl);}catch{}}});mediaPreviewState=null;const root=document.getElementById('mediaPreviewRoot');if(root)root.innerHTML='';return true;}
 function closeMediaPreviewModal(preview=mediaPreviewState){return FPMediaManager177.close(preview,closeMediaPreviewModalWorker177);}
