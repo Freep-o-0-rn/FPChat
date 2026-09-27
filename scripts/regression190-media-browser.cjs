@@ -172,7 +172,9 @@ run(async ({newClient, errors}) => {
   await openVideo();
   surface=await nativeSurface();
   const vx=surface.x+surface.width*0.5;
-  const vy0=surface.y+surface.height*0.2,vy1=surface.y+surface.height*0.5,vy2=surface.y+surface.height*0.85;
+  const vy0=surface.y+Math.min(12,surface.height*0.12);
+  const vy2=Math.min(824,vy0+Math.max(140,surface.height*0.9));
+  const vy1=(vy0+vy2)/2;
   await native('touchStart',[[1,vx,vy0]]);
   await page.waitForTimeout(35);
   await native('touchMove',[[1,vx,vy1]]);
