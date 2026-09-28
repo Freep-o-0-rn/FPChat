@@ -1,0 +1,52 @@
+name: Scroll 190.2 Fix Verification
+
+on:
+  push:
+    branches:
+      - fix/190.2-scroll-restore-races
+    paths:
+      - '.github/workflows/scroll1902-fix.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: |
+          node --check public/app.js
+          node --check public/room-open170.js
+          node --check server.js
+          node --check src/db.js
+          node --check scripts/audit1902-scroll-save.cjs
+      - name: App revision contract
+        run: npm run test:next:7
+      - name: Scroll race assertions
+        run: npm run audit:1902:scroll-save
+      - name: Initial window regression
+        run: npm run test:next:12
+      - name: Saved anchor regression
+        run: npm run test:178:history-saved-anchor
+      - name: Unread and bottom browser regression
+        run: npm run test:178:unread-restore-bottom
+      - name: Same-session reuse regression
+        run: npm run test:next:13
+      - name: RoomContext regression
+        run: npm run check:170
+      - name: History page owner
+        run: npm run test:178:history-page-owner
+      - name: Gesture and scroll ownership
+        run: npm run test:178:gesture-layer-lifecycle
+      - name: Single-owner audit
+        run: npm run test:180:single-owner-audit
