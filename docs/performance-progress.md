@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–5 plus diagnostic 3.1 completed; item 5 retained no runtime change because no optional wait produced a confirmed startup win**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–6 plus diagnostic 3.1 completed; repeated static JS/CSS cache behavior measured without runtime changes**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–5 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–6 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1591,3 +1591,134 @@ To remove only item-5 evidence, delete the two diagnostic scripts and item-5 doc
 **No next item started automatically.**
 
 Follow-up item 6 is the next numbered plan item if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 6
+
+Status: **done — repeated JS/CSS caching/revalidation measured; no runtime or cache-policy change**.
+
+### Scope
+
+Item 6 measured repeated startup static requests on the isolated localhost Chromium stand.
+
+Measured runtime before adding diagnostics:
+
+`b75d01761706280cfc1e04d253739d32160c2ad2`
+
+Build: **190.2**.
+
+Successful run:
+
+- workflow `36414543629`;
+- artifact `10965878305`;
+- digest `sha256:0410f672ad0ea0228a86ae24a827f98640903ed619b1487156dee59405d4f447`.
+
+No production/CDN cache policy is inferred from these localhost measurements.
+
+### Ordinary opening vs reload
+
+For each network profile the browser context was first primed, preserving site data, HTTP cache state and Service Worker registration.
+
+- ordinary opening = close the priming page, open a new page in the same browser context;
+- reload = `page.reload()` on that already-open page.
+
+Results:
+
+| Scenario | JS/CSS requests | Encoded transfer | Network 304 | Conditional | Disk cache | Served-from-cache |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| normal ordinary open | 81 | 21.0 KiB | 81 | 72 | 0 | 0 |
+| normal reload | 81 | 21.0 KiB | 80 | 70 | 0 | 0 |
+| slow ordinary open | 76 | 19.5 KiB | 75 | 66 | 0 | 0 |
+| slow reload | 77 | 19.5 KiB | 75 | 61 | 0 | 0 |
+
+Observed localhost static response policy:
+
+`Cache-Control: public, max-age=0`
+
+Validated resources carried ETags.
+
+The main repeat behavior is therefore conditional network revalidation, not a full-body re-download and not an explicitly reported disk-cache hit.
+
+### Logical status vs actual network status
+
+Chromium frequently reports the resource to the page as status 200 while `Network.responseReceivedExtraInfo` shows actual network status **304**.
+
+Matching `If-None-Match` and response ETag values were recorded.
+
+Therefore cache analysis uses the ExtraInfo network status instead of treating the logical 200 as a full re-download.
+
+### Selected resource: app.js
+
+Selected:
+
+`/app.js?v=190.2`
+
+Reason:
+
+- required executable startup resource;
+- repeat validation is large on the slow stand;
+- app execution directly depends on it.
+
+Measurements:
+
+| Scenario | Duration | Logical | Actual network | Encoded bytes |
+| --- | ---: | ---: | ---: | ---: |
+| normal ordinary | 47.4 ms | 200 | 304 | 267 B |
+| normal reload | 42.3 ms | 200 | 304 | 267 B |
+| slow ordinary | **864.1 ms** | 200 | 304 | 267 B |
+| slow reload | **867.8 ms** | 200 | 304 | 267 B |
+
+All four had:
+
+- `Cache-Control: public, max-age=0`;
+- ETag `W/"31ab5-1a0e7b9ecd6"`;
+- matching `If-None-Match`;
+- `fromDiskCache=false`;
+- `requestServedFromCache=false`.
+
+The ~864–868 ms is a validation-path duration under the constrained request set, not transfer of the full app.js body. Only ~267 encoded bytes were transferred.
+
+`room-lifecycle.js` was numerically slower (~1.03 s), but `app.js` was chosen because its critical executable role is direct and unambiguous.
+
+### URL/content check
+
+`app.js` changed during item 4:
+
+Before item 4, ref `63664e5c013cfb44bda7f179b383a6460fd595d2`:
+
+- app.js blob SHA `80b9a3952322f27a15cda9292c5ba2e7ff2840e3`;
+- build `190.2`.
+
+Current:
+
+- app.js blob SHA `c6cb6b3d58e5423d11d628882c00564df7b73d21`;
+- build still `190.2`.
+
+The loader before and after constructs:
+
+`/app.js${buildSuffix}`
+
+Therefore the content changed while the requested URL remained:
+
+`/app.js?v=190.2`
+
+The scheme is build-versioned, not content-addressed. A content change alone does not change the URL.
+
+On this localhost stand, max-age=0 + ETag revalidation still detects changed content. This must not be extrapolated to production caching behavior.
+
+### Files
+
+Added:
+
+- `scripts/benchmark-next6-static-cache.cjs`;
+- `docs/performance-next6-static-cache.md`;
+- `docs/performance-next6-static-cache-summary.json`;
+- this journal entry.
+
+No `public/*`, server runtime, `sw.js`, DB/schema, owner/manager/arbiter or updater behavior changed.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Follow-up item 7 is next only if explicitly requested.
