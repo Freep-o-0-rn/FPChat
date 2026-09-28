@@ -1,4 +1,4 @@
-name: Next Plan Item 3.1 SW Network Coverage
+name: Next Plan Item 3.1 SW Network Coverage v2
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 jobs:
   measure:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,13 +25,20 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Probe SW network coverage
         env:
-          FPCHAT_RUNTIME_SHA: 9cabd744ca63e0160a0298a90b08edb270214031
+          FPCHAT_RUNTIME_SHA: 1eb7a97184a307562c51525aa358450f8346ea36
           FPCHAT_NEXT31_OUTPUT: ${{ github.workspace }}/next31-output
         run: node ./scripts/benchmark-next31-sw-network-coverage.cjs
-      - name: Upload probe
+      - name: Repeat corrected startup waterfall
+        env:
+          FPCHAT_RUNTIME_SHA: 1eb7a97184a307562c51525aa358450f8346ea36
+          FPCHAT_NEXT3_OUTPUT: ${{ github.workspace }}/next31-corrected-output
+        run: node ./scripts/benchmark-next3-startup-waterfall.cjs
+      - name: Upload item 3.1 files
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: next31-sw-network-coverage
-          path: next31-output
+          name: next31-corrected-startup
+          path: |
+            next31-output
+            next31-corrected-output
           if-no-files-found: error
