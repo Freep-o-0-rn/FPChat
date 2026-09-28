@@ -1,5 +1,6 @@
 const path = require('path');
 const crypto = require('crypto');
+const zlib = require('zlib');
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -77,7 +78,127 @@ function readAppRevisionCacheState190() {
 }
 const fpAppRevisionCache190 = readAppRevisionCacheState190();
 
+const fpStaticCompressionCache190 = new Map();
+function selectStaticEncoding190(headerValue) {
+  const source = String(headerValue || '').toLowerCase();
+  if (!source) return null;
+  const explicit = new Map();
+  let wildcard = null;
+  for (const rawPart of source.split(',')) {
+    const parts = rawPart.trim().split(';').map((item) => item.trim());
+    const token = parts.shift();
+    if (!token) continue;
+    let q = 1;
+    for (const param of parts) {
+      if (!param.startsWith('q=')) continue;
+      const parsed = Number(param.slice(2));
+      q = Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : 0;
+    }
+    if (token === '*') wildcard = q;
+    else explicit.set(token, q);
+  }
+  const quality = (name) => explicit.has(name) ? explicit.get(name) : (wildcard ?? 0);
+  const br = quality('br');
+  const gzip = quality('gzip');
+  if (br <= 0 && gzip <= 0) return null;
+  return br >= gzip ? 'br' : 'gzip';
+}
+function staticCompression190(req, res, next) {
+  const pathname = String(req.path || '');
+  if (
+    req.method !== 'GET'
+    || pathname === '/sw.js'
+    || pathname.startsWith('/api/')
+    || !/\.(?:js|css)$/i.test(pathname)
+  ) return next();
+
+  res.vary('Accept-Encoding');
+
+  const selectedEncoding = selectStaticEncoding190(req.headers['accept-encoding']);
+  if (!selectedEncoding || req.headers.range) return next();
+
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+  const chunks = [];
+  let intercepted = true;
+
+  const toBuffer = (chunk, encoding) => {
+    if (Buffer.isBuffer(chunk)) return chunk;
+    if (chunk instanceof Uint8Array) return Buffer.from(chunk);
+    return Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined);
+  };
+
+  res.write = function compressedStaticWrite190(chunk, encoding, callback) {
+    if (!intercepted) return originalWrite(chunk, encoding, callback);
+    if (typeof encoding === 'function') {
+      callback = encoding;
+      encoding = undefined;
+    }
+    if (chunk !== undefined && chunk !== null) chunks.push(toBuffer(chunk, encoding));
+    if (typeof callback === 'function') process.nextTick(callback);
+    return true;
+  };
+
+  res.end = function compressedStaticEnd190(chunk, encoding, callback) {
+    if (!intercepted) return originalEnd(chunk, encoding, callback);
+    intercepted = false;
+    if (typeof chunk === 'function') {
+      callback = chunk;
+      chunk = undefined;
+      encoding = undefined;
+    } else if (typeof encoding === 'function') {
+      callback = encoding;
+      encoding = undefined;
+    }
+    if (chunk !== undefined && chunk !== null) chunks.push(toBuffer(chunk, encoding));
+
+    res.write = originalWrite;
+    res.end = originalEnd;
+
+    const body = Buffer.concat(chunks);
+    const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
+    const cacheControl = String(res.getHeader('Cache-Control') || '');
+
+    if (
+      res.statusCode !== 200
+      || body.length < 1024
+      || !/(?:javascript|css)/i.test(contentType)
+      || /\bno-transform\b/i.test(cacheControl)
+    ) return originalEnd(body, callback);
+
+    const contentHash = crypto.createHash('sha1').update(body).digest('hex');
+    const cacheKey = selectedEncoding + ':' + contentHash;
+    const cached = fpStaticCompressionCache190.get(cacheKey);
+
+    const finish = (compressed) => {
+      if (res.destroyed) return;
+      res.setHeader('Content-Encoding', selectedEncoding);
+      res.setHeader('Content-Length', String(compressed.length));
+      res.removeHeader('Accept-Ranges');
+      return originalEnd(compressed, callback);
+    };
+
+    if (cached) return finish(cached);
+
+    const onCompressed = (error, compressed) => {
+      if (error || !compressed) return originalEnd(body, callback);
+      fpStaticCompressionCache190.set(cacheKey, compressed);
+      return finish(compressed);
+    };
+
+    if (selectedEncoding === 'br') {
+      return zlib.brotliCompress(body, {
+        params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 }
+      }, onCompressed);
+    }
+    return zlib.gzip(body, { level: 6 }, onCompressed);
+  };
+
+  return next();
+}
+
 const app = express();
+app.use(staticCompression190);
 app.use(express.json({ limit: '128kb' }));
 app.get('/app.js', (req, res, next) => {
   const requestedRevision = typeof req.query.r === 'string'
