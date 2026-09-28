@@ -529,11 +529,8 @@
         context.onerror=()=>{FPStartup174.fail();loadAppAfterWork();};
         document.body.appendChild(context);
       };
-      const loadAppAfterWork = () => {
-        // Build 190 performance follow-up: replyVisualReady184 is presentation
-        // only. Keep loading it in parallel, but never hold app/owner startup on it.
-        // app.js already has the legacy reply indicator fallback when the visual
-        // is absent or finishes later.
+      const loadAppAfterWork = async () => {
+        await replyVisualReady184;
         // Build 186.3: fetch the known late-owner chain while app.js starts.
         // These hints never execute code; existing onload edges keep ownership
         // and failure handling in room-context170 / text-send170 unchanged.
