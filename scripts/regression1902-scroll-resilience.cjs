@@ -178,21 +178,26 @@ run(async({browser,newClient,origin,errors,temp,root})=>{
   // 4. A stale second tab that did not change position cannot mint a newer
   // sequence during lifecycle save and overwrite the actively-read position.
   await page.evaluate(()=>setView('chats'));
-  const tab2=await page.context().newPage();
-  tab2.on('pageerror',error=>errors.push(error.message));
-  await tab2.goto(origin);
-  await tab2.waitForFunction(()=>window.FPMediaSend170&&window.FPHistory174&&!document.getElementById('bootHold152'));
+  const tabsState=await page.context().storageState();
+  const tabsContext=await browser.newContext({storageState:tabsState,viewport:{width:1100,height:760}});
+  const tab1=await tabsContext.newPage();
+  const tab2=await tabsContext.newPage();
+  for(const tab of [tab1,tab2]){
+    tab.on('pageerror',error=>errors.push(error.message));
+    await tab.goto(origin);
+    await tab.waitForFunction(()=>window.FPMediaSend170&&window.FPHistory174&&!document.getElementById('bootHold152'));
+  }
   await tab2.evaluate(roomId=>openChat(roomId),TABS.roomId);
-  await page.evaluate(roomId=>openChat(roomId),TABS.roomId);
-  await page.evaluate(()=>{
+  await tab1.evaluate(roomId=>openChat(roomId),TABS.roomId);
+  await tab1.evaluate(()=>{
     const box=document.getElementById('messages'),max=Math.max(0,box.scrollHeight-box.clientHeight);
     box.dispatchEvent(new WheelEvent('wheel',{deltaY:-450,bubbles:true}));
     box.scrollTop=Math.max(0,max-720);
     box.dispatchEvent(new Event('scroll'));
   });
-  await page.waitForTimeout(380);
-  await page.evaluate(roomId=>FPScroll173.flushRoom(roomId),TABS.roomId);
-  const activeSnap=await page.evaluate(roomId=>STORAGE.get(STORAGE.viewState(roomId)),TABS.roomId);
+  await tab1.waitForTimeout(380);
+  await tab1.evaluate(roomId=>FPScroll173.flushRoom(roomId),TABS.roomId);
+  const activeSnap=await tab1.evaluate(roomId=>STORAGE.get(STORAGE.viewState(roomId)),TABS.roomId);
   assert.ok(activeSnap?.anchorMessageId,JSON.stringify(activeSnap));
   const activeRow=db.prepare('SELECT anchor_message_id,anchor_offset_px,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(TABS.dbRoomId,TABS.deviceId);
   assert.equal(Number(activeRow.client_seq),Number(activeSnap.clientSeq),JSON.stringify({activeRow,activeSnap}));
@@ -207,12 +212,12 @@ run(async({browser,newClient,origin,errors,temp,root})=>{
 
   // pageshow/bfcache-style lifecycle normalization must not reapply an opening
   // restore over the already-correct live viewport.
-  const beforePageShow=await page.evaluate(()=>document.getElementById('messages').scrollTop);
-  await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
-  await page.waitForTimeout(120);
-  const afterPageShow=await page.evaluate(()=>document.getElementById('messages').scrollTop);
+  const beforePageShow=await tab1.evaluate(()=>document.getElementById('messages').scrollTop);
+  await tab1.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+  await tab1.waitForTimeout(120);
+  const afterPageShow=await tab1.evaluate(()=>document.getElementById('messages').scrollTop);
   assert.ok(Math.abs(afterPageShow-beforePageShow)<=2,JSON.stringify({beforePageShow,afterPageShow}));
-  await tab2.close();
+  await tabsContext.close();
 
   // 5. Deleted saved anchor falls through to first unread, not to a repeated
   // saved-anchor jump or arbitrary tail.
