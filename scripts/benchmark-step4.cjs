@@ -39,7 +39,7 @@ async function configureNetwork(page,profile){
     });
   }else{
     await session.send('Network.emulateNetworkConditions',{
-      offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1,connectionType:'none'
+      offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1,connectionType:'wifi'
     });
   }
   return session;
@@ -359,12 +359,14 @@ run(async({browser,newClient,temp,root,errors})=>{
     ]
   };
 
+  console.log('STEP4_PHASE startup-saved');
   // Startup with persisted room/access data.
   for(const profile of ['normal','throttled']){
     report.raw['startupSaved.'+profile]=await savedStartupSamples(page,profile);
     report.summary['startupSaved.'+profile]=summarizeSamples(report.raw['startupSaved.'+profile],['totalMs','bootReadyMs']);
   }
 
+  console.log('STEP4_PHASE startup-after-update');
   // Actual first-launch-after-update path; local access remains, caches may be invalidated by the real updater path.
   for(const profile of ['normal','throttled']){
     report.raw['startupAfterUpdate.'+profile]=await updateStartupSamples(page,profile);
@@ -375,6 +377,7 @@ run(async({browser,newClient,temp,root,errors})=>{
   await uploadPhotoFixture(page,root,named.medium.roomId);
 
   for(const profile of ['normal','throttled']){
+    console.log('STEP4_PHASE actions-'+profile);
     await configureNetwork(page,profile);
 
     // Open each fixed chat five times. Do not mix chat sizes in one statistic.
