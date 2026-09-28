@@ -164,8 +164,18 @@ run(async({newClient,errors,temp,root})=>{
   });
   assert.ok(aBefore?.anchorMessageId,'A native position missing before direct transition');
   await page.waitForTimeout(40);
+  const preSwitchDiag=await page.evaluate(({roomId,deviceId})=>({
+    stateRoomId:state.roomId,
+    scroll:FPScroll173.snapshot(),
+    local:STORAGE.get(STORAGE.viewState(roomId)),
+    boxConnected:Boolean(document.getElementById('messages')?.isConnected),
+    atBottom:isMessagesAtBottom(document.getElementById('messages')),
+    deviceId
+  }),{roomId:A.roomId,deviceId:A.deviceId});
+  console.log('SCROLL1902_A_PRE_SWITCH '+JSON.stringify(preSwitchDiag));
   await page.evaluate(roomId=>openChat(roomId),B.roomId);
   await page.waitForTimeout(1050);
+  console.log('SCROLL1902_A_WRITES '+JSON.stringify(writes));
 
   const aWrites=writes.filter(row=>row.roomId===A.roomId);
   const bWrites=writes.filter(row=>row.roomId===B.roomId);
