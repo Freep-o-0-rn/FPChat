@@ -63,8 +63,10 @@ assert(anchorLookup.includes("node.dataset.messageId===String(anchorId)"),
 // Save and restore use the same top-relative pixel coordinate.
 assert(saveAnchor.includes('anchorOffsetPx:Math.round(rect.top-boxTop)'),
   'saved anchor offset is no longer message.top - box.top');
-assert(saveView.includes('anchorOffsetPx:anchor?.anchorOffsetPx||0'),
-  'saved pixel offset is not sent to the server');
+assert(app.includes('anchorOffsetPx:normalized.anchorOffsetPx'),
+  'ordered saved pixel offset is not sent to the server');
+assert(app.includes('clientSeq:normalized.clientSeq'),
+  'view-state write no longer carries monotonic client ordering');
 assert(normalizeViewState.includes('anchorOffsetPx: Number(row.anchor_offset_px || 0)'),
   'server no longer returns the stored pixel offset unchanged as a number');
 
