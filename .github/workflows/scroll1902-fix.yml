@@ -34,6 +34,8 @@ jobs:
         run: npm run test:next:7
       - name: Scroll race assertions
         run: npm run audit:1902:scroll-save
+      - name: Scroll resilience browser scenarios
+        run: npm run test:190.2:scroll-resilience
       - name: Initial window regression
         run: npm run test:next:12
       - name: Scroll owner contract
