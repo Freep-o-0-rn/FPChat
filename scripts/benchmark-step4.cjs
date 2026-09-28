@@ -175,7 +175,7 @@ async function sendMeasured(page,seq){
     }
     const id=String(row.dataset.messageId||row.dataset.id||'');
     if(!/^\d+$/.test(id))throw Error('send ACK not observed');
-    return{sendOptimisticMs:performance.now()-t-(performance.now()-t-optimisticMs),sendAckMs:performance.now()-t};
+    return{sendOptimisticMs:optimisticMs,sendAckMs:performance.now()-t};
   },seq).then(r=>({sendOptimisticMs:round(r.sendOptimisticMs),sendAckMs:round(r.sendAckMs)}));
 }
 async function backgroundMeasured(page){
