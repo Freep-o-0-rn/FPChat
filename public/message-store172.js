@@ -552,15 +552,7 @@
   }
 
   function sameMediaIdentity(left, right) {
-    const normalize = (value) => (Array.isArray(value) ? value : []).map((item) => ({
-      publicId: String(item?.public_id || ''),
-      kind: String(item?.media_kind || ''),
-      mime: String(item?.mime_type || ''),
-      width: Number(item?.width) || 0,
-      height: Number(item?.height) || 0,
-      duration: Number(item?.duration_seconds) || 0
-    }));
-    return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+    return JSON.stringify(Array.isArray(left) ? left : []) === JSON.stringify(Array.isArray(right) ? right : []);
   }
 
   function sameServerContent(record, message) {
