@@ -85,7 +85,7 @@ Known diagnostic drift recorded for **Step 3**, not changed in Step 1: the curre
 | ---: | --- | --- |
 | 1 | **done** | Working branch, architecture map and rules |
 | 2 | **partial — continue as 2.2** | Baseline regressions; one stale ownership guard fixed, second stale fingerprint localized |
-| 3 | pending | Observer coverage |
+| 3 | **done** | Observer coverage; existing stage hooks sufficient; export build identity corrected |
 | 4 | pending | Baseline performance measurements |
 | 5 | pending | One confirmed startup wait |
 | 6 | pending | One confirmed critical JS/CSS resource |
@@ -146,9 +146,9 @@ Delete `optimization/performance-series` or reset it to `7fa7a4b0d64c22d4aa80969
 
 ## Continuation point
 
-**Current continuation: 2.2 — finish the baseline ownership audit.**
+**Current continuation: 2.2 — finish the baseline ownership audit before Step 4.**
 
-Do not start Step 3 or any optimization yet. Step 2 has a usable behavioral baseline for startup, room, send, history and media, but the legacy single-owner source audit still contains one independently stale Build 180 fingerprint that must be corrected and re-run first.
+Step 3 was explicitly requested and is complete, but Step 2.2 remains an open baseline gate. Do not begin performance measurements/optimization until that stale Build 180 block-owner fingerprint is corrected and the ownership audit is re-run.
 
 
 ## Step 2 — baseline regressions
@@ -363,3 +363,109 @@ Revert the test-only change in `scripts/regression180-single-owner-audit.cjs` to
 **2.2 — update only the stale canonical block-owner fingerprint in `regression180-single-owner-audit.cjs`, then rerun the owner audit and its relevant block-owner checks.**
 
 Do not start Step 3 until Step 2 ownership baseline is green or another independent stale assertion is localized and recorded according to the same small-step rule.
+
+
+## Step 3 — observer coverage
+
+Status: **done**.
+
+### Coverage map
+
+The existing `FPRuntime169.loading` + owner hooks already cover the requested timing boundaries without adding a second observer or execution coordinator.
+
+| Stage | Existing marks / source | Interpretation |
+| --- | --- | --- |
+| Boot / loader | `FPBoot152.mark186`: loader/version/core/layers/assets/boot-ready/safety-release | Explicit loader/gate times. `completed:false` means the wait boundary timed out or did not complete; it must not be reported as fully ready. |
+| Room key | `key-start → key-ready` in `room-open170.js` | Existing key derivation duration for ordinary room open. |
+| Join | `join-start → join-headers → join-ready` in `room-open170.js` | Request start, response headers and parsed join payload. Direct/invite entry remains documented as partial where the trace starts after earlier work. |
+| Initial history | `history-start → history-ready` in `app.js`; `history-page` in `FPHistory174` | Initial history hydration duration plus page count. |
+| First mounted content | `first-message-mounted` in the existing renderer | First message node mounted after its text/caption decrypt path. This is a first mounted message marker, not a guarantee that the message type itself is plain text. |
+| Initial text/render completion | `render-start → text-ready` | Existing renderer finished the initial message batch; message count is allowlisted. |
+| Draft/composer | `draft-start → draft-ready → composer-ready` | Draft restore and usable composer boundary. |
+| Initial scroll/layout | `scroll-start → scroll-ready`; `layout-wait-start → layout-thumbs-wait-end → layout-wait-end` | Existing initial-position and media-layout waits. |
+| Reveal | `messages-revealed → visible-frame` in `chat-opening129.js` | Visibility removal followed by a visible-page RAF opportunity. `visible-frame` is **not** hardware paint or pixel presentation. |
+| Media admission queue | `queue-start → slot-ready` in `FPNetwork171` | Time waiting for the existing weighted media resource budget. |
+| Managed media cache | cache start/open/meta/match/delete/repair marks + cache state | Distinguishes managed disk-cache hit/miss/expired/error and repair work. HTTP/browser cache is not inferred. |
+| Network response/body | `network-start → response-ready → body-start → body-ready` | Existing admitted request and encrypted body-read path. |
+| Buffer/crypto | `buffer-start → buffer-ready → decrypt-start → decrypt-ready` | Blob-to-buffer and AES-GCM decrypt boundaries. |
+| Media URL/element readiness | `url-ready → element-ready → paint-opportunity` | Element load/loadedmetadata/loadeddata and next-frame opportunity only; not native decode isolation or actual paint. |
+| Viewer current vs neighbor | `viewer` records with `gallery-current` / `gallery-neighbor` consumers; parent media records | Current/neighbor work is attributable without collecting media IDs/URLs. |
+| Gallery history | `gallery-history` + `history-page` | Separate gallery scan/page count. |
+| Long main-thread work | bounded PerformanceObserver `longtask` list when supported | Browser-dependent; unsupported/missing data is unknown, not zero evidence. |
+
+No timing stage gap was found that justified another owner hook in Step 3.
+
+### One diagnostic defect fixed: report build identity
+
+The loading report/export was still hardcoded to Build `186.5` while the verified client is Build 190.2. That made A/B files ambiguous and could cause measurements from different builds to be mislabeled.
+
+The fix is diagnostic only:
+
+- `runtime169.js` reads the already-present `?v=<build>` from its own script URL through `document.currentScript`;
+- no fetch, timer, storage read or global interception is introduced;
+- the value is accepted only when it matches the numeric build format;
+- if unavailable, report `build` is `null` and the filename uses `unknown` instead of fabricating a build;
+- current Build 190.2 exports as `FPChat-190.2-loading.json`.
+
+This keeps the existing execution order unchanged. The build query already comes from the loader's existing `version.json` result and is propagated to `runtime169.js` by the existing script loader.
+
+Runtime patch commit: `fdf730861ff9f903de920c02d66ea3a25cd47041`.
+
+Regression assertion update commit: `317775b6ae84f1c5c62448451763bed4426a13ba`.
+
+### Privacy / boundedness / cleanup verification
+
+The existing loading regression passed after the patch and confirms:
+
+- report does not contain fixture room/device/secret/message text/media path/blob URL/raw body error strings;
+- metadata remains allowlisted;
+- journal remains bounded to 240 records and increments `dropped`;
+- unsupported/missing measurements remain absent/null rather than synthesized as zero;
+- disabling collection clears active loading observations but does not alter media reads or scroll;
+- reset clears loading records while preserving fixed boot evidence;
+- queued abort is classified as cancelled and releases the media resource lease;
+- unmounted media elements cancel their element watch and remove listeners;
+- HTTP, transport, body and crypto failures retain safe error categories without raw private error content;
+- an optional-layer timeout remains `completed:false`, not falsely marked ready;
+- `visible-frame`/`paint-opportunity` remain frame opportunities, not claims of hardware paint.
+
+### Verification
+
+Temporary CI was used only to execute the existing suites and was removed afterwards.
+
+Environment:
+
+- Ubuntu 24.04 GitHub runner;
+- Node 22;
+- Playwright 1.55.0 / Chromium;
+- isolated synthetic test data.
+
+Passed:
+
+- `npm run check:169`;
+- `npm run test:186:browser`;
+- `npm run test:190`.
+
+The loading browser regression explicitly passed key/join/history/text/draft/composer/reveal coverage, cold/warm cache differentiation, queue wait/cancel, privacy, bounded export/reset and incomplete-timeout semantics.
+
+`test:190` also stayed green after the observer patch, including current media/browser regressions.
+
+Physical iPhone/Android performance is not claimed by these browser tests.
+
+### Step 3 changes
+
+- `public/runtime169.js`: diagnostic export build identity only.
+- `scripts/regression186-loading-browser.cjs`: expect current build and current export filename.
+- `docs/performance-progress.md`: coverage/result record.
+
+No application owner, queue, network ordering, room behavior, message state, render ordering, gesture arbitration, cache policy or production configuration changed.
+
+### Rollback
+
+Revert the `runtime169.js` build-identity patch and the paired regression assertion. No data migration, cache cleanup or server rollback is required.
+
+### Continuation point
+
+**Return to 2.2 before Step 4.**
+
+Step 3 is complete, but the legacy `regression180-single-owner-audit.cjs` still has the separately localized stale `createUserBlocks165(db)` fingerprint from Step 2. Fix and re-run that ownership baseline before collecting the Step 4 performance baseline.
