@@ -1363,7 +1363,18 @@ function appendMessage(box,m,txt,mine,autoScroll=true){
       el.addEventListener('click',(e)=>{
         e.preventDefault();e.stopPropagation();
         if(w.dataset.incoming==='1'&&w.dataset.read!=='1')markMessageRead(m.id);
-        openMediaViewer(mediaList,idx);
+        const previewUrl=item?.media_kind==='image'&&img?.complete&&img.naturalWidth>0
+          ?String(img.currentSrc||img.src||'')
+          :'';
+        const previewHint=previewUrl
+          ?{
+            publicId:String(item?.public_id||''),
+            url:previewUrl,
+            width:Number(item?.width)||Number(img.naturalWidth)||null,
+            height:Number(item?.height)||Number(img.naturalHeight)||null
+          }
+          :null;
+        openMediaViewer(mediaList,idx,previewHint);
       });
       await mountChatMediaThumb190(img,item,w,context,trace);
     });
