@@ -170,9 +170,13 @@ async function reactionMeasured(page){
   },messageId).then(r=>({reactionOptimisticMs:round(r.reactionOptimisticMs),reactionAckMs:round(r.reactionAckMs)}));
 }
 async function sendMeasured(page,seq){
-  await waitWs(page);
+  try{await waitWs(page);}
+  catch(error){
+    return{sendOptimisticMs:null,sendAckMs:null,optimisticObserved:false,ackObserved:false,failureStage:'ws-precondition'};
+  }
   return page.evaluate(async seq=>{
     const input=document.getElementById('msgInput'),form=document.getElementById('sendForm');
+    if(!input||!form)return{sendOptimisticMs:null,sendAckMs:null,optimisticObserved:false,ackObserved:false,failureStage:'composer-missing'};
     const value='step4-send-'+seq+'-'+Math.random().toString(36).slice(2,8);
     input.value=value;
     input.dispatchEvent(new Event('input',{bubbles:true}));
@@ -185,7 +189,15 @@ async function sendMeasured(page,seq){
       if(row)break;
       await new Promise(requestAnimationFrame);
     }
-    if(!row)throw Error('optimistic send row missing');
+    if(!row){
+      const socket=state?.ws||null;
+      return{
+        sendOptimisticMs:null,sendAckMs:null,optimisticObserved:false,ackObserved:false,
+        failureStage:'optimistic-timeout',
+        socketOpen:socket?.readyState===WebSocket.OPEN,
+        socketDevicePresent:Boolean(socket?.deviceId)
+      };
+    }
     const optimisticMs=performance.now()-t;
     const ackUntil=performance.now()+15000;
     while(performance.now()<ackUntil){
@@ -195,9 +207,19 @@ async function sendMeasured(page,seq){
       row=[...document.querySelectorAll('#messages .bubble-wrap.msg')].find(n=>n.textContent?.includes(value))||row;
     }
     const id=String(row.dataset.messageId||row.dataset.id||'');
-    if(!/^\d+$/.test(id))throw Error('send ACK not observed');
-    return{sendOptimisticMs:optimisticMs,sendAckMs:performance.now()-t};
-  },seq).then(r=>({sendOptimisticMs:round(r.sendOptimisticMs),sendAckMs:round(r.sendAckMs)}));
+    const ackObserved=/^\d+$/.test(id);
+    return{
+      sendOptimisticMs:optimisticMs,
+      sendAckMs:ackObserved?performance.now()-t:null,
+      optimisticObserved:true,
+      ackObserved,
+      failureStage:ackObserved?null:'ack-timeout'
+    };
+  },seq).then(r=>({
+    ...r,
+    sendOptimisticMs:round(r.sendOptimisticMs),
+    sendAckMs:round(r.sendAckMs)
+  }));
 }
 async function backgroundMeasured(page,browser){
   const other=await browser.newPage({viewport:{width:320,height:240}});
@@ -434,7 +456,12 @@ run(async({browser,newClient,temp,root,errors})=>{
     const sendRows=[];
     for(let i=0;i<SAMPLES;i++)sendRows.push(await sendMeasured(page,profile+'-'+i));
     report.raw['send.medium.'+profile]=sendRows;
-    report.summary['send.medium.'+profile]=summarizeSamples(sendRows,['sendOptimisticMs','sendAckMs']);
+    report.summary['send.medium.'+profile]={
+      ...summarizeSamples(sendRows,['sendOptimisticMs','sendAckMs']),
+      optimisticObserved:sendRows.filter(r=>r.optimisticObserved===true).length,
+      ackObserved:sendRows.filter(r=>r.ackObserved===true).length,
+      failures:sendRows.filter(r=>r.failureStage).reduce((acc,r)=>{acc[r.failureStage]=(acc[r.failureStage]||0)+1;return acc;},{})
+    };
 
     const bgRows=[];
     for(let i=0;i<SAMPLES;i++)bgRows.push(await backgroundMeasured(page,browser));
