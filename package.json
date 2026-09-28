@@ -172,7 +172,8 @@
     "test:next:2": "node ./scripts/regression-next2-send-draft-release.cjs",
     "test:next:4": "node ./scripts/regression-next4-version-reuse.cjs",
     "test:next:7": "node ./scripts/regression-next7-app-revision.cjs",
-    "test:next:8": "node ./scripts/regression-next8-app-immutable-cache.cjs"
+    "test:next:8": "node ./scripts/regression-next8-app-immutable-cache.cjs",
+    "test:next:9": "node ./scripts/regression-next9-static-compression.cjs"
   },
   "license": "MIT",
   "dependencies": {
