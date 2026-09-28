@@ -1,0 +1,46 @@
+name: Next Plan Item 15 Progressive Photo
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next15-progressive-photo.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: |
+          node --check public/app.js
+          node --check public/media-gallery134.js
+          node --check scripts/regression-next15-progressive-photo.cjs
+      - name: App revision contract
+        run: npm run test:next:7
+      - name: Item 15 progressive photo
+        run: npm run test:next:15
+      - name: Viewer lifecycle owner
+        run: npm run test:177:media-viewer-lifecycle
+      - name: Layer contract
+        run: npm run test:178:layer-contract
+      - name: Gesture/layer lifecycle
+        run: npm run test:178:gesture-layer-lifecycle
+      - name: Photo zoom
+        run: npm run test:185:browser
+      - name: Media cache
+        run: npm run test:186:media-cache
+      - name: Build 190 media
+        run: npm run test:190:browser
