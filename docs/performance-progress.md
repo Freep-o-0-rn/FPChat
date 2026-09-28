@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–12 plus diagnostic 3.1 completed; client now uses the server-provided initial history window through the existing room-open path**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–13 plus diagnostic 3.1 completed; same-session reopen now safely reuses a fully matching MessageStore window after the normal join access check**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–12 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–13 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -2617,3 +2617,149 @@ No DB/schema, updater, Service Worker, new RoomContext/history/scroll owner or n
 **No next item started automatically.**
 
 Item 13 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 13
+
+Status: **done — safe same-session MessageStore reuse for chat → list → same chat**.
+
+### Contract
+
+Access is still checked through the normal `POST /join` on every reopen.
+
+The server response remains authoritative for the selected initial history window, unread state, view-state and history cursors.
+
+`FPMessageStore172` only reuses canonical plaintext for the exact server-selected message ids.
+
+A room is eligible only after one successful render in the current page session.
+
+A window is reused only when every server-selected message has a safe canonical record. One missing/unsafe record rejects the whole window and keeps the existing decrypt/render path.
+
+No persistent cache or second history owner was added.
+
+### Canonical edit/delete state
+
+Existing message-actions / WebSocket / lifecycle synchronization continues to update MessageStore while the room is on the list.
+
+Verified:
+
+- edit while on list is present in MessageStore before reopen;
+- edited text re-renders from canonical RAM without repeat message decrypt;
+- delete-for-all tombstone survives reopen;
+- deleted message does not reappear;
+- incomplete RAM window is rejected.
+
+The first exploratory workflow `36433728539` failed only because the regression incorrectly assumed every delete must force fallback. Existing sync had already cached the adjacent message entering the shifted tail window, so safe reuse remained possible. The product path was correct; the test assumption was corrected.
+
+### Access
+
+A warmed room was revoked in the isolated DB before reopen.
+
+Verified:
+
+- reopen still issues exactly one join access check;
+- rejected access renders no cached room;
+- no message decrypt runs;
+- active room stays null;
+- existing local broken-room cleanup executes.
+
+RAM never authorizes a room.
+
+### Unread / read position
+
+Unread count and first-unread target remain sourced from the fresh join response.
+
+Saved reading position remains server view-state + FPScroll173 owned.
+
+Regression saves a visible anchor/offset, leaves to the list, reopens, then verifies the stored anchor is mounted at the stored offset.
+
+### Benchmark
+
+Five independent room pairs:
+
+- 300 synthetic messages/room;
+- tail window 100 messages;
+- first open and repeat open in the same page;
+- fresh page between pairs;
+- normal join on both opens;
+- local SQLite / headless Chromium;
+- no network throttling.
+
+First open:
+
+- raw: 183.5, 183.9, 184.0, 184.6, 198.1 ms;
+- median **184.0 ms**;
+- range 183.5–198.1 ms;
+- **100** message decrypts median.
+
+Repeat open:
+
+- raw: 136.0, 136.0, 136.5, 138.2, 152.8 ms;
+- median **136.5 ms**;
+- range 136.0–152.8 ms;
+- **0** message decrypts.
+
+Delta:
+
+- **-47.5 ms** median;
+- **-25.82%** on this local benchmark;
+- repeated message decrypts **100 → 0**.
+
+This is a local CPU/render measurement, not a physical-phone or production-network forecast.
+
+Five pairs only, so no p95.
+
+### Final verification
+
+Workflow `36434066515`: **SUCCESS**.
+
+Runtime measured:
+
+`43d05dbffe20f2bff779f9683aaf194b3f4e0cd2`
+
+Artifact:
+
+- `10974732044`;
+- digest `sha256:ea1052f8d00068c85fa60e1e21df3eed614a8a12d2e10a2daec25f37cbdfa4a4`.
+
+Passed:
+
+- `test:next:7`;
+- `test:next:13`;
+- `test:next:12`;
+- `check:170`;
+- `test:178:message-store-incoming`;
+- `test:178:message-store-ack`;
+- `test:179:explicit-message-actions`;
+- `test:178:history-saved-anchor`;
+- `test:178:unread-restore-bottom`;
+- `test:180:single-owner-audit`;
+- `bench:next:13`.
+
+### Files
+
+Runtime:
+
+- `public/message-store172.js`;
+- `public/app.js`;
+- `public/version.json` appRevision only.
+
+Regression/benchmark:
+
+- `scripts/regression-next13-session-reuse.cjs`;
+- `scripts/benchmark-next13-session-reuse.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next13-session-reuse.md`;
+- `docs/performance-next13-session-reuse-summary.json`;
+- this journal.
+
+No server API, DB/schema, persistent message cache, Service Worker, updater, new RoomContext/FPHistory/FPScroll/WebSocket owner or new queue was added.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 14 is next only if explicitly requested.
