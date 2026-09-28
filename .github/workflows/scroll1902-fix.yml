@@ -36,6 +36,10 @@ on:
       - 'scripts/regression178-unread-restore-bottom.cjs'
       - 'scripts/regression178-unread-restore-bottom-browser.cjs'
       - 'scripts/regression-next12-client-initial-window.cjs'
+      - 'scripts/regression178-bounded-dom.cjs'
+      - 'scripts/regression178-read-contract.cjs'
+      - 'scripts/regression178-read-visible-admission.cjs'
+      - 'scripts/regression186-loading-browser.cjs'
       - 'package.json'
 
 jobs:
@@ -97,5 +101,13 @@ jobs:
         run: npm run test:178:keyboard-orientation
       - name: Header keyboard regression
         run: npm run test:178:header-keyboard
+      - name: Bounded DOM regression
+        run: npm run test:178:bounded-dom
+      - name: Read visibility contract
+        run: |
+          npm run test:178:read-contract
+          npm run test:178:read-visible-admission
+      - name: Late thumbnail/layout regression
+        run: npm run test:186:browser
       - name: Single-owner audit
         run: npm run test:180:single-owner-audit
