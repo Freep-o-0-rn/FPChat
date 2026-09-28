@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–10 plus diagnostic 3.1 completed; join/history delay split measured without runtime optimization**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–11 plus diagnostic 3.1 completed; optional server-side initial history window added, client not switched yet**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–10 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–11 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -2316,3 +2316,118 @@ No `public/*`, `server.js`, DB/schema, manager/owner/arbiter, Service Worker or 
 **No next item started automatically.**
 
 Item 11 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 11
+
+Status: **done — server can opt in to the correct initial history window; client remains unchanged**.
+
+### Server contract
+
+`POST /api/rooms/:publicId/join` now supports optional:
+
+`initialWindow: true`
+
+Without the flag, the request follows the legacy branch unchanged and still returns
+the latest page with the old response shape.
+
+With the flag, after the existing access check the server resolves:
+
+1. first unread;
+2. saved anchor when not at bottom;
+3. tail fallback.
+
+Numeric targets are revalidated with current `q.findMessageInRoom`.
+
+### History path
+
+The new mode reuses existing history helpers:
+
+- older side through `getMessageHistoryPage(... before=target+1 ...)`;
+- newer side through `getMessageSyncPage(... after=target ...)`.
+
+No new DB schema/index/query family, cache, store, manager or owner was added.
+
+The around result is bounded to the existing page size per side, deduplicated and
+sorted ascending.
+
+It exposes the existing older cursor plus explicit newer continuation:
+
+- `hasMore` / `nextCursor`;
+- `hasNewer` / `newerCursor`.
+
+One latest-message record is included under `initialWindow.latestMessage` so the
+future client switch can retain tail identity without reloading latest-100.
+
+### Access / unread / deletion
+
+Verified:
+
+- unknown device still receives 403 `ACCESS_REVOKED`;
+- first unread wins over saved anchor;
+- unread count and firstUnreadMessageId remain unchanged by window selection;
+- no saved anchor falls back to tail;
+- deleted-for-all stale anchor is rejected and falls back to tail;
+- deleted unread is excluded by the existing unread queries and the next unread is selected.
+
+### Backward compatibility
+
+Verified without `initialWindow`:
+
+- latest 100 are still returned;
+- legacy `hasMore` / `nextCursor` remain;
+- no `initialWindow`, `hasNewer`, or `newerCursor` fields are added.
+
+The client does not send the new flag in item 11.
+
+No `public/*` file changed.
+
+### Cursor verification
+
+From the returned around window:
+
+- `GET /messages?before=<nextCursor>` returns only older messages;
+- `GET /messages?after=<newerCursor>` returns only newer messages.
+
+### Final verification
+
+Final workflow run `36426325098`: **SUCCESS**.
+
+Passed:
+
+- server syntax;
+- `test:next:11`;
+- `test:178:history-page-owner`;
+- `test:178:history-saved-anchor`;
+- `test:178:unread-restore-bottom`;
+- `test:188.1`;
+- `test:180:single-owner-audit`.
+
+Two pre-existing test issues were observed and intentionally not repaired in this item:
+
+- `test:179:history-read-owner` has a stale exact source fingerprint predating item 11;
+- `test:188.2` has an unrelated reaction-key ordering assertion (`heart,fire` vs `fire,heart`).
+
+### Files
+
+Changed for item 11:
+
+- `server.js`;
+- `scripts/regression-next11-initial-window.cjs`;
+- `package.json`;
+- `docs/performance-next11-initial-window.md`;
+- this journal.
+
+No DB/schema, client runtime, RoomContext, FPHistory174, FPScroll173, MessageStore,
+WebSocket owner, Service Worker, updater or build number changed.
+
+### Rollback
+
+Revert the item-11 server/test/docs changes. No data migration or client cleanup is
+required because the new server behavior is opt-in and unused by the current client.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 12 is next only if explicitly requested.
