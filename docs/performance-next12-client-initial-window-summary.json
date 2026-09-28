@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 12,
+  "build": "190.2",
+  "measuredRuntimeSha": "3cf04a31e45998bd2e7318b6c4dc9c980dff5316",
+  "appRevision": "b9190a5c859ee1f6bd5896a149e9eb8e7952deee",
+  "finalRun": {
+    "workflowRunId": 36429875489,
+    "workflowHeadSha": "2edb0ec28654bf670182352fcf8670a906d64251",
+    "artifactId": 10972454275,
+    "artifactDigest": "sha256:756f56a227ad8ff7b9d9375c4d261d72ba24cc94e1a82e1cf342cd228290ed7d"
+  },
+  "baseline": {
+    "source": "docs/performance-next10-join-history-summary.json",
+    "runtimeSha": "1917f36ba2257611098a8dfc5bd26c54636143d9",
+    "network": "200 ms latency, ~1 Mbit/s down, ~0.5 Mbit/s up",
+    "repeats": 5
+  },
+  "implementation": {
+    "clientPath": "public/room-open170.js existing openChat170 POST /join path",
+    "requestField": "initialWindow: true",
+    "fallback": "If old server ignores initialWindow and returns legacy latest-page shape, existing FPHistory174 hydrate/around path remains active.",
+    "initialTargetPriority": [
+      "first-unread",
+      "saved-anchor when not at bottom",
+      "tail"
+    ],
+    "latestTailIdentity": "initialWindow.latestMessage is preserved as data.latestMessage174",
+    "roomContextAndAbort": "existing transition context and context.signal retained",
+    "scrollOwner": "existing FPScroll173 path retained"
+  },
+  "measurements": {
+    "end": {
+      "beforeOpenMsMedian": 964.8,
+      "afterOpenMsMedian": 962.2,
+      "deltaMs": -2.6,
+      "deltaPct": -0.27,
+      "beforeCriticalInitialRequests": 1,
+      "afterCriticalInitialRequests": 1,
+      "note": "tail path is intentionally unchanged"
+    },
+    "savedAnchor": {
+      "beforeOpenMsMedian": 2131.4,
+      "afterOpenMsMedian": 1445,
+      "deltaMs": -686.4,
+      "deltaPct": -32.2,
+      "beforeCriticalInitialRequests": 3,
+      "afterCriticalInitialRequests": 1,
+      "beforeCriticalEncodedBytes": 141327,
+      "afterCriticalEncodedBytes": 96309,
+      "criticalBytesDelta": -45018,
+      "criticalBytesDeltaPct": -31.85,
+      "afterJoinMessages": 200,
+      "targetMountedAllRuns": true,
+      "tailMounted": false,
+      "hasNewer": true
+    },
+    "firstUnread": {
+      "beforeOpenMsMedian": 2044.5,
+      "afterOpenMsMedian": 1399.8,
+      "deltaMs": -644.7,
+      "deltaPct": -31.53,
+      "beforeCriticalInitialRequests": 3,
+      "afterCriticalInitialRequests": 1,
+      "beforeCriticalEncodedBytes": 134097,
+      "afterCriticalEncodedBytes": 92639,
+      "criticalBytesDelta": -41458,
+      "criticalBytesDeltaPct": -30.92,
+      "afterJoinMessages": 200,
+      "targetMountedAllRuns": true,
+      "firstUnreadMatchesAllRuns": true,
+      "tailMounted": false,
+      "hasNewer": true
+    }
+  },
+  "requestAccounting": {
+    "criticalInitialHistoryDefinition": "join plus target-specific before/after required before initial target window is available",
+    "item10NonTail": "join latest100 + one before + one after = 3 requests",
+    "item12NonTail": "one join containing server-provided around window = 1 request",
+    "reduction": "2 critical requests removed per non-tail open",
+    "observedPostOpenSync": "three no-cursor GET /messages?limit=100 requests still occur during the 1200 ms observation window through existing sync/reconnect behavior",
+    "scope": "Those sync requests were documented in item 10 and are not changed in item 12."
+  },
+  "validation": {
+    "currentServerNoClientAroundFetch": true,
+    "oldServerFallback": true,
+    "deletedStaleAnchorTailFallback": true,
+    "olderHistoryLoad": true,
+    "newerHistoryLoad": true,
+    "aToBToA": true,
+    "roomContextLatestGeneration": true,
+    "abortSignalPreserved": true,
+    "fpScrollPreserved": true,
+    "appRevisionContract": true
+  },
+  "ciPassed": [
+    "test:next:7",
+    "test:next:12",
+    "test:next:11",
+    "check:170",
+    "test:178:history-page-owner",
+    "test:178:history-saved-anchor",
+    "test:178:unread-restore-bottom",
+    "test:180:single-owner-audit",
+    "bench:next:12"
+  ],
+  "limits": [
+    "Measurements are isolated Linux headless Chromium + local SQLite, not physical mobile.",
+    "Network is CDP emulation, not a real radio.",
+    "Five runs per scenario: median/range only; no p95.",
+    "Three post-open latest100 sync/reconnect requests remain outside item 12 scope."
+  ]
+}
