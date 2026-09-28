@@ -199,8 +199,8 @@ async function sendMeasured(page,seq){
     return{sendOptimisticMs:optimisticMs,sendAckMs:performance.now()-t};
   },seq).then(r=>({sendOptimisticMs:round(r.sendOptimisticMs),sendAckMs:round(r.sendAckMs)}));
 }
-async function backgroundMeasured(page){
-  const other=await page.context().newPage();
+async function backgroundMeasured(page,browser){
+  const other=await browser.newPage({viewport:{width:320,height:240}});
   await other.goto('about:blank');
   await other.bringToFront();
   await sleep(500);
@@ -432,7 +432,7 @@ run(async({browser,newClient,temp,root,errors})=>{
     report.summary['send.medium.'+profile]=summarizeSamples(sendRows,['sendOptimisticMs','sendAckMs']);
 
     const bgRows=[];
-    for(let i=0;i<SAMPLES;i++)bgRows.push(await backgroundMeasured(page));
+    for(let i=0;i<SAMPLES;i++)bgRows.push(await backgroundMeasured(page,browser));
     report.raw['background.medium.'+profile]=bgRows;
     report.summary['background.medium.'+profile]=summarizeSamples(bgRows,['backgroundResumeMs']);
 
