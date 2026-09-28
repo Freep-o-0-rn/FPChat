@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan item 1 completed as a reproduction-only test; runtime fix not started**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–2 completed; repeated-send draft lock reproduced and fixed**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan item 1 is complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1 and 2 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -839,3 +839,140 @@ Remove `test:next:1` from `package.json`, remove `scripts/regression-next1-send-
 **No next item started automatically.**
 
 If explicitly requested, new-plan item 2 may use this reproduction to change the release point safely while preserving double-submit protection, existing queue ownership, draft ordering and A→B behavior. Original Step 5 remains independently pending.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 2
+
+Status: **done — repeated-send draft lock fixed without a new send queue**.
+
+### Plan mapping
+
+- Follow-up plan item: **2 — fix waiting for draft deletion**.
+- Depends on follow-up item 1, which confirmed that `sendingForms` remained held across `await clearDraftOnServer(roomId)`.
+- Original performance-series Step 5 remains independent and pending; this item does not complete startup work.
+- No later follow-up item was started.
+
+### Runtime change
+
+Two existing responsibilities were adjusted without adding a new manager or outgoing queue.
+
+#### FPTextSend170
+
+`public/text-send170.js` now keeps the form-level double-submit guard through:
+
+- connection;
+- encryption;
+- `clientMessageId` creation;
+- optimistic projection;
+- existing `queuePendingTextSend(outbound)`;
+- local composer/draft reset;
+- registration of the existing server-side draft clear.
+
+Only after those steps does it call `sendingForms.delete(form)`.
+
+The network DELETE may still be in flight after the form is released. The submit operation still waits for that cleanup before its existing final `finish(operation, 'queued')`, so operation accounting was not broadened into a new owner.
+
+The existing `finally { sendingForms.delete(form); }` remains as the error/cancellation safety net.
+
+#### Existing draft worker
+
+A simple early release without ordering would allow a later draft PUT to overtake an older DELETE and then be erased when that DELETE completes.
+
+To prevent that race, the existing per-room draft state in `public/app.js` now carries one `clearPromise` barrier:
+
+- `clearDraftOnServer(roomId)` preserves DELETE ordering by chaining behind an already-running clear for that room;
+- `saveDraftNow(roomId)` waits until all currently registered clears for that room finish before it snapshots and PUTs the latest draft;
+- a new draft typed while an old DELETE is pending therefore remains local, then persists after the DELETE chain completes;
+- this is draft I/O ordering only, not a message-send queue and not a second network owner.
+
+The existing 700 ms draft debounce, encrypted PUT/DELETE transport, room-specific storage and `pendingTextSends` ownership remain unchanged.
+
+### Narrow regression
+
+The pre-fix reproduction script from item 1 was retired from the current tree after the bug was fixed; its reproduction remains in Git history and in the item-1 journal entry.
+
+Added:
+
+- `scripts/regression-next2-send-draft-release.cjs`;
+- npm script `test:next:2`.
+
+The regression checks both source ordering and real browser behavior.
+
+Browser scenario:
+
+1. create rooms A and B;
+2. hold only room-A `DELETE /draft`;
+3. send text A1 with a double submit;
+4. wait for its server ACK while DELETE remains held;
+5. type/send different text A2, again with a double submit;
+6. confirm A2 enters the existing queue before A1 DELETE completes;
+7. type an unsent new room-A draft and wait past the normal 700 ms debounce;
+8. confirm no draft PUT is allowed to overtake the held DELETE chain;
+9. navigate A → B while room-A cleanup is still pending;
+10. send text in room B and confirm its queue handoff remains bound to B;
+11. release room-A DELETE;
+12. confirm ordered room-A DELETEs finish and the newer unsent room-A draft is then PUT and survives on the server;
+13. confirm each sent text exists exactly once in its source room.
+
+### Before / after
+
+Same forced-delay class as item 1:
+
+- before: with room-A DELETE held, the second distinct submit still had **not** entered `queuePendingTextSend` after 250 ms and remained blocked until DELETE release;
+- after: in CI run `36407632520`, the second distinct text entered the existing queue in **7 ms** while the older DELETE was still deliberately held.
+
+This 7 ms value is a single regression-run observation, not a new production/mobile performance baseline.
+
+### Verification
+
+GitHub Actions run `36407632520` passed:
+
+- `npm run test:next:2` — PASS;
+- `npm run test:177:text-dispatch` — PASS;
+- `npm run test:177:composer-draft-save` — PASS;
+- `npm run test:177:composer-draft-restore` — PASS;
+- `npm run test:177:send-entry-contract` — PASS.
+
+Confirmed:
+
+- two different messages can queue while an older draft DELETE is still in flight;
+- double submit still creates one logical queue handoff per text;
+- distinct sends retain distinct `clientMessageId` values;
+- no new outgoing queue exists in `FPTextSend170`;
+- a new draft typed during DELETE waits behind the clear barrier and survives server persistence;
+- A → B keeps each send bound to its captured room;
+- existing reconnect/retry/ACK/echo text behavior stays green;
+- existing normal draft encrypted PUT, empty DELETE and restore behavior stays green;
+- no uncaught browser errors were observed.
+
+The temporary item-2 CI workflow was removed after verification.
+
+### Files changed by item 2
+
+Runtime:
+
+- `public/text-send170.js`;
+- `public/app.js`.
+
+Regression/documentation:
+
+- `scripts/regression-next2-send-draft-release.cjs`;
+- `package.json`;
+- `docs/performance-progress.md`.
+
+Removed from the current test tree because it asserted the pre-fix behavior:
+
+- `scripts/regression-next1-send-draft-lock.cjs`;
+- npm script `test:next:1`.
+
+No server, schema, MessageStore, RoomContext, Connection170, SendManager177, cache owner or production configuration changed.
+
+### Rollback
+
+Revert the item-2 changes in `public/text-send170.js` and `public/app.js`, restore the item-1 reproduction test if the old behavior is intentionally restored, and remove `test:next:2`. No database or server migration is involved.
+
+### Continuation point
+
+**No next follow-up item started automatically.**
+
+The repeated-send draft-lock defect is fixed and covered. Original Step 5 remains independently pending, and any next work must be explicitly selected by the user.
