@@ -43,7 +43,8 @@ assert(contextMove.indexOf('preventDefault()')<contextMove.indexOf('const touch 
 
 // Edge touchstart prevention is the pre-existing Safari/native-back reservation only.
 assert(swipe.includes('if (touch.clientX <= EDGE_PX && event.cancelable) event.preventDefault();'),'native iOS back guard changed');
-assert(swipe.includes('if ((mode === "drawer" || mode === "settings" || mode === "chat") && touch.clientX > EDGE_PX) return;'),'navigation edge-only rule changed');
+assert(swipe.includes('if (touch.clientX > EDGE_PX) {')&&swipe.includes('if (!pinsOpen && !modernSettings && blockedTarget(event.target)) return;'),
+  'navigation edge-only rule changed');
 
 // Existing executors remain unchanged.
 assert(swipe.includes('if (typeof window.showChatsList === "function") window.showChatsList();'),'chat back executor changed');
