@@ -279,6 +279,7 @@
       }, 15000);
 
       let buildSuffix = '';
+      let appBuildSuffix190 = '';
       let reactionBuildSuffix188 = '';
       let loaderVersionResult174 = null;
       try {
@@ -292,6 +293,13 @@
             // Reuse is safe only for the exact build that also versions the
             // startup resource graph loaded below.
             loaderVersionResult174 = Object.freeze({build:buildId,resourceBuild:buildId});
+          }
+          const appRevision = String(data?.appRevision ?? '').trim();
+          appBuildSuffix190 = buildSuffix;
+          if (/^[a-f0-9]{40}$/i.test(appRevision)) {
+            appBuildSuffix190 = buildSuffix
+              ? `${buildSuffix}&r=${encodeURIComponent(appRevision)}`
+              : `?r=${encodeURIComponent(appRevision)}`;
           }
           const reactionRevision = String(data?.updatedAt ?? '').trim();
           if (reactionRevision) {
@@ -491,7 +499,8 @@
       // Fetch the critical chain after CSS hints; optional feature downloads
       // keep their existing onload chains instead of competing at startup.
       for(const name of preload174){
-        const hint=document.createElement('link');hint.rel='preload';hint.as='script';hint.href=`/${name}${buildSuffix}`;
+        const hint=document.createElement('link');hint.rel='preload';hint.as='script';
+        hint.href=`/${name}${name==='app.js' ? appBuildSuffix190 : buildSuffix}`;
         document.head.appendChild(hint);
       }
 
@@ -540,7 +549,7 @@
           document.head.appendChild(hint);
         }
         const script = document.createElement('script');
-        script.src = `/app.js${buildSuffix}`;
+        script.src = `/app.js${appBuildSuffix190}`;
         script.defer = true;
         script.onload = () => {
           const typing = document.createElement('script');
