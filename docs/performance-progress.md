@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–9 plus diagnostic 3.1 completed; static JS/CSS compression verified on the local server**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–10 plus diagnostic 3.1 completed; join/history delay split measured without runtime optimization**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–9 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–10 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -2134,3 +2134,185 @@ No data migration is involved.
 **No next item started automatically.**
 
 Follow-up item 10 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 10
+
+Status: **done — fixed-room join/history causes measured; runtime unchanged**.
+
+### Final measurement
+
+Runtime measured:
+
+`1917f36ba2257611098a8dfc5bd26c54636143d9`
+
+Build: **190.2**.
+
+Final clean workflow:
+
+- run `36422527825`;
+- artifact `10969644009`;
+- digest `sha256:2b170cb5c1908d41c1106f7ba689edb2dea0341a32ad8c0bb4379615c685d63d`.
+
+Fixture:
+
+- one fixed room;
+- 1500 synthetic text messages;
+- initial target ordinal 351 for non-tail scenarios;
+- page size 100;
+- five repetitions per scenario;
+- same device identity every time;
+- database read/view state reset before every open;
+- fresh isolated browser context per measured open;
+- room becomes known only after app boot to prevent startup session-sync contamination.
+
+Network during open:
+
+- 200 ms latency;
+- ~1 Mbit/s down;
+- ~0.5 Mbit/s up.
+
+### Timing semantics
+
+A test-only Node preload hook adds request-wall timing for room join/messages.
+
+This is **not production instrumentation**.
+
+`serverMs` = Node HTTP request event → `res.end()`.
+
+It includes route/access work, SQLite and JSON serialization. It is not SQL-only time.
+
+`ttfbMs` = browser request start → response headers.
+
+`durationMs` = browser request start → body complete.
+
+### End position
+
+Open:
+
+- median **964.8 ms**;
+- range 961.8–966.2 ms.
+
+Join:
+
+- server wall median **25.78 ms**;
+- TTFB median **227.05 ms**;
+- non-server part of TTFB median **202.79 ms**;
+- body complete median **587.58 ms**;
+- 45,397 B Content-Length;
+- 45,702 encoded bytes;
+- 100 messages / 44,699 B message JSON.
+
+Initial tail is mounted; no around-target before/after request is needed.
+
+### Saved anchor outside latest page
+
+Open:
+
+- median **2131.4 ms**;
+- range 2096.2–2483.8 ms.
+
+Join:
+
+- server wall median **26.15 ms**;
+- TTFB median **229.45 ms**;
+- body complete median **589.20 ms**;
+- 100 latest messages;
+- 44,699 B message JSON.
+
+Required around-target requests:
+
+- before: server 2.45 ms median, TTFB 213.20 ms, complete 981.14 ms, 45,062 encoded bytes;
+- after: server 3.74 ms median, TTFB 224.41 ms, complete 1076.23 ms, 50,562 encoded bytes.
+
+Target is mounted in all runs; latest tail from join is not mounted.
+
+### First unread outside latest page
+
+Initial unread count is restored to exactly 1150 before every run.
+
+Open:
+
+- median **2044.5 ms**;
+- range 2029.0–2062.4 ms.
+
+Join:
+
+- server wall median **24.46 ms**;
+- TTFB median **228.09 ms**;
+- body complete median **563.39 ms**;
+- 100 latest messages;
+- 41,099 B message JSON.
+
+Required around-target requests:
+
+- before: server 2.19 ms median, TTFB 213.11 ms, complete 956.95 ms, 45,028 encoded bytes;
+- after: server 1.57 ms median, TTFB 224.71 ms, complete 1004.04 ms, 46,964 encoded bytes.
+
+First unread is mounted/matches in all runs; latest tail from join is not mounted.
+
+### Database interpretation
+
+These numbers do not support calling join delay a database delay.
+
+Join server request wall is only ~24–26 ms while the full join response finishes around ~563–589 ms under the configured network.
+
+Around-history server work is ~2–4 ms while ~45–51 KB pages finish in roughly ~0.96–1.08 s.
+
+No SQL-only duration is claimed.
+
+### One selected confirmed extra query
+
+Selected over-fetch:
+
+`getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id)`
+
+inside `POST /api/rooms/:publicId/join` for non-tail opens.
+
+Evidence:
+
+- join always embeds the latest 100;
+- target ordinal 351 is not inside the latest 100;
+- FPHistory174 immediately fetches before+after around the real target;
+- after hydration the latest tail delivered by join is not mounted;
+- join message payload alone is 44,699 B for saved-anchor and 41,099 B for unread.
+
+The POST /join itself is required and is **not** called redundant. Only its unconditional latest-history sub-query/payload is selected.
+
+The SQL-only cost of that one sub-query was not measured separately.
+
+### Additional sync traffic
+
+The clean harness also observed three no-cursor `GET /messages?limit=100` requests during the 1200 ms post-open window in each scenario, plus a zero-message after-cursor sync in the non-tail cases.
+
+Source inspection ties latest-page snapshot behavior to existing reconnect/session sync logic.
+
+Those requests are recorded but **not selected or modified** in item 10. Removing/deduplicating sync-owner traffic would require a separate focused task.
+
+### Superseded exploratory run
+
+Historical first run:
+
+- workflow `36421597571`;
+- artifact `10969462869`.
+
+It is retained but not used for final request counts because room state was present before app boot and could start background session sync before measurement.
+
+### Files
+
+Diagnostics only:
+
+- `scripts/next10-server-timing-hook.cjs`;
+- `scripts/benchmark-next10-join-history.cjs`;
+- package script `bench:next:10`;
+- `docs/performance-next10-join-history.md`;
+- `docs/performance-next10-join-history-summary.json`;
+- this journal.
+
+No `public/*`, `server.js`, DB/schema, manager/owner/arbiter, Service Worker or updater runtime changed.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 11 is next only if explicitly requested.
