@@ -11,9 +11,9 @@ const OUT=path.resolve(process.env.FPCHAT_STEP4_OUTPUT||path.join(process.cwd(),
 fs.mkdirSync(OUT,{recursive:true});
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const round=n=>Number.isFinite(Number(n))?Math.round(Number(n)*10)/10:null;
+const round=n=>n===null||n===undefined||!Number.isFinite(Number(n))?null:Math.round(Number(n)*10)/10;
 function stats(values){
-  const clean=values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+  const clean=values.filter(v=>v!==null&&v!==undefined).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
   if(!clean.length)return{n:0,median:null,min:null,max:null,p95:null,p95Rule:'not calculated: no samples'};
   const median=clean.length%2?clean[(clean.length-1)/2]:(clean[clean.length/2-1]+clean[clean.length/2])/2;
   const result={n:clean.length,median:round(median),min:round(clean[0]),max:round(clean.at(-1)),p95:null,
