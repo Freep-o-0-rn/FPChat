@@ -1,4 +1,4 @@
-name: Next Plan Item 9 Static Compression Preflight v2
+name: Next Plan Item 9 Static Compression Verify
 
 on:
   push:
@@ -8,9 +8,9 @@ on:
       - '.github/workflows/next9-static-compression.yml'
 
 jobs:
-  measure:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,13 +23,29 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Measure compression slow baseline
+      - name: Item 9 regression
+        run: npm run test:next:9
+      - name: Existing immutable cache regression
+        run: npm run test:next:8
+      - name: Existing app revision regression
+        run: npm run test:next:7
+      - name: Existing startup regression
+        run: npm run test:186:startup
+      - name: Measure normal compressed startup
+        env:
+          FPCHAT_NEXT9_OUTPUT: ${{ github.workspace }}/next9-output-normal
+        run: node ./scripts/benchmark-next9-static-compression.cjs
+      - name: Measure slow compressed startup
         env:
           FPCHAT_NEXT9_SLOW: '1'
           FPCHAT_NEXT9_OUTPUT: ${{ github.workspace }}/next9-output-slow
         run: node ./scripts/benchmark-next9-static-compression.cjs
-      - name: Upload preflight
+      - name: Upload item 9 measurements
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: next9-static-compression-preflight-slow
-          path: next9-output-slow
+          name: next9-static-compression
+          path: |
+            next9-output-normal
+            next9-output-slow
+          if-no-files-found: warn
