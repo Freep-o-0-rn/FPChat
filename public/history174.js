@@ -64,7 +64,10 @@
   }
   async function hydrate(view,data){
     const seed=Array.isArray(data.messages)?data.messages:[];
-    data.latestMessage174=seed.at(-1)||null;
+    const serverLatest=data?.initialWindow?.latestMessage;
+    data.latestMessage174=(serverLatest&&Number.isSafeInteger(Number(serverLatest.id))&&Number(serverLatest.id)>0)
+      ?serverLatest
+      :(data.latestMessage174||seed.at(-1)||null);
     const anchor=getInitialScrollTargetId(data);
     if(anchor&&!seed.some(m=>Number(m.id)===anchor)){
       const result=await around(view,anchor,view.context?.signal);
