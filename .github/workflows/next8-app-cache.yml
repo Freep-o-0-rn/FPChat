@@ -1,0 +1,47 @@
+name: Next Plan Item 8 Immutable App Cache
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next8-app-cache.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Item 8 regression
+        run: npm run test:next:8
+      - name: Existing app revision regression
+        run: npm run test:next:7
+      - name: Existing version reuse regression
+        run: npm run test:next:4
+      - name: Existing startup regression
+        run: npm run test:186:startup
+      - name: Existing rollback contract
+        run: npm run test:180:rollback-contract
+      - name: Repeat static cache benchmark
+        env:
+          FPCHAT_RUNTIME_SHA: 2cb70e08b2bc8d671ab7c226a02a1c052fa691d9
+          FPCHAT_NEXT6_OUTPUT: ${{ github.workspace }}/next8-output
+        run: node ./scripts/benchmark-next6-static-cache.cjs
+      - name: Upload item 8 measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next8-app-cache
+          path: next8-output
+          if-no-files-found: warn
