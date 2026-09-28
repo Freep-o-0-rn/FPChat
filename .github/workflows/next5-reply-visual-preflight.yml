@@ -1,4 +1,4 @@
-name: Next Plan Item 5 Reply Visual Preflight v2
+name: Next Plan Item 5 Optional Dependency Preflight
 
 on:
   push:
@@ -23,5 +23,5 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Prove reply visual startup gate
-        run: node ./scripts/benchmark-next5-reply-visual-preflight.cjs
+      - name: Prove system UI startup gate
+        run: node ./scripts/benchmark-next5-system-ui-preflight.cjs
