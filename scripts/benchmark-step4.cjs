@@ -399,7 +399,9 @@ run(async({browser,newClient,temp,root,errors})=>{
     }
 
     // Work on one fixed 1000-message chat for reaction/send/media/background/outage.
-    await openMeasured(page,named.medium.roomId);
+    // Reload between scenario families so navigation-stress RAM state is not mixed into send/WS timing.
+    await reloadIntoRoom(page,named.medium.roomId);
+    await configureNetwork(page,profile);
     await waitWs(page);
 
     const reactionRows=[];
@@ -444,7 +446,8 @@ run(async({browser,newClient,temp,root,errors})=>{
     report.summary['photoWarmDisk.medium.'+profile]=summarizeSamples(warmRows,['photoOpenMs','queueMs','cacheMs','networkMs','bodyMs','bufferMs','decryptMs','elementMs']);
     report.loadingExports.push(await exportLoading(page,'loading-photo-warm-'+profile));
 
-    await openMeasured(page,named.medium.roomId);
+    await reloadIntoRoom(page,named.medium.roomId);
+    await configureNetwork(page,profile);
     await waitWs(page);
     const outageRows=[];
     for(let i=0;i<SAMPLES;i++)outageRows.push(await outageMeasured(page,profile));
