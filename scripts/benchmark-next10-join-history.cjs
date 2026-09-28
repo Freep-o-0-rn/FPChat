@@ -142,14 +142,15 @@ run(async({browser,origin,errors,temp,root})=>{
     return{total:Number(state.total),unread:Number(state.unread||0),targetOrdinal:name==='end'?null:351,atBottom:name==='end'};
   };
 
-  const context=await browser.newContext({viewport:{width:1100,height:760}});
-  await context.addInitScript(({deviceId,roomId,secret})=>{
-    localStorage.setItem('fpchat:device-id',deviceId);
-    localStorage.setItem('fpchat:nick','Next10');
-    localStorage.setItem('fpchat:room:'+roomId,JSON.stringify({deviceId:deviceId,secret:secret}));
-  },{deviceId:fixture.deviceId,roomId:fixture.roomId,secret:fixture.secret});
-
   async function measureOne(scenario,repeat){
+    // Use a fresh isolated browser profile for every measured open so app-start
+    // session sync cannot begin before this room is intentionally made known.
+    // The logical identity remains the exact same fixed deviceId in every run.
+    const context=await browser.newContext({viewport:{width:1100,height:760}});
+    await context.addInitScript(({deviceId})=>{
+      localStorage.setItem('fpchat:device-id',deviceId);
+      localStorage.setItem('fpchat:nick','Next10');
+    },{deviceId:fixture.deviceId});
     const expected=resetScenario(scenario);
     if(expected.total!==1500)throw new Error('fixture drift before '+scenario+' #'+repeat);
     if(scenario!=='first-unread'&&expected.unread!==0)throw new Error('unexpected unread before '+scenario);
@@ -160,6 +161,9 @@ run(async({browser,origin,errors,temp,root})=>{
     page.on('dialog',d=>d.dismiss());
     await page.goto(origin);
     await page.waitForFunction(()=>window.FPMediaSend170&&window.FPHistory174&&!document.getElementById('bootHold152'));
+    await page.evaluate(input=>{
+      STORAGE.set(STORAGE.roomState(input.roomId),{deviceId:input.deviceId,secret:input.secret});
+    },{roomId:fixture.roomId,deviceId:fixture.deviceId,secret:fixture.secret});
 
     const cdp=await context.newCDPSession(page);
     await cdp.send('Network.enable');
@@ -274,6 +278,7 @@ run(async({browser,origin,errors,temp,root})=>{
 
     await cdp.detach().catch(()=>{});
     await page.close();
+    await context.close();
 
     const after=readState.get(creator.id,room.id);
     return{
@@ -356,7 +361,8 @@ run(async({browser,origin,errors,temp,root})=>{
       lastPageSize:100,
       identityPreservedAcrossRepeats:true,
       dbStateResetBeforeEveryOpen:true,
-      browserContextPreservedAcrossRepeats:true
+      freshEphemeralBrowserContextPerOpen:true,
+      roomStateAddedOnlyAfterBoot:true
     },
     timingSemantics:{
       serverMs:'test-only Node server request wall from HTTP request event to res.end; includes route logic, SQLite work and JSON serialization; it is not DB time',
@@ -387,6 +393,5 @@ run(async({browser,origin,errors,temp,root})=>{
   console.log('NEXT10_RESULT '+JSON.stringify(report));
 
   db.close();
-  await context.close();
   if(errors.length)process.exitCode=1;
 }).catch(error=>{console.error(error?.stack||error);process.exitCode=1;});
