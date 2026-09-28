@@ -73,6 +73,7 @@ function createDb(databasePath) {
       anchor_message_id INTEGER,
       anchor_offset_px INTEGER NOT NULL DEFAULT 0,
       at_bottom INTEGER NOT NULL DEFAULT 0,
+      client_seq INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(room_id, device_id),
       FOREIGN KEY(room_id) REFERENCES rooms(id),
@@ -190,6 +191,7 @@ function createDb(databasePath) {
 
   const viewStateColumns = db.prepare('PRAGMA table_info(chat_view_state)').all();
   if (!viewStateColumns.some((column) => column.name === 'at_bottom')) db.exec('ALTER TABLE chat_view_state ADD COLUMN at_bottom INTEGER NOT NULL DEFAULT 0');
+  if (!viewStateColumns.some((column) => column.name === 'client_seq')) db.exec('ALTER TABLE chat_view_state ADD COLUMN client_seq INTEGER NOT NULL DEFAULT 0');
 
   const pushColumns = db.prepare('PRAGMA table_info(push_subscriptions)').all();
   if (!pushColumns.some((column) => column.name === 'notify_system_events')) db.exec('ALTER TABLE push_subscriptions ADD COLUMN notify_system_events INTEGER NOT NULL DEFAULT 1');
