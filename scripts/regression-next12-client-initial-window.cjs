@@ -236,8 +236,8 @@ run(async({newClient,errors,temp,root})=>{
   const started=aba.events.filter(event=>event.stage==='started');
   assert.ok(started.length>=3,'A-B-A transitions not observed');
   const latestGeneration=Math.max(...started.map(event=>Number(event.generation)||0));
-  const current=F=>F;
-  assert.equal(Number(FPRoom=await page.evaluate(()=>FPRoomContext170.current()?.generation||0)),latestGeneration,'final room context is not latest generation');
+  const finalGeneration=Number(await page.evaluate(()=>FPRoomContext170.current()?.generation||0));
+  assert.equal(finalGeneration,latestGeneration,'final room context is not latest generation');
   await page.unroute('**/api/rooms/'+A.roomId+'/join');
 
   db.close();
