@@ -23,7 +23,9 @@ assert(swipe.includes('manager.claimAction(`navigate:${swipe.mode}`, event)'),'c
 assert(swipe.includes('if (event.cancelable) event.preventDefault();\n    event.stopImmediatePropagation();'),'owned horizontal navigation no longer suppresses lower handlers');
 
 // Message reply recognizer gives vertical motion back without preventDefault.
-assert(app.includes('if(Math.abs(dy)>Math.abs(dx)){tracking=false;bubble.style.transform=\'\';w.classList.remove(\'swiping\');return;}'),'reply vertical cancellation changed');
+assert(app.includes('if(Math.abs(dy)>Math.abs(dx)){cancelReplySwipe();return;}'),'reply vertical cancellation changed');
+assert(app.includes("const cancelReplySwipe=()=>{")&&app.includes("w.classList.remove('swiping','swipe-reset');"),
+  'reply vertical cancellation no longer releases the existing reply gesture state');
 const replyMoveStart=app.indexOf("w.addEventListener('touchmove',(e)=>{");
 const replyMoveEnd=app.indexOf("\n  },{passive:true});",replyMoveStart);
 assert(replyMoveStart>=0&&replyMoveEnd>replyMoveStart,'reply touchmove block missing');
