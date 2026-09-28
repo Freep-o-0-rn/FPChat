@@ -1,4 +1,4 @@
-name: Next Plan Item 11 Initial Window v2
+name: Next Plan Item 11 Initial Window v3
 
 on:
   push:
@@ -27,13 +27,13 @@ jobs:
         run: node --check server.js
       - name: Item 11 initial-window regression
         run: npm run test:next:11
-      - name: History read owner
-        run: npm run test:179:history-read-owner
-      - name: History DB read path
-        run: npm run test:179:history-db-read-path
+      - name: History page owner
+        run: npm run test:178:history-page-owner
       - name: Saved-anchor regression
         run: npm run test:178:history-saved-anchor
       - name: Unread restore regression
         run: npm run test:178:unread-restore-bottom
+      - name: Reaction history regression
+        run: npm run test:188.2
       - name: Single-owner audit
         run: npm run test:180:single-owner-audit
