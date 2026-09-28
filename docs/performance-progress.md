@@ -2926,3 +2926,211 @@ No cache migration, identity reset or runtime rollback is required.
 
 Item 15 is next only if explicitly requested.
 
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 15
+
+Status: **done — selected photo preview is shown immediately, then replaced by a decoded original on the existing viewer path**.
+
+### Plan mapping
+
+- Follow-up item: **15 — show preview before original**.
+- This does not renumber or automatically close an original performance-series step.
+- Item 16 was not started.
+
+### Runtime change
+
+For a selected image whose chat thumbnail is already ready:
+
+- `public/app.js` passes the existing thumbnail `blob:` URL and media dimensions as a narrow preview hint;
+- `media-gallery134` immediately mounts that URL in the active viewer slot;
+- no new thumbnail request is issued;
+- the existing `loadAsset()` path continues loading the original through `FPNetwork171`;
+- the original is decoded before presentation;
+- the same visible `<img>` node changes from preview to original;
+- width/height geometry and the existing pinch/pan transform remain stable.
+
+Videos are unchanged.
+
+If the original fails, the preview remains visible and an error/retry overlay uses the existing `dropAsset() -> mountSlot()` path.
+
+### Owners and cancellation
+
+Preserved:
+
+- `FPMediaManager177` — viewer open/close/cleanup owner;
+- `FPLayer173` — existing `viewer` layer;
+- `FPGesture135` — gesture arbiter;
+- existing Build-185 pinch/pan executor;
+- `FPNetwork171` / `FPStorage167` — original network/cache path;
+- existing gallery current/neighbor admission;
+- RoomContext/generation/AbortSignal ownership.
+
+No second media owner, layer owner, gesture arbiter, queue, cache or persistent storage was added.
+
+`loadAsset`, `dropAsset`, `pruneAssetCache` and `navigateGallery` remain unchanged.
+
+Frozen fingerprints:
+
+- loadAsset: `5d4db0f6e8f07849`;
+- dropAsset: `73c987110d973502`;
+- pruneAssetCache: `d22f05b91e20c181`;
+- navigateGallery: `4c04706e7e9c706f`;
+- changed mountSlot: `fd3f520719ce2b7a`.
+
+### Behavioral verification
+
+The new item-15 browser regression verifies:
+
+- existing ready chat preview URL is reused;
+- no second thumbnail fetch;
+- one existing selected-original load;
+- same image node and unchanged untransformed layout geometry across preview -> original;
+- pinch while preview is visible survives original readiness;
+- pan remains functional after swap;
+- close during pending original rejects late UI mutation;
+- mobile swipe during pending loads preserves the new current item;
+- failed original keeps preview visible;
+- retry reuses existing owner/load path;
+- no stuck gesture lease.
+
+Existing regressions also pass:
+
+- appRevision contract;
+- media viewer lifecycle;
+- layer contract;
+- gesture/layer lifecycle;
+- Build-185 photo zoom;
+- media cache;
+- Build-190 media browser.
+
+### Corrected test assumptions
+
+Historical failed runs were test-only failures:
+
+- `36442158213`: transformed 2× rect was compared with pre-pinch geometry;
+- `36442373156`: test tried to click a desktop nav arrow hidden on the mobile viewport;
+- `36442675905`: test expected `media-viewer` while the existing layer contract is `viewer`.
+
+No product regression was confirmed by those runs.
+
+### Controlled same-run performance comparison
+
+To avoid comparing different GitHub runner CPUs, final run `36444021552` executed item 14 and item 15 sequentially on the same runner.
+
+Both used:
+
+- Chromium 140.0.7339.16;
+- Node 22.23.2;
+- 4 vCPU AMD EPYC 7763;
+- identical 4032×3024 / 2,186,611 B fixture;
+- identical fixture SHA-256 `d462b12f3e5618e6a59d1a6deff8ef147aa3d381c80f0038a323650ccaec3f54`;
+- identical cache/network scenarios;
+- five samples each.
+
+#### Normal
+
+| Cache state | Item 14 original | Item 15 preview | Item 15 original |
+| --- | ---: | ---: | ---: |
+| Managed warm | 41.4 ms | **8.9 ms** | 91.9 ms |
+| Managed miss / HTTP retained | 74.6 ms | **22.9 ms** | 108.3 ms |
+| Managed miss / HTTP cold | 75.3 ms | **9.7 ms** | 109.5 ms |
+
+#### Throttled
+
+200 ms latency, ~1 Mbit/s down, ~0.5 Mbit/s up.
+
+| Cache state | Item 14 original | Item 15 preview | Item 15 original |
+| --- | ---: | ---: | ---: |
+| Managed warm | 46.1 ms | **5.9 ms** | 96.4 ms |
+| Managed miss / HTTP retained | 295.0 ms | **6.4 ms** | 329.3 ms |
+| Managed miss / HTTP cold | 18,363.4 ms | **5.6 ms** | 18,427.0 ms |
+
+In the HTTP-cold throttled case, usable preview becomes ready **18,357.8 ms earlier** than the old item-14 original-only presentation.
+
+The original transfer itself is not made faster.
+
+### Confirmed decode-before-swap cost
+
+Item-15 original readiness is later than item 14 by:
+
+- normal: +50.5 / +33.7 / +34.2 ms;
+- throttled: +50.3 / +34.3 / +63.6 ms;
+
+for managed warm / HTTP retained / HTTP cold respectively.
+
+The current implementation deliberately waits for decode before swapping the visible source.
+
+On the throttled HTTP-cold case the +63.6 ms cost is about +0.3% of the full-original wait.
+
+This is recorded rather than hidden as a claimed speedup.
+
+### Final verification
+
+Functional/performance run `36442826065`: **SUCCESS**.
+
+Artifact:
+
+- id `10978968849`;
+- digest `sha256:7054c5b144e23c934f82fc401a45a200c7eea1b5f071183c6952eeada4d04b92`.
+
+Controlled A/B run `36444021552`: **SUCCESS**.
+
+Controlled artifact:
+
+- id `10981050583`;
+- digest `sha256:81c7f42ec92abaaeb72ada11acdbfd6ab9538d8eeaaf6cd97748da96ea1819e7`.
+
+Runtime measured:
+
+`2bf734e918dfb7e31d14d574d52a7d3256076000`.
+
+Build remains **190.2**.
+
+appRevision:
+
+`01a8e946b71251d38838303a659e28e150d6d48a`.
+
+### Files
+
+Runtime:
+
+- `public/app.js`;
+- `public/media-gallery134.js`;
+- `public/styles.css`;
+- `public/version.json` revision only.
+
+Regression/measurement:
+
+- `scripts/regression-next15-progressive-photo.cjs`;
+- `scripts/regression177-media-viewer-lifecycle.cjs` expected fingerprint/comment;
+- `scripts/benchmark-next15-progressive-photo.cjs`;
+- `scripts/compare-next15-item14.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next15-progressive-photo.md`;
+- `docs/performance-next15-progressive-photo-summary.json`;
+- this journal.
+
+Temporary item-15 workflow is removed after preserving the result.
+
+### Limits
+
+- five samples per scenario; no p95;
+- no physical iPhone/Android/PWA measurement;
+- DOM image readiness/decode is not a physical display timestamp;
+- progressive preview is only reused when the selected chat thumbnail is already ready;
+- decode-before-swap adds a confirmed ~34–64 ms to original-ready in Chromium CI.
+
+### Rollback
+
+Revert the item-15 runtime changes, restore prior appRevision, and remove item-15 test/measurement/docs files.
+
+No DB/cache migration, identity reset or persistent-data cleanup is required.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 16 is next only if explicitly requested.
+
