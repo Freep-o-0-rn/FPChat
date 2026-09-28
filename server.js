@@ -893,26 +893,33 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
   let targetMessageId = null;
   let targetSource = 'tail';
+  let initialHistory = null;
 
+  // A genuine non-bottom saved reading position has priority over unread.
+  // Validate it by actually building the bounded window: a deleted/unavailable
+  // anchor must not suppress the unread fallback.
   if (viewState && !viewState.atBottom) {
     const savedTarget = Number(viewState.anchorMessageId);
-    if (Number.isSafeInteger(savedTarget) && savedTarget > 0 && q.findMessageInRoom.get(savedTarget, room.id)) {
-      targetMessageId = savedTarget;
-      targetSource = 'saved-anchor';
+    if (Number.isSafeInteger(savedTarget) && savedTarget > 0) {
+      const savedWindow = getMessageInitialWindow(room.id, savedTarget, updated.id);
+      if (savedWindow) {
+        targetMessageId = savedTarget;
+        targetSource = 'saved-anchor';
+        initialHistory = savedWindow;
+      }
     }
   }
 
-  if (!targetMessageId && unread.unreadCount > 0 && Number.isSafeInteger(Number(unread.firstUnreadMessageId)) && Number(unread.firstUnreadMessageId) > 0) {
+  if (!initialHistory && unread.unreadCount > 0 && Number.isSafeInteger(Number(unread.firstUnreadMessageId)) && Number(unread.firstUnreadMessageId) > 0) {
     const unreadTarget = Number(unread.firstUnreadMessageId);
-    if (q.findMessageInRoom.get(unreadTarget, room.id)) {
+    const unreadWindow = getMessageInitialWindow(room.id, unreadTarget, updated.id);
+    if (unreadWindow) {
       targetMessageId = unreadTarget;
       targetSource = 'first-unread';
+      initialHistory = unreadWindow;
     }
   }
 
-  const initialHistory = targetMessageId
-    ? getMessageInitialWindow(room.id, targetMessageId, updated.id)
-    : null;
   const history = initialHistory || getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id);
   const latestMessage = initialHistory?.latestMessage || history.messages.at(-1) || null;
   const historyPayload = initialHistory
