@@ -10,7 +10,7 @@ run(async({newClient,errors,temp,root})=>{
 
   const fixtures=await page.evaluate(async()=>{
     const deviceId=getOrCreateDeviceId(),output=[];
-    for(const [name,count,incoming] of [['unread',650,true],['restore',450,false],['bottom',450,false]]){
+    for(const [name,count,incoming] of [['unread',650,true],['restore',450,false],['bottom',450,false],['old-unread',650,true],['tail-unread',650,true]]){
       const secret='scroll17825-'+name,key=await deriveKey(secret);
       const recovery=await buildRecoveryPayload(generateRecoveryCode(),secret);
       const data=await(await fetch('/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId,roomSecret:secret,...recovery})})).json();
@@ -95,10 +95,65 @@ run(async({newClient,errors,temp,root})=>{
   assert.equal(result.atBottom,true,JSON.stringify(result));
   assert.ok(Math.abs(result.scrollTop-result.max)<=2,JSON.stringify(result));
 
+  // 5. A saved non-bottom reading position wins over unread that exists when
+  // the chat is reopened. This prevents new messages from yanking old history.
+  result=await page.evaluate(async()=>{
+    const r=test17825[3],deviceId=getOrCreateDeviceId(),anchor=r.first+130,offset=19;
+    const response=await fetch('/api/rooms/'+r.roomId+'/view-state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,anchorMessageId:anchor,anchorOffsetPx:offset,atBottom:false})});
+    if(!response.ok)throw new Error('failed to save old-history fixture');
+    await openChat(r.roomId);
+    const box=document.getElementById('messages'),node=findMessageElement(anchor),first=findMessageElement(r.firstUnread);
+    if(!node)throw new Error('old-history anchor was not hydrated');
+    return{
+      anchor,
+      offset,
+      actual:Math.round(node.getBoundingClientRect().top-box.getBoundingClientRect().top),
+      firstUnreadMounted:Boolean(first),
+      firstUnreadId:Number(activeChatHistory?.firstUnreadMessageId)||null,
+      unread:Number(activeChatHistory?.unreadCount)||0,
+      hasNewer:Boolean(activeChatHistory?.hasNewer),
+      atBottom:isMessagesAtBottom(box),
+      divider:Boolean(box.querySelector('.new-messages-divider'))
+    };
+  });
+  assert.ok(Math.abs(result.actual-result.offset)<=3,JSON.stringify(result));
+  assert.ok(result.unread>0,JSON.stringify(result));
+  assert.ok(result.firstUnreadId,JSON.stringify(result));
+  assert.equal(result.atBottom,false,JSON.stringify(result));
+  assert.equal(result.hasNewer,true,JSON.stringify(result));
+  assert.equal(result.divider,true,JSON.stringify(result));
+
+  // 6. A saved true-tail state does not mask unread. If unread exists after
+  // leaving at the tail, the first unread opens in the established position.
+  result=await page.evaluate(async()=>{
+    const r=test17825[4],deviceId=getOrCreateDeviceId();
+    const response=await fetch('/api/rooms/'+r.roomId+'/view-state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId,anchorMessageId:null,anchorOffsetPx:0,atBottom:true})});
+    if(!response.ok)throw new Error('failed to save tail-unread fixture');
+    await openChat(r.roomId);
+    const box=document.getElementById('messages'),node=findMessageElement(r.firstUnread);
+    if(!node)throw new Error('tail-unread first unread was not hydrated');
+    const rect=node.getBoundingClientRect(),bounds=box.getBoundingClientRect();
+    return{
+      target:r.firstUnread,
+      firstUnreadId:Number(activeChatHistory?.firstUnreadMessageId)||null,
+      bottomGap:Math.round(bounds.bottom-rect.bottom),
+      visible:rect.bottom>=bounds.top&&rect.top<=bounds.bottom,
+      atBottom:isMessagesAtBottom(box),
+      unread:Number(activeChatHistory?.unreadCount)||0
+    };
+  });
+  assert.equal(result.firstUnreadId,result.target,JSON.stringify(result));
+  assert.equal(result.visible,true,JSON.stringify(result));
+  assert.ok(Math.abs(result.bottomGap-8)<=3,JSON.stringify(result));
+  assert.equal(result.atBottom,false,JSON.stringify(result));
+  assert.ok(result.unread>0,JSON.stringify(result));
+
   assert.deepEqual(errors,[]);
   console.log('PASS 178.25 first unread opens in its established visible position');
   console.log('PASS 178.25 saved anchor restores its previous pixel offset when unread is absent');
   console.log('PASS 178.25 down control loads the real bounded-history tail before reporting bottom');
   console.log('PASS 178.25 saved atBottom opens at the current tail');
+  console.log('PASS 178.25 saved old-history position wins when unread exists');
+  console.log('PASS 178.25 saved true-tail plus unread opens at first unread');
   console.log('NOTE synthetic Chromium only; physical mobile acceptance remains deferred');
 }).catch(error=>{console.error(error);process.exitCode=1;});
