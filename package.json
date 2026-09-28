@@ -185,7 +185,8 @@
     "bench:next:15": "node ./scripts/benchmark-next15-progressive-photo.cjs",
     "bench:next:16": "node ./scripts/benchmark-next16-reconnect.cjs",
     "bench:next:17": "node ./scripts/benchmark-next17-send-reaction.cjs",
-    "audit:1902:scroll-save": "node ./scripts/audit1902-scroll-save.cjs"
+    "audit:1902:scroll-save": "node ./scripts/audit1902-scroll-save.cjs",
+    "test:190.2:scroll-resilience": "node ./scripts/regression1902-scroll-resilience.cjs"
   },
   "license": "MIT",
   "dependencies": {
