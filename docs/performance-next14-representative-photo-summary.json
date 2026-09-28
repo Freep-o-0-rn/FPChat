@@ -1,0 +1,172 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 14,
+  "status": "complete",
+  "build": "190.2",
+  "runtimeSha": "43d05dbffe20f2bff779f9683aaf194b3f4e0cd2",
+  "measurementHead": "c0ed25f8162abc6d7cbdb6d4bb58780d9420bea8",
+  "finalRun": {
+    "workflowRunId": 36438896836,
+    "artifactId": 10977112464,
+    "artifactDigest": "sha256:f4d2ac974c7f89852bdf7c88434107e14016828c108b39ed00ffd4442bd9fc0a"
+  },
+  "fixture": {
+    "name": "next14-phone-photo.jpg",
+    "kind": "deterministic synthetic non-personal phone-photo fixture",
+    "width": 4032,
+    "height": 3024,
+    "megapixels": 12.2,
+    "mime": "image/jpeg",
+    "jpegQuality": 0.92,
+    "bytes": 2186611,
+    "mebibytes": 2.1,
+    "encryptedSizeBytes": 2186639,
+    "sha256": "d462b12f3e5618e6a59d1a6deff8ef147aa3d381c80f0038a323650ccaec3f54"
+  },
+  "measurementEvents": {
+    "previewStart": "immediately before openChat(roomId)",
+    "previewReady": "target chat img.media-thumb complete && naturalWidth > 0",
+    "originalStart": "immediately before clicking the target media tile",
+    "originalReady": "viewer .media-viewer-content img complete && naturalWidth > 0",
+    "qualification": "DOM image readiness/decode events, not hardware presentation timestamps"
+  },
+  "cacheStates": {
+    "managedWarm": "managed image CacheStorage primed; gallery RAM reset by root navigation; HTTP cache retained",
+    "managedMissHttpRetained": "managed image cache cleared through FPStorage167; browser HTTP cache retained and revalidated",
+    "managedMissHttpCold": "managed image cache cleared; browser HTTP cache cleared via CDP; identity retained"
+  },
+  "identity": {
+    "preserved": true,
+    "checks": 32
+  },
+  "samplesPerScenario": 5,
+  "results": {
+    "normal": {
+      "managedWarm": {
+        "previewMedianMs": 134.8,
+        "previewRangeMs": [
+          134.2,
+          136.2
+        ],
+        "originalMedianMs": 41,
+        "originalRangeMs": [
+          40.7,
+          64.4
+        ]
+      },
+      "managedMissHttpRetained": {
+        "previewMedianMs": 131.2,
+        "previewRangeMs": [
+          126.8,
+          173.5
+        ],
+        "originalMedianMs": 61.9,
+        "originalRangeMs": [
+          59.6,
+          74.6
+        ],
+        "httpStatus": 304
+      },
+      "managedMissHttpCold": {
+        "previewMedianMs": 131.7,
+        "previewRangeMs": [
+          130.7,
+          143.3
+        ],
+        "originalMedianMs": 74,
+        "originalRangeMs": [
+          62.6,
+          107.6
+        ],
+        "httpStatus": 200
+      }
+    },
+    "throttled": {
+      "managedWarm": {
+        "previewMedianMs": 665.1,
+        "previewRangeMs": [
+          649.4,
+          698.4
+        ],
+        "originalMedianMs": 48.8,
+        "originalRangeMs": [
+          45.5,
+          62.3
+        ]
+      },
+      "managedMissHttpRetained": {
+        "previewMedianMs": 697.2,
+        "previewRangeMs": [
+          695.9,
+          697.3
+        ],
+        "originalMedianMs": 296.6,
+        "originalRangeMs": [
+          295,
+          297.5
+        ],
+        "httpStatus": 304
+      },
+      "managedMissHttpCold": {
+        "previewMedianMs": 794.8,
+        "previewRangeMs": [
+          778.8,
+          795.5
+        ],
+        "originalMedianMs": 44293.9,
+        "originalRangeMs": [
+          18329.3,
+          44345.6
+        ],
+        "httpStatus": 200,
+        "originalRawMs": [
+          18329.3,
+          44293.9,
+          44345.6,
+          18329.6,
+          44326.5
+        ]
+      }
+    }
+  },
+  "networkEvidence": {
+    "managedWarm": {
+      "previewRequestsPerFive": 0,
+      "originalRequestsPerFive": 0,
+      "encodedBytes": 0
+    },
+    "managedMissHttpRetained": {
+      "previewRequestsPerFive": 5,
+      "originalRequestsPerFive": 5,
+      "previewEncodedBytesPerFive": 1325,
+      "originalEncodedBytesPerFive": 1340,
+      "status": 304
+    },
+    "managedMissHttpCold": {
+      "previewRequestsPerFive": 5,
+      "originalRequestsPerFive": 5,
+      "previewEncodedBytesPerFive": 15645,
+      "originalEncodedBytesPerFive": 10934810,
+      "previewBytesEach": 3129,
+      "originalBytesEach": 2186962,
+      "status": 200
+    }
+  },
+  "validation": {
+    "runtimeChanged": false,
+    "identityPreserved": true,
+    "mediaCacheRegression": true,
+    "viewerLifecycleRegression": true,
+    "photoZoomRegression": true,
+    "build190MediaBrowserRegression": true,
+    "browserErrors": 0
+  },
+  "limits": [
+    "Five samples per scenario; no p95.",
+    "No physical iPhone/Android measurement.",
+    "Throttled HTTP-cold original produced two timing clusters; cause not established.",
+    "Preview timing starts before openChat and therefore includes room-open/join work.",
+    "Current viewer does not yet display the chat thumbnail as an immediate viewer preview; that belongs to item 15."
+  ]
+}
