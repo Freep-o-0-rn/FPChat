@@ -84,7 +84,7 @@ Known diagnostic drift recorded for **Step 3**, not changed in Step 1: the curre
 | Step | Status | Scope |
 | ---: | --- | --- |
 | 1 | **done** | Working branch, architecture map and rules |
-| 2 | pending | Baseline regressions |
+| 2 | **partial — continue as 2.2** | Baseline regressions; one stale ownership guard fixed, second stale fingerprint localized |
 | 3 | pending | Observer coverage |
 | 4 | pending | Baseline performance measurements |
 | 5 | pending | One confirmed startup wait |
@@ -146,6 +146,220 @@ Delete `optimization/performance-series` or reset it to `7fa7a4b0d64c22d4aa80969
 
 ## Continuation point
 
-**Next step: 2 — verify baseline regressions.**
+**Current continuation: 2.2 — finish the baseline ownership audit.**
 
-Do not start Step 3 or any optimization until Step 2 establishes the current test baseline and separates real behavior failures from stale build/source guards or environment limitations.
+Do not start Step 3 or any optimization yet. Step 2 has a usable behavioral baseline for startup, room, send, history and media, but the legacy single-owner source audit still contains one independently stale Build 180 fingerprint that must be corrected and re-run first.
+
+
+## Step 2 — baseline regressions
+
+Status: **partial; continue as 2.2**.
+
+### Baseline execution environment
+
+The repository could not be cloned into the assistant container because that container could not resolve `github.com`. This is an assistant-environment limitation, not an FPChat test failure.
+
+To execute the repository tests on the actual branch, a temporary GitHub Actions workflow was added only for Step 2 and then removed. It used:
+
+- GitHub-hosted Ubuntu 24.04;
+- Node.js 22.23.2;
+- npm 10.9.8;
+- Playwright 1.55.0;
+- Playwright Chromium 140.0.7339.16;
+- production dependencies from the committed lockfile with `npm ci --omit=dev --no-audit --no-fund`;
+- synthetic/isolated server data created by the existing browser harnesses.
+
+The temporary CI workflow is not present in the final tree.
+
+### Minimal baseline set selected
+
+| Area | Commands |
+| --- | --- |
+| Startup | `npm run test:186:startup` |
+| Room/context | `npm run check:170` |
+| Send/ACK | `npm run test:177:send-entry-contract`; `npm run test:177:text-dispatch`; `npm run test:178:message-store-ack` |
+| History/anchor/DOM | `npm run test:178:history-saved-anchor`; `npm run test:178:bounded-dom` |
+| Ownership | `npm run test:180:single-owner-audit`, with `npm run check:171` used to distinguish network-owner semantics from stale source inventory |
+| Media/current Build 190 | `npm run test:190` |
+
+The existing Build 190 workflow had already passed on the exact source SHA `7fa7a4b0d64c22d4aa809692032a0c1dd0f3aced` before the optimization series. Step 2 repeated the current media gate on the performance branch as well.
+
+### Results
+
+#### Startup — PASS
+
+`npm run test:186:startup` passed.
+
+Confirmed by the existing suites:
+
+- preload preserves owner execution order;
+- one reveal boundary remains;
+- delayed system/request data does not block UI reveal;
+- pending CSS still holds the splash;
+- failed optional assets settle without blocking installed owners;
+- failed required owner produces the retry UI instead of a partially owned chat;
+- direct `/chat` and invite entry remain behind owner readiness;
+- text send remains available after direct room entry;
+- asset timeout evidence remains bounded/frozen;
+- update splash/reload path remains intact.
+
+The browser suite itself reports an isolated Linux Chromium environment and explicitly leaves physical mobile startup acceptance open.
+
+#### Room/context — PASS
+
+`npm run check:170` passed.
+
+The check confirmed syntax and critical ownership invariants including RoomContext generations, independent send operation contexts, captured room keys, Connection170 subscription and absence of a second WebSocket constructor in Connection170.
+
+#### Send / retry / ACK — PASS
+
+All selected send checks passed.
+
+Confirmed:
+
+- one text form entry dispatches one `FPTextSend170` executor;
+- double submit creates one logical pending text/clientMessageId;
+- transport-offline pending text resends after reconnect;
+- A → B navigation does not redirect the source-room send;
+- ACK/echo preserves one logical message and retry reuses clientMessageId;
+- exactly one text message is saved in the browser integration fixture;
+- canonical MessageStore identity survives optimistic → ACK/remount;
+- old history does not beat edit or resurrect delete;
+- stronger delivery status remains monotonic.
+
+No uncaught browser errors were reported by the text-dispatch integration test.
+
+#### History / anchor / bounded DOM — PASS
+
+The selected history checks passed.
+
+Confirmed:
+
+- saved anchor can be loaded through `FPHistory174.around`;
+- saved message id and pixel offset survive the server round trip;
+- initial restore waits for layout and uses the existing `FPScroll173` path;
+- bounded DOM remains `LIMIT=300`, `PAGE=100`;
+- unread outside the mounted range is preserved;
+- DOM eviction preserves selection identity;
+- optimistic Store/retry state survives eviction and later ACK without a mounted node.
+
+#### Media / Build 190 — PASS
+
+`npm run test:190` passed on the performance branch.
+
+It included:
+
+- displayed build/updater labels;
+- Build 189.11 system-push integration;
+- Build 190 owner/arbiter contract;
+- video deferred-claim swipe contract;
+- thumbnail generation/fallback/upload invariants;
+- Build 190.2 video-only play badge;
+- MediaManager177 viewer lifecycle;
+- Build 185 photo zoom browser suite (16 groups);
+- Build 186.2 media/cache browser suite (9 groups);
+- Build 190 browser acceptance (8 groups).
+
+The Build 190 browser acceptance confirmed video tap without gesture claim, horizontal navigation, up/down dismiss, native-touch drag admission, one-shot broken/missing video thumbnail fallback and rejection of zero-plaintext encrypted thumbnails.
+
+Physical video playback/device behavior is still not proven by Chromium automation.
+
+### Ownership audit — source-guard drift found
+
+The initial `test:180:single-owner-audit` failed before reaching later assertions.
+
+#### 2.1 — fixed stale fetch-assignment inventory
+
+Initial failure:
+
+`unregistered legacy window.fetch assignment exists`
+
+The audit required the active files containing `window.fetch =` to equal all `FPNetwork171.LEGACY_SPECS` entries exactly.
+
+Current reality:
+
+- `room-lifecycle.js` no longer assigns `window.fetch`;
+- it captures `window.fetch.bind(window)`;
+- at the real startup point this is already the FPNetwork171 coordinator;
+- `FPNetwork171` intentionally retains the `room-lifecycle.js` legacy spec as compatibility admission;
+- `check:171` explicitly tests that this compatibility spec still exists.
+
+A trial removal of the runtime spec caused `check:171` to fail and was fully reverted. There is **no final runtime/network171 change** from that experiment.
+
+Only the source audit was corrected to distinguish:
+
+- active legacy `window.fetch =` adapters; and
+- the compatibility-only `room-lifecycle.js` spec.
+
+Commit carrying the test-only correction: `eca642e033d12d031c573726eea063070b152e29`.
+
+After restoring the runtime compatibility spec, `npm run check:171` passes again.
+
+#### 2.2 — second independent stale fingerprint, not fixed yet
+
+After 2.1 the same old Build 180 audit progressed further and failed at:
+
+`canonical block owner instance duplicated`
+
+with actual count `0`, expected `1`.
+
+This is currently localized as another stale **exact source fingerprint**, not evidence of a duplicate owner:
+
+- the audit searches for the exact historical string `createUserBlocks165(db)`;
+- current `server.js` creates the owner once as `createUserBlocks165(db, { presenceProjector: fpPresencePrivacy187.project })`;
+- the current server has one `const fpUserBlocks165 = createUserBlocks165(...)` declaration;
+- the extra argument comes from the later presence-privacy integration.
+
+Per the one-small-change rule, Step 2 stops here. Do not fix 2.2 in the same pass as 2.1.
+
+### Classification of findings
+
+| Finding | Classification | Current status |
+| --- | --- | --- |
+| Startup suite | behavior | PASS |
+| Room/context check | behavior + source invariants | PASS |
+| Send/retry/ACK suite | behavior | PASS |
+| History/anchor/bounded DOM | behavior + invariants | PASS |
+| Build 190 media suite | behavior + owner contracts | PASS |
+| Build 180 fetch assignment equality | stale source guard | 2.1 fixed in test only |
+| Build 180 exact `createUserBlocks165(db)` match | stale source fingerprint | localized; **2.2 open** |
+| Assistant container cannot resolve GitHub | environment | bypassed with temporary GitHub Actions harness |
+| Missing VAPID keys in isolated CI | environment/config warning | push tests still passed with their isolated fixture; not production verification |
+| npm dependency deprecation warnings | environment/dependency warning | not treated as a behavior regression in Step 2 |
+
+### Physical devices not verified
+
+Step 2 does **not** claim physical-device acceptance for:
+
+- iPhone Safari/PWA;
+- realme C21Y / physical Android;
+- native mobile video playback/control behavior;
+- real mobile lifecycle/suspend/resume;
+- device-specific keyboard/viewport timing;
+- real push delivery through production credentials.
+
+Chromium browser automation is recorded only as browser automation.
+
+### Step 2 changes
+
+Runtime/application behavior: **unchanged**.
+
+Final intended source change from Step 2 so far:
+
+- `scripts/regression180-single-owner-audit.cjs`: source guard now distinguishes the active fetch adapters from the retained compatibility-only `room-lifecycle.js` network spec.
+
+The temporary test workflow was removed. The trial `network171.js` edit was reverted, so `public/network171.js` is back to the verified 190.2 content.
+
+### Measurements
+
+No performance timing baseline was collected in Step 2. That remains Step 4. This step establishes regression behavior only.
+
+### Rollback of Step 2.1
+
+Revert the test-only change in `scripts/regression180-single-owner-audit.cjs` to restore the original Build 180 exact-list assertion. No production/runtime rollback is required because runtime code is unchanged.
+
+### Continuation point
+
+**2.2 — update only the stale canonical block-owner fingerprint in `regression180-single-owner-audit.cjs`, then rerun the owner audit and its relevant block-owner checks.**
+
+Do not start Step 3 until Step 2 ownership baseline is green or another independent stale assertion is localized and recorded according to the same small-step rule.
