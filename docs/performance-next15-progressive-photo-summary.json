@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 15,
+  "status": "complete",
+  "build": "190.2",
+  "runtimeSha": "2bf734e918dfb7e31d14d574d52a7d3256076000",
+  "appRevision": "01a8e946b71251d38838303a659e28e150d6d48a",
+  "finalFunctionalRun": {
+    "workflowRunId": 36442826065,
+    "artifactId": 10978968849,
+    "artifactDigest": "sha256:7054c5b144e23c934f82fc401a45a200c7eea1b5f071183c6952eeada4d04b92"
+  },
+  "controlledRun": {
+    "workflowRunId": 36444021552,
+    "measurementHead": "06273904eaf8fad94ede9dc46d28922180bef21c",
+    "baselineCommit": "205e07055781a31e9bc957f33d52afe8b805589c",
+    "currentRuntimeCommit": "2bf734e918dfb7e31d14d574d52a7d3256076000",
+    "artifactId": 10981050583,
+    "artifactDigest": "sha256:81c7f42ec92abaaeb72ada11acdbfd6ab9538d8eeaaf6cd97748da96ea1819e7"
+  },
+  "implementation": {
+    "previewSource": "existing ready chat-thumbnail blob URL",
+    "previewExtraHttpRequests": 0,
+    "originalPath": "existing mountSlot -> loadAsset -> readEncryptedMedia174 -> FPNetwork171",
+    "originalDecodedBeforeSwap": true,
+    "sameVisibleImageNode": true,
+    "geometry": "known media width/height reserved before preview display",
+    "errorFallback": "keep preview visible and overlay retry",
+    "videoChanged": false,
+    "newOwner": false,
+    "newQueue": false,
+    "newCache": false
+  },
+  "ownersPreserved": [
+    "FPMediaManager177",
+    "FPLayer173",
+    "FPGesture135",
+    "FPNetwork171",
+    "FPStorage167",
+    "RoomContext/generation/AbortSignal"
+  ],
+  "fixture": {
+    "width": 4032,
+    "height": 3024,
+    "bytes": 2186611,
+    "sha256": "d462b12f3e5618e6a59d1a6deff8ef147aa3d381c80f0038a323650ccaec3f54"
+  },
+  "controlledComparison": {
+    "environment": "same GitHub Actions job/runner, Chromium 140.0.7339.16, Linux x64, Node 22.23.2, 4 vCPU AMD EPYC 7763, same fixture/cache/network profiles",
+    "samplesPerScenario": 5,
+    "normal": {
+      "managedWarm": {
+        "item14OriginalMedianMs": 41.4,
+        "item15PreviewMedianMs": 8.9,
+        "item15OriginalMedianMs": 91.9,
+        "previewLeadVsItem14Ms": 32.5,
+        "originalDeltaMs": 50.5
+      },
+      "managedMissHttpRetained": {
+        "item14OriginalMedianMs": 74.6,
+        "item15PreviewMedianMs": 22.9,
+        "item15OriginalMedianMs": 108.3,
+        "previewLeadVsItem14Ms": 51.7,
+        "originalDeltaMs": 33.7
+      },
+      "managedMissHttpCold": {
+        "item14OriginalMedianMs": 75.3,
+        "item15PreviewMedianMs": 9.7,
+        "item15OriginalMedianMs": 109.5,
+        "previewLeadVsItem14Ms": 65.6,
+        "originalDeltaMs": 34.2
+      }
+    },
+    "throttled": {
+      "managedWarm": {
+        "item14OriginalMedianMs": 46.1,
+        "item15PreviewMedianMs": 5.9,
+        "item15OriginalMedianMs": 96.4,
+        "previewLeadVsItem14Ms": 40.2,
+        "originalDeltaMs": 50.3
+      },
+      "managedMissHttpRetained": {
+        "item14OriginalMedianMs": 295,
+        "item15PreviewMedianMs": 6.4,
+        "item15OriginalMedianMs": 329.3,
+        "previewLeadVsItem14Ms": 288.6,
+        "originalDeltaMs": 34.3
+      },
+      "managedMissHttpCold": {
+        "item14OriginalMedianMs": 18363.4,
+        "item15PreviewMedianMs": 5.6,
+        "item15OriginalMedianMs": 18427,
+        "previewLeadVsItem14Ms": 18357.8,
+        "originalDeltaMs": 63.6,
+        "originalDeltaPct": 0.3
+      }
+    }
+  },
+  "validation": {
+    "progressivePreview": true,
+    "noExtraThumbnailIo": true,
+    "sameNodeGeometry": true,
+    "pinchBeforeOriginal": true,
+    "panAfterOriginal": true,
+    "closeDuringLoad": true,
+    "navigateDuringLoad": true,
+    "originalErrorKeepsPreview": true,
+    "retry": true,
+    "viewerLifecycleOwner": true,
+    "layerContract": true,
+    "gestureLayerLifecycle": true,
+    "photoZoomRegression": true,
+    "mediaCacheRegression": true,
+    "build190MediaRegression": true
+  },
+  "historicalTestOnlyFailures": [
+    {
+      "runId": 36442158213,
+      "reason": "test compared transformed 2x rect with pre-pinch geometry"
+    },
+    {
+      "runId": 36442373156,
+      "reason": "test clicked desktop nav button that is intentionally hidden on mobile viewport"
+    },
+    {
+      "runId": 36442675905,
+      "reason": "test expected layer name media-viewer; existing contract uses viewer"
+    }
+  ],
+  "limits": [
+    "Five samples per scenario; no p95.",
+    "No physical iPhone/Android/PWA measurement.",
+    "DOM image readiness/decode is not hardware presentation.",
+    "Decode-before-swap adds about 34-64 ms to original-ready in controlled Chromium comparison.",
+    "No new preview fetch is attempted if the selected chat thumbnail is not already ready."
+  ]
+}
