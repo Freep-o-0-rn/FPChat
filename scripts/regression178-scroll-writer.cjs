@@ -28,8 +28,8 @@ assert(!/box\.scrollTop\s*=/.test(body), 'direct message scrollTop writer remain
 assert(!body.includes('scrollCoordinator.requestBottom('), 'message removal still bypasses public FPScroll173 bottom entry');
 assert(!body.includes('scrollCoordinator.write('), 'message removal still bypasses public FPScroll173 write entry');
 
-const appLoad = index.indexOf("script.src = `/app.js${buildSuffix}`");
-const actionsLoad = index.indexOf("messageActions.src = `/message-actions.js${buildSuffix}`");
+const appLoad = index.indexOf("script.src = `/app.js${appBuildSuffix190}`");
+const actionsLoad = index.indexOf("messageActions.src = `/message-actions.js${reactionBuildSuffix188 || buildSuffix}`");
 assert(appLoad >= 0 && actionsLoad > appLoad, 'message-actions load order no longer guarantees FPScroll173 is created first');
 
 console.log('PASS 178.23 deletion bottom keeps the existing target through FPScroll173.requestBottom');
