@@ -14,8 +14,8 @@ const roomContext=read('public/room-context170.js');
 const textSend=read('public/text-send170.js');
 const mediaSend=read('public/media-send170.js');
 
-const exactCoordinationDeclaration="window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});";
-assert(index.includes(exactCoordinationDeclaration),'FPStartup174 coordination surface changed during 180.10');
+const exactCoordinationDeclaration="window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),versionResult:loaderVersionResult174,execution:'definitions before app; navigation after room/open/send owners'});";
+assert(index.includes(exactCoordinationDeclaration),'FPStartup174 coordination surface changed beyond the allowed loader version handoff');
 
 const roomReadyToken="window.addEventListener('fpchat:room-lifecycle-ready174',loadLifecycleOwner,{once:true});";
 assert.equal(roomContext.split(roomReadyToken).length-1,1,'room-lifecycle readiness must connect to owner chain exactly once');
