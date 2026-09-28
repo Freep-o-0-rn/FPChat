@@ -1,0 +1,256 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 10,
+  "build": "190.2",
+  "runtimeSha": "1917f36ba2257611098a8dfc5bd26c54636143d9",
+  "finalRun": {
+    "workflowRunId": 36422527825,
+    "headSha": "77e3e2fa2ee08839c47d6ffe610b6623e1001fac",
+    "artifactId": 10969644009,
+    "artifactDigest": "sha256:2b170cb5c1908d41c1106f7ba689edb2dea0341a32ad8c0bb4379615c685d63d"
+  },
+  "historicalSupersededRun": {
+    "workflowRunId": 36421597571,
+    "artifactId": 10969462869,
+    "artifactDigest": "sha256:a8d8bbd72db4020cce04d2270bf1a29d6c19f17d476c67e4dcbe7a99d83cab81",
+    "reason": "room was already known before page boot, allowing startup session sync to contaminate post-open request counts"
+  },
+  "fixture": {
+    "fixedRoomMessages": 1500,
+    "targetOrdinal": 351,
+    "pageSize": 100,
+    "repeatsPerScenario": 5,
+    "syntheticTextOnly": true,
+    "sameDeviceIdentity": true,
+    "databaseStateRestoredBeforeEveryOpen": true,
+    "cleanEphemeralBrowserContextPerOpen": true,
+    "roomStateIntroducedOnlyAfterBoot": true,
+    "network": "200 ms latency, ~1 Mbit/s down, ~0.5 Mbit/s up"
+  },
+  "timingSemantics": {
+    "serverMs": "test-only Node HTTP request wall from request event to res.end; includes route logic, SQLite work and JSON serialization; not DB-only time",
+    "ttfbMs": "browser CDP request start to response headers",
+    "nonServerTtfbMs": "TTFB minus server request wall; includes network/client scheduling and is not pure wire time",
+    "durationMs": "browser request start to loadingFinished"
+  },
+  "scenarios": {
+    "end": {
+      "openMs": {
+        "median": 964.8,
+        "min": 961.8,
+        "max": 966.2,
+        "raw": [
+          961.8,
+          964.6,
+          964.8,
+          965.5,
+          966.2
+        ]
+      },
+      "join": {
+        "serverMs": {
+          "median": 25.78,
+          "min": 24.14,
+          "max": 26.29
+        },
+        "ttfbMs": {
+          "median": 227.05,
+          "min": 226.77,
+          "max": 229.7
+        },
+        "nonServerTtfbMs": {
+          "median": 202.79,
+          "min": 201.27,
+          "max": 203.51
+        },
+        "durationMs": {
+          "median": 587.58,
+          "min": 586.34,
+          "max": 589.52
+        },
+        "contentLength": 45397,
+        "encodedBytes": 45702,
+        "messages": 100,
+        "messagesJsonBytes": 44699
+      },
+      "criticalInitialHistoryRequests": [],
+      "postOpenObserved": {
+        "latest100Gets": 3,
+        "latest100EachEncodedBytes": 45138
+      }
+    },
+    "savedAnchor": {
+      "openMs": {
+        "median": 2131.4,
+        "min": 2096.2,
+        "max": 2483.8,
+        "raw": [
+          2096.2,
+          2113.3,
+          2131.4,
+          2199,
+          2483.8
+        ]
+      },
+      "join": {
+        "serverMs": {
+          "median": 26.15,
+          "min": 22.18,
+          "max": 26.35
+        },
+        "ttfbMs": {
+          "median": 229.45,
+          "min": 225.33,
+          "max": 240.84
+        },
+        "nonServerTtfbMs": {
+          "median": 203.43,
+          "min": 203.1,
+          "max": 214.69
+        },
+        "durationMs": {
+          "median": 589.2,
+          "min": 584.9,
+          "max": 661.7
+        },
+        "contentLength": 45398,
+        "encodedBytes": 45703,
+        "messages": 100,
+        "messagesJsonBytes": 44699
+      },
+      "criticalInitialHistoryRequests": [
+        {
+          "kind": "before",
+          "count": 1,
+          "serverMsMedian": 2.45,
+          "ttfbMsMedian": 213.2,
+          "durationMsMedian": 981.14,
+          "contentLength": 44759,
+          "encodedBytes": 45062,
+          "messages": 100
+        },
+        {
+          "kind": "after",
+          "count": 1,
+          "serverMsMedian": 3.74,
+          "ttfbMsMedian": 224.41,
+          "durationMsMedian": 1076.23,
+          "contentLength": 50259,
+          "encodedBytes": 50562,
+          "messages": 100
+        }
+      ],
+      "validation": {
+        "targetMounted": true,
+        "tailMounted": false,
+        "hasNewer": true
+      },
+      "postOpenObserved": {
+        "syncAfterGets": 1,
+        "syncAfterMessages": 0,
+        "latest100Gets": 3,
+        "latest100EachEncodedBytes": 45138
+      }
+    },
+    "firstUnread": {
+      "openMs": {
+        "median": 2044.5,
+        "min": 2029,
+        "max": 2062.4,
+        "raw": [
+          2029,
+          2029.5,
+          2044.5,
+          2061.8,
+          2062.4
+        ]
+      },
+      "initialUnread": 1150,
+      "join": {
+        "serverMs": {
+          "median": 24.46,
+          "min": 23.15,
+          "max": 25.11
+        },
+        "ttfbMs": {
+          "median": 228.09,
+          "min": 227.04,
+          "max": 228.63
+        },
+        "nonServerTtfbMs": {
+          "median": 203.64,
+          "min": 203.51,
+          "max": 203.9
+        },
+        "durationMs": {
+          "median": 563.39,
+          "min": 562.5,
+          "max": 564.94
+        },
+        "contentLength": 41800,
+        "encodedBytes": 42105,
+        "messages": 100,
+        "messagesJsonBytes": 41099
+      },
+      "criticalInitialHistoryRequests": [
+        {
+          "kind": "before",
+          "count": 1,
+          "serverMsMedian": 2.19,
+          "ttfbMsMedian": 213.11,
+          "durationMsMedian": 956.95,
+          "contentLength": 44725,
+          "encodedBytes": 45028,
+          "messages": 100
+        },
+        {
+          "kind": "after",
+          "count": 1,
+          "serverMsMedian": 1.57,
+          "ttfbMsMedian": 224.71,
+          "durationMsMedian": 1004.04,
+          "contentLength": 46661,
+          "encodedBytes": 46964,
+          "messages": 100
+        }
+      ],
+      "validation": {
+        "targetMounted": true,
+        "firstUnreadMatches": true,
+        "tailMounted": false,
+        "hasNewer": true
+      },
+      "postOpenObserved": {
+        "syncAfterGets": 1,
+        "syncAfterMessages": 0,
+        "latest100Gets": 3,
+        "latest100EachEncodedBytes": 41540
+      }
+    }
+  },
+  "selectedExtraQuery": {
+    "name": "latest history page read embedded in POST /api/rooms/:roomId/join when initial target is outside the last page",
+    "serverCall": "getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id)",
+    "appliesTo": [
+      "saved-anchor",
+      "first-unread"
+    ],
+    "confirmedBecause": [
+      "join always returns 100 latest messages",
+      "saved-anchor and first-unread target ordinal 351 is outside latest 100",
+      "FPHistory174 immediately requests before+after around the target",
+      "after hydration the tail from join is not mounted in either non-tail scenario"
+    ],
+    "wastedJoinMessageJsonBytes": {
+      "savedAnchor": 44699,
+      "firstUnread": 41099
+    },
+    "qualification": "The POST /join request itself is required for access, participant, unread and view-state checks. Only its unconditional embedded latest-history page is selected as over-fetch. Its SQL-only cost was not isolated."
+  },
+  "otherObservedNotSelected": {
+    "postOpenLatest100Gets": "three no-cursor limit=100 GETs were consistently observed after room open and belong to sync/reconnect behavior; they are recorded but not selected or optimized in item 10",
+    "reason": "item 10 selects one cause only; attribution/removal of sync requests would be a separate owner-specific task"
+  },
+  "runtimeChanged": false
+}
