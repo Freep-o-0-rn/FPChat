@@ -228,7 +228,7 @@ async function naturalOutageSample(page,session,profile,roomId,index){
   const offlineStarted=Date.now();
   const offlineConfig=await setOfflineState(session,true);
   await page.waitForFunction(()=>navigator.onLine===false,null,{timeout:5000}).catch(()=>{});
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(10000);
   const during=await observerSnapshot(page);
 
   const restoreStarted=Date.now();
@@ -289,7 +289,8 @@ async function naturalOutageSample(page,session,profile,roomId,index){
     initial,
     offlineConfig,
     restoreConfig,
-    outageMs:Date.now()-offlineStarted,
+    offlineMs:restoreStarted-offlineStarted,
+    observationTotalMs:Date.now()-offlineStarted,
     breakObservedBeforeRestore:Boolean(during.oldClosed),
     breakObservedEventually:Boolean(final.oldClosed),
     reconnectMs,
