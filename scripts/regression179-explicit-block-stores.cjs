@@ -7,7 +7,7 @@ const read=p=>fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
 const server=read('server.js');
 const boot=read('src/message-actions-bootstrap.js');
 const dbAt=server.indexOf('const db = createDb(DATABASE_PATH);');
-const blocksAt=server.indexOf("const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);");
+const blocksAt=server.search(/\bconst\s+fpUserBlocks165\s*=\s*createUserBlocks165\s*\(/);
 const eventsAt=server.indexOf("const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db");
 assert(dbAt>=0&&blocksAt>dbAt&&eventsAt>blocksAt,'T1 explicit initialization order changed');
 assert(!boot.includes("'database user-block initialization'"),'T1 textual patch still exists');
