@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–11 plus diagnostic 3.1 completed; optional server-side initial history window added, client not switched yet**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–12 plus diagnostic 3.1 completed; client now uses the server-provided initial history window through the existing room-open path**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–11 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–12 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -2431,3 +2431,189 @@ required because the new server behavior is opt-in and unused by the current cli
 **No next item started automatically.**
 
 Item 12 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 12
+
+Status: **done — item-11 initial history window connected to the existing client room-open path**.
+
+### Client integration
+
+`public/room-open170.js` now adds:
+
+`initialWindow: true`
+
+to the existing guarded `POST /join`.
+
+The same RoomContext transition, `context.signal`, stale-generation checks and commit flow remain in place.
+
+No new fetch owner or room-open owner was added.
+
+### Initial target semantics
+
+When the server returns `initialWindow.version=1`, the client honors the server-selected target:
+
+- first unread;
+- saved anchor;
+- tail fallback.
+
+When `initialWindow.mode=tail`, the client does not retry an unavailable/deleted saved anchor.
+
+When the response has no `initialWindow` field, the previous client logic remains active. This is the old-server compatibility path.
+
+### FPHistory / FPScroll
+
+A server-provided around window already contains the target, so FPHistory174 does not issue the initial target-specific `before + after` pair.
+
+`initialWindow.latestMessage` is preserved as `data.latestMessage174` so chat-list activity and last-known tail identity remain correct.
+
+Existing `hasMore/nextCursor` and `hasNewer/newerCursor` continue through FPHistory174.
+
+Later older/newer loads were verified through the existing FPHistory174 owner.
+
+FPScroll173 remains unchanged and remains the scroll writer.
+
+### A→B→A / cancellation
+
+The item-12 regression delays the first A join, then runs A→B→A.
+
+Verified:
+
+- final `state.roomId` = A;
+- current RoomContext = A;
+- only the latest generation owns the final rendered DOM;
+- B target is absent;
+- A target is mounted.
+
+### Old server
+
+The regression strips `initialWindow` before the join reaches the server, forcing the legacy response.
+
+Verified that the client falls back to the old FPHistory174 around hydration and still opens the saved anchor with newer history available.
+
+### Deleted/stale anchor
+
+A saved anchor is marked `deleted_for_all`.
+
+The current server returns tail mode.
+
+Verified that the client:
+
+- does not issue stale-target `before`;
+- does not issue stale-target `after`;
+- mounts the actual tail;
+- reports no newer history.
+
+### Request count
+
+Item-10 non-tail opening:
+
+- join with latest 100;
+- target `before`;
+- target `after`.
+
+Critical initial history requests: **3**.
+
+Item 12:
+
+- one join containing the useful around window.
+
+Critical initial history requests: **1**.
+
+Reduction: **3 → 1**.
+
+The three no-cursor `GET /messages?limit=100` requests from existing sync/reconnect behavior are still observed post-open and remain outside item-12 scope.
+
+### Timing comparison
+
+Same synthetic 1500-message room, target ordinal 351, five runs, 200 ms latency, ~1 Mbit/s down / 0.5 Mbit/s up.
+
+Tail:
+
+- 964.8 → **962.2 ms** median;
+- effectively unchanged.
+
+Saved anchor:
+
+- 2131.4 → **1445.0 ms**;
+- delta **-686.4 ms / -32.20%**.
+
+First unread:
+
+- 2044.5 → **1399.8 ms**;
+- delta **-644.7 ms / -31.53%**.
+
+Critical initial encoded transfer:
+
+- saved anchor: 141,327 → **96,309 B**;
+- first unread: 134,097 → **92,639 B**.
+
+Five samples only, so no p95 is reported.
+
+### App revision contract
+
+Initial verification exposed a stale app revision after modifying `public/app.js`.
+
+The existing immutable guard correctly prevented boot.
+
+`public/version.json.appRevision` was updated to the exact current app.js Git blob:
+
+`b9190a5c859ee1f6bd5896a149e9eb8e7952deee`
+
+Build remains **190.2**.
+
+`test:next:7` passes.
+
+### Final verification
+
+Workflow `36429875489`: **SUCCESS**.
+
+Measured runtime state:
+
+`3cf04a31e45998bd2e7318b6c4dc9c980dff5316`.
+
+Artifact:
+
+- `10972454275`;
+- digest `sha256:756f56a227ad8ff7b9d9375c4d261d72ba24cc94e1a82e1cf342cd228290ed7d`.
+
+Passed:
+
+- `test:next:7`;
+- `test:next:12`;
+- `test:next:11`;
+- `check:170`;
+- `test:178:history-page-owner`;
+- `test:178:history-saved-anchor`;
+- `test:178:unread-restore-bottom`;
+- `test:180:single-owner-audit`;
+- `bench:next:12`.
+
+### Files
+
+Runtime/client:
+
+- `public/room-open170.js`;
+- `public/app.js`;
+- `public/history174.js`;
+- `public/version.json` revision only.
+
+Regression/measurement:
+
+- `scripts/regression-next12-client-initial-window.cjs`;
+- `scripts/benchmark-next12-initial-window.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next12-client-initial-window.md`;
+- `docs/performance-next12-client-initial-window-summary.json`;
+- this journal.
+
+No DB/schema, updater, Service Worker, new RoomContext/history/scroll owner or new queue was added.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 13 is next only if explicitly requested.
