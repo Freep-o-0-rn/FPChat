@@ -1,0 +1,354 @@
+{
+  "schema": 1,
+  "build": "190.2",
+  "runtimeBaselineSha": "1c1e0453416203f6c916f214dae36bd1186f0047",
+  "measurementRunHead": "4bf9cbdea791aca730da1960ccc89ab8af88cfad",
+  "workflowRunId": 36387427449,
+  "artifactId": 10955296789,
+  "artifactDigest": "sha256:d8733c9baed9e510358bacf60c3b570538fd1ea32039f23c4d959357d4567f56",
+  "environment": {
+    "browser": "Chromium 140.0.7339.16",
+    "viewport": "1100x760",
+    "platform": "linux x64",
+    "node": "v22.23.2",
+    "vcpu": 4,
+    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "memoryGiB": 15.6,
+    "physicalDevice": false,
+    "server": "server.js on 127.0.0.1, isolated temporary SQLite"
+  },
+  "network": {
+    "normal": "no added latency/bandwidth shaping",
+    "throttled": {
+      "mechanism": "CDP Network.emulateNetworkConditions",
+      "latencyMs": 200,
+      "downloadBytesPerSec": 125000,
+      "uploadBytesPerSec": 62500,
+      "connectionType": "cellular3g"
+    },
+    "outage": {
+      "mechanism": "BrowserContext.setOffline",
+      "offlineMs": 10000
+    }
+  },
+  "fixtures": {
+    "small": 30,
+    "medium": 1000,
+    "large": 10000
+  },
+  "samplesPerScenario": 5,
+  "p95Rule": "not calculated for n<20; for n>=20 nearest-rank ceil(0.95*n)",
+  "raw": {
+    "startupSaved": {
+      "normal": [
+        289,
+        276,
+        290,
+        281,
+        555
+      ],
+      "throttled": [
+        4973,
+        4961,
+        4962,
+        4996,
+        4979
+      ]
+    },
+    "startupAfterUpdate": {
+      "normal": [
+        512,
+        515,
+        577,
+        511,
+        589
+      ],
+      "throttled": [
+        6825,
+        6963,
+        6830,
+        6813,
+        6830
+      ]
+    },
+    "openMs": {
+      "small": {
+        "normal": [
+          255.3,
+          237.8,
+          254,
+          271.7,
+          237.6
+        ],
+        "throttled": [
+          1233.2,
+          1095.4,
+          1077.6,
+          1067.4,
+          1216.3
+        ]
+      },
+      "medium": {
+        "normal": [
+          287.5,
+          303.7,
+          319.3,
+          304.5,
+          320.6
+        ],
+        "throttled": [
+          1266.7,
+          2215.2,
+          2016.7,
+          1765.3,
+          1367.3
+        ]
+      },
+      "large": {
+        "normal": [
+          267.9,
+          286.1,
+          286,
+          271.5,
+          269.8
+        ],
+        "throttled": [
+          3316.7,
+          3058.6,
+          3097,
+          3064.7,
+          3165.7
+        ]
+      }
+    },
+    "scrollOlderMs": {
+      "medium": {
+        "normal": [
+          72.4,
+          81.6,
+          65,
+          64.3,
+          64.4
+        ],
+        "throttled": [
+          910.9,
+          618.5,
+          646.8,
+          607,
+          589.7
+        ]
+      },
+      "large": {
+        "normal": [
+          87.7,
+          120.9,
+          65,
+          70.9,
+          80.8
+        ],
+        "throttled": [
+          981.2,
+          609.1,
+          584.3,
+          585.9,
+          592
+        ]
+      }
+    },
+    "reaction": {
+      "normal": {
+        "optimisticMs": [
+          4.3,
+          2.3,
+          2.3,
+          2.2,
+          3.5
+        ],
+        "ackMs": [
+          38.5,
+          37.8,
+          39.7,
+          38.1,
+          72.8
+        ]
+      },
+      "throttled": {
+        "optimisticMs": [
+          4.2,
+          3.5,
+          3.4,
+          3.5,
+          3.5
+        ],
+        "ackMs": [
+          277.2,
+          232.4,
+          226.4,
+          220.2,
+          246
+        ]
+      }
+    },
+    "send": {
+      "normal": {
+        "optimisticMs": [
+          26,
+          14.4,
+          12.5,
+          10.6,
+          9.4
+        ],
+        "ackMs": [
+          26.1,
+          14.4,
+          12.6,
+          10.6,
+          21.3
+        ],
+        "success": 5
+      },
+      "throttled": {
+        "optimisticMs": [
+          18,
+          null,
+          10.7,
+          null,
+          9.9
+        ],
+        "ackMs": [
+          49.2,
+          null,
+          23.5,
+          null,
+          31
+        ],
+        "success": 3,
+        "failures": {
+          "optimistic-timeout": 2
+        }
+      }
+    },
+    "photoColdMs": {
+      "normal": [
+        174,
+        184,
+        172,
+        183,
+        178
+      ],
+      "throttled": [
+        847,
+        860,
+        870,
+        835,
+        856
+      ]
+    },
+    "photoWarmDiskMs": {
+      "normal": [
+        134,
+        131,
+        145,
+        135,
+        143
+      ],
+      "throttled": [
+        118,
+        136,
+        100,
+        77,
+        91
+      ]
+    },
+    "reconnectAfter10sOfflineMs": {
+      "normal": [
+        104,
+        103,
+        91,
+        111,
+        113
+      ],
+      "throttled": [
+        117,
+        145,
+        113,
+        123,
+        122
+      ]
+    }
+  },
+  "roomStageMediansMs": {
+    "small": {
+      "normal": {
+        "key": 42.9,
+        "join": 24.6,
+        "history": 0,
+        "renderText": 75.4,
+        "layout": 60.8,
+        "wallOpen": 254
+      },
+      "throttled": {
+        "key": 36.7,
+        "join": 611.9,
+        "history": 0,
+        "renderText": 39.8,
+        "layout": 55.2,
+        "wallOpen": 1095.4
+      }
+    },
+    "medium": {
+      "normal": {
+        "key": 43.7,
+        "join": 28.2,
+        "history": 0,
+        "renderText": 107.8,
+        "layout": 78,
+        "wallOpen": 304.5
+      },
+      "throttled": {
+        "key": 32.9,
+        "join": 1151.9,
+        "history": 0.1,
+        "renderText": 81.8,
+        "layout": 52.6,
+        "wallOpen": 1765.3
+      }
+    },
+    "large": {
+      "normal": {
+        "key": 42.9,
+        "join": 28.4,
+        "history": 0,
+        "renderText": 107.3,
+        "layout": 53.2,
+        "wallOpen": 271.5
+      },
+      "throttled": {
+        "key": 36.6,
+        "join": 1397.1,
+        "history": 1272.3,
+        "renderText": 121.3,
+        "layout": 60.6,
+        "wallOpen": 3097
+      }
+    }
+  },
+  "backgroundResume": {
+    "supported": false,
+    "value": null
+  },
+  "loadingExports": [
+    "loading-open-medium-normal.json",
+    "loading-photo-cold-normal.json",
+    "loading-photo-warm-normal.json",
+    "loading-open-medium-throttled.json",
+    "loading-photo-cold-throttled.json",
+    "loading-photo-warm-throttled.json"
+  ],
+  "notes": [
+    "Raw v8 measurements are authoritative.",
+    "Null/unsupported values are not numeric zero.",
+    "Nested stage durations are not summed.",
+    "Physical iPhone/Android not measured."
+  ]
+}
