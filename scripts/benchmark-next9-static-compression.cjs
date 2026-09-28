@@ -51,6 +51,16 @@ run(async({browser,origin,errors})=>{
   page.on('dialog',d=>d.dismiss());
   const cdp=await context.newCDPSession(page);
   await cdp.send('Network.enable');
+  const profile=process.env.FPCHAT_NEXT9_SLOW==='1'?'slow':'normal';
+  if(profile==='slow'){
+    await cdp.send('Network.emulateNetworkConditions',{
+      offline:false,
+      latency:200,
+      downloadThroughput:125000,
+      uploadThroughput:62500,
+      connectionType:'cellular3g'
+    });
+  }
   const rows=new Map();
   cdp.on('Network.requestWillBeSent',e=>{
     try{
@@ -85,7 +95,7 @@ run(async({browser,origin,errors})=>{
     build:version.build,appRevision:version.appRevision,
     raw,
     browser:{
-      startupMs,
+      profile,startupMs,
       requestCount:requests.length,
       encodedBytes:requests.reduce((a,r)=>a+(Number(r.encodedBytes)||0),0),
       contentEncodings:[...new Set(requests.map(r=>r.contentEncoding).filter(Boolean))],
