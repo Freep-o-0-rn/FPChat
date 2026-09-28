@@ -8,7 +8,7 @@ on:
       - '.github/workflows/performance-baseline-step2.yml'
 
 jobs:
-  media-baseline:
+  baseline-recheck:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -23,5 +23,9 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Media baseline
+      - name: Network owner baseline
+        run: npm run check:171 && npm run test:177:network-fetch
+      - name: Single-owner baseline
+        run: npm run test:180:single-owner-audit
+      - name: Media baseline after owner-map cleanup
         run: npm run test:190
