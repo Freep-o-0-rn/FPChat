@@ -87,13 +87,14 @@ assert(!functionSource(context, 'closeViewerBackToContext').includes('mediaViewe
 
 // Build 185 adds photo binding/navigation. Build 186 adds explicit passive
 // observations to mountSlot/loadAsset. Build 190 is an explicitly approved
-// viewer-media fix: mountSlot alone adds the active-video picture gesture surface
-// above the native control strip; loadAsset, transport/cache order, cleanup and
-// save/download paths remain frozen. The Build 190 browser suite covers that
-// surface together with the unchanged photo-zoom suite.
+// viewer-media fix: mountSlot adds the active-video picture gesture surface and
+// item 15 adds the selected-photo preview -> original presentation inside the same
+// existing loadAsset path. loadAsset, transport/cache order, cleanup and
+// save/download paths remain frozen. Browser suites cover both additions together
+// with the unchanged photo-zoom owner/arbitration contract.
 const FROZEN = Object.freeze({
   gallery: {
-    mountSlot: '4460d5145d57bd9f',
+    mountSlot: 'fd3f520719ce2b7a',
     loadAsset: '5d4db0f6e8f07849',
     dropAsset: '73c987110d973502',
     pruneAssetCache: 'd22f05b91e20c181',
