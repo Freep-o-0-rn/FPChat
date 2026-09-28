@@ -3134,3 +3134,176 @@ No DB/cache migration, identity reset or persistent-data cleanup is required.
 
 Item 16 is next only if explicitly requested.
 
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 16
+
+Status: **done — reconnect stand now distinguishes preserved live socket from a confirmed break + automatic owner recovery**.
+
+### Plan mapping
+
+- Follow-up item: **16 — clarify reconnect verification**.
+- Runtime was not changed.
+- Item 17 was not started.
+
+### Old Step 4 limitation
+
+The old `outageMeasured()` restored network and then called `waitWs()`.
+
+`waitWs()` called `FPConnection170.ensureConnected()`, so the measurement observer itself could create the connection it then reported as reconnect.
+
+The historical Step 4 reconnect values remain recorded, but they are no longer treated as proof of automatic recovery.
+
+The old stand also re-applied its requested throttled CDP profile only after the reconnect wait.
+
+### Passive measurement contract
+
+The corrected stand does not call `ensureConnected`, `ensureStableWsConnected` or `ensureWsConnected` during measured recovery.
+
+It observes:
+
+- `FPConnection170.subscribe()`;
+- the original WebSocket `close` event;
+- `FPConnection170.current()/snapshot()`;
+- `FPLifecycle170`.
+
+Reconnect is valid only if:
+
+- old socket is actually CLOSED;
+- current socket is a different object;
+- new socket is OPEN;
+- `FPConnection170.snapshot().open === true`.
+
+If the old socket stays alive, reconnect remains **null**.
+
+### Natural outage result
+
+Chromium offline/online without forcing socket close:
+
+- normal: 5/5 `live_connection_preserved`;
+- throttled: 5/5 `live_connection_preserved`;
+- confirmed old-socket breaks: 0/10;
+- reconnect measurements: 0/10;
+- reconnect median: **null**.
+
+Therefore simple browser offline emulation did not prove a WebSocket reconnect.
+
+### Confirmed-break recovery
+
+To separately test real recovery, the already-observed raw WebSocket is explicitly closed while the page is offline.
+
+CDP `Network.closeConnections` is not available in Chromium 140 on this runner, so the stand records `raw-WebSocket.close` as the break mechanism.
+
+Before restoring network it verifies old-socket `close` and `readyState === CLOSED`.
+
+After network restore the observer only waits for the existing owners to produce a different OPEN current socket.
+
+Normal:
+
+- confirmed breaks: 5/5;
+- automatic recoveries: 5/5;
+- reconnect median: **15 ms**;
+- range: 13–15 ms.
+
+Throttled:
+
+- confirmed breaks: 5/5;
+- automatic recoveries: 5/5;
+- reconnect median: **465 ms**;
+- range: 464–465 ms.
+
+### Network profile
+
+First exploratory run `36446798035` failed because CDP localhost throttling was not measurably verified.
+
+The final stand applies the throttled profile with Linux `tc/netem` to the loopback server port so HTTP and WebSocket share the same shaping for the whole recovery interval.
+
+Target:
+
+- ~200 ms RTT using 100 ms one-way delay each direction;
+- server -> browser: 1 Mbit/s;
+- browser -> server: 0.5 Mbit/s.
+
+CDP only toggles offline/online and does not replace the rate/latency profile during recovery.
+
+Profile verification:
+
+- normal HTTP probe median: **3.6 ms**;
+- throttled HTTP probe median: **218.6 ms**;
+- added median: **+215.0 ms**;
+- profile marked effective.
+
+`tc -s` confirms packets traversed both shaped queues:
+
+- download: 46,551 B / 155 packets;
+- upload: 68,935 B / 234 packets;
+- drops: 0.
+
+### Owners
+
+Unchanged:
+
+- `FPConnection170` — one current WebSocket/reconnect owner;
+- `FPLifecycle170` — lifecycle signals;
+- `FPSyncCoordinator176` — thin adapter;
+- existing app.js stable WebSocket worker;
+- RoomContext/generation/AbortSignal.
+
+No second owner, reconnect timer, queue or runtime observer/controller was added.
+
+### Verification
+
+Final workflow `36447641140`: **SUCCESS**.
+
+Artifact:
+
+- id `10980919248`;
+- digest `sha256:9b71b2982decfc0ecabdc279dbb9931977bc266bc748e06a3eab7606a1365532`.
+
+Passed:
+
+- benchmark syntax;
+- `check:170`;
+- `test:180:single-owner-audit`;
+- `bench:next:16`.
+
+Measured runtime:
+
+`2bf734e918dfb7e31d14d574d52a7d3256076000`.
+
+Build remains **190.2**.
+
+### Files
+
+Measurement:
+
+- `scripts/benchmark-next16-reconnect.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next16-reconnect.md`;
+- `docs/performance-next16-reconnect-summary.json`;
+- this journal.
+
+No runtime/application source was changed.
+
+Temporary item-16 workflow is removed after preserving the result.
+
+### Limits
+
+- no physical iPhone/Android/PWA reconnect acceptance;
+- natural Chromium offline emulation preserved the old socket in all 10 samples;
+- confirmed-break timing uses explicit raw WebSocket close in the isolated stand;
+- five samples per profile; no p95.
+
+### Rollback
+
+Remove item-16 benchmark/npm script/docs.
+
+No DB/cache migration, identity reset or runtime rollback is required.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 17 is next only if explicitly requested.
+
