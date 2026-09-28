@@ -9,14 +9,57 @@ fs.mkdirSync(OUT,{recursive:true});
 const round=n=>Number.isFinite(Number(n))?Math.round(Number(n)*10)/10:null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
-async function setNetwork(page,profile){
-  const cdp=await page.context().newCDPSession(page);
-  await cdp.send('Network.enable');
-  const cfg=profile==='slow'
+function networkConfig(profile){
+  return profile==='slow'
     ? {offline:false,latency:200,downloadThroughput:125000,uploadThroughput:62500,connectionType:'cellular3g'}
     : {offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1,connectionType:'wifi'};
-  await cdp.send('Network.emulateNetworkConditions',cfg);
+}
+
+async function setPageNetwork(page,profile){
+  const cdp=await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions',networkConfig(profile));
   return cdp;
+}
+
+async function attachServiceWorker(browser,origin){
+  const root=await browser.newBrowserCDPSession();
+  await root.send('Target.setDiscoverTargets',{discover:true});
+  let target=null;
+  for(let i=0;i<80;i++){
+    const {targetInfos}=await root.send('Target.getTargets');
+    target=targetInfos.find(t=>t.type==='service_worker'&&t.url.startsWith(origin+'/sw.js'));
+    if(target)break;
+    await sleep(50);
+  }
+  if(!target)throw new Error('service worker target not found for startup measurement');
+  const {sessionId}=await root.send('Target.attachToTarget',{targetId:target.targetId,flatten:false});
+  let seq=0;
+  const pending=new Map();
+  const listeners=new Map();
+  root.on('Target.receivedMessageFromTarget',event=>{
+    if(event.sessionId!==sessionId)return;
+    const msg=JSON.parse(event.message);
+    if(msg.id&&pending.has(msg.id)){
+      const item=pending.get(msg.id);pending.delete(msg.id);
+      if(msg.error)item.reject(new Error(msg.error.message||'worker CDP command failed'));else item.resolve(msg.result||{});
+      return;
+    }
+    if(msg.method)for(const fn of listeners.get(msg.method)||[])fn(msg.params||{});
+  });
+  const send=(method,params={})=>new Promise((resolve,reject)=>{
+    const id=++seq;pending.set(id,{resolve,reject});
+    root.send('Target.sendMessageToTarget',{sessionId,message:JSON.stringify({id,method,params})}).catch(error=>{
+      pending.delete(id);reject(error);
+    });
+  });
+  const on=(method,fn)=>{const set=listeners.get(method)||new Set();set.add(fn);listeners.set(method,set);return()=>set.delete(fn);};
+  await send('Network.enable');
+  return{root,sessionId,targetId:target.targetId,send,on};
+}
+
+async function setWorkerNetwork(worker,profile){
+  await worker.send('Network.emulateNetworkConditions',networkConfig(profile));
 }
 
 async function installBootSnapshotter(page){
@@ -52,6 +95,34 @@ async function installBootSnapshotter(page){
       }catch{}
     },{once:true});
   });
+}
+
+function startWorkerNetworkTrace(worker,origin){
+  const reqs=new Map();
+  const events=[];
+  const off=[];
+  off.push(worker.on('Network.requestWillBeSent',e=>{
+    if(!e.request?.url?.startsWith(origin))return;
+    const u=new URL(e.request.url);
+    const item={requestId:e.requestId,url:u.pathname+u.search,path:u.pathname,method:e.request.method,type:e.type||null,startTs:e.timestamp};
+    reqs.set(e.requestId,item);events.push(item);
+  }));
+  off.push(worker.on('Network.responseReceived',e=>{
+    const item=reqs.get(e.requestId);if(!item)return;
+    item.status=e.response.status;
+    item.responseTs=e.timestamp;
+    item.fromDiskCache=Boolean(e.response.fromDiskCache);
+    item.protocol=e.response.protocol||null;
+  }));
+  off.push(worker.on('Network.loadingFinished',e=>{
+    const item=reqs.get(e.requestId);if(!item)return;
+    item.endTs=e.timestamp;item.encodedDataLength=round(e.encodedDataLength||0);
+  }));
+  off.push(worker.on('Network.loadingFailed',e=>{
+    const item=reqs.get(e.requestId);if(!item)return;
+    item.endTs=e.timestamp;item.failed=true;item.errorText=e.errorText||null;
+  }));
+  return{events,stop:()=>off.forEach(fn=>fn?.())};
 }
 
 function startNetworkTrace(cdp,origin){
@@ -108,6 +179,35 @@ function normalizeNetwork(events){
     initiatorType:x.initiatorType||null,
     failed:Boolean(x.failed)
   }));
+}
+
+function normalizeWorkerNetwork(events){
+  if(!events.length)return[];
+  const t0=Math.min(...events.map(x=>x.startTs));
+  return events.map(x=>({
+    url:x.url,path:x.path,method:x.method,type:x.type,
+    startMs:round((x.startTs-t0)*1000),
+    responseMs:x.responseTs?round((x.responseTs-t0)*1000):null,
+    endMs:x.endTs?round((x.endTs-t0)*1000):null,
+    durationMs:x.endTs?round((x.endTs-x.startTs)*1000):null,
+    encodedDataLength:x.encodedDataLength??null,
+    status:x.status??null,
+    fromDiskCache:Boolean(x.fromDiskCache),
+    protocol:x.protocol||null,
+    failed:Boolean(x.failed)
+  }));
+}
+
+function summarizeWorkerRequests(requests){
+  const version=requests.filter(r=>r.path==='/version.json');
+  return{
+    count:requests.length,
+    encodedBytes:requests.reduce((a,r)=>a+(Number(r.encodedDataLength)||0),0),
+    versionRequests:version.map((r,i)=>({
+      ordinal:i+1,startMs:r.startMs,durationMs:r.durationMs,encodedDataLength:r.encodedDataLength,
+      fromDiskCache:r.fromDiskCache,status:r.status,protocol:r.protocol
+    }))
+  };
 }
 
 function summarizeRequests(requests){
@@ -177,9 +277,10 @@ async function readLatestBoot(page){
   });
 }
 
-async function traceSaved(page,cdp,origin,profile){
+async function traceSaved(page,cdp,worker,origin,profile){
   await page.evaluate(()=>localStorage.setItem('fpchat:app-build','190.2'));
   const trace=startNetworkTrace(cdp,origin);
+  const workerTrace=startWorkerNetworkTrace(worker,origin);
   const wall=Date.now();
   await page.reload({waitUntil:'domcontentloaded'});
   await waitReady(page);
@@ -187,16 +288,18 @@ async function traceSaved(page,cdp,origin,profile){
   const wallMs=Date.now()-wall;
   const boot=await readLatestBoot(page);
   const requests=normalizeNetwork(trace.events);
-  await trace.stop();
+  const workerRequests=normalizeWorkerNetwork(workerTrace.events);
+  await trace.stop();workerTrace.stop();
   return{
     profile,kind:'saved-data',wallMs,
     boot:boot.current,durations:bootDurations(boot.current),
     requests,requestSummary:summarizeRequests(requests),
+    workerRequests,workerRequestSummary:summarizeWorkerRequests(workerRequests),
     navigationCount:1
   };
 }
 
-async function traceUpdate(page,cdp,origin,profile){
+async function traceUpdate(page,cdp,worker,origin,profile){
   await page.evaluate(()=>{
     localStorage.setItem('fpchat:app-build','190.1');
     sessionStorage.removeItem('fpchat:update-reloading');
@@ -204,6 +307,7 @@ async function traceUpdate(page,cdp,origin,profile){
   });
   const beforeSeq=await page.evaluate(()=>Number(sessionStorage.getItem('fpchat:next3:nav-seq')||'0'));
   const trace=startNetworkTrace(cdp,origin);
+  const workerTrace=startWorkerNetworkTrace(worker,origin);
   const wall=Date.now();
   await page.reload({waitUntil:'domcontentloaded'}).catch(()=>{});
   await page.waitForFunction(before=>Number(sessionStorage.getItem('fpchat:next3:nav-seq')||'0')>=before+2,beforeSeq,{timeout:90000});
@@ -212,12 +316,14 @@ async function traceUpdate(page,cdp,origin,profile){
   const wallMs=Date.now()-wall;
   const boots=await readLatestBoot(page);
   const requests=normalizeNetwork(trace.events);
-  await trace.stop();
+  const workerRequests=normalizeWorkerNetwork(workerTrace.events);
+  await trace.stop();workerTrace.stop();
   return{
     profile,kind:'after-update',wallMs,
     finalBoot:boots.current,finalDurations:bootDurations(boots.current),
     savedBootSnapshots:boots.saved,
     requests,requestSummary:summarizeRequests(requests),
+    workerRequests,workerRequestSummary:summarizeWorkerRequests(workerRequests),
     navigationCount:boots.navSeq-beforeSeq
   };
 }
@@ -229,7 +335,7 @@ run(async({browser,origin,errors})=>{
     measuredAt:new Date().toISOString(),
     network:{
       normal:'no added latency/bandwidth limit; connectionType wifi',
-      slow:'CDP Network.emulateNetworkConditions: latency 200 ms, download 125000 B/s (~1 Mbit/s), upload 62500 B/s (~0.5 Mbit/s), cellular3g'
+      slow:'CDP Network.emulateNetworkConditions applied to both page and active Service Worker targets: latency 200 ms, download 125000 B/s (~1 Mbit/s), upload 62500 B/s (~0.5 Mbit/s), cellular3g'
     },
     scenarios:[]
   };
@@ -240,21 +346,25 @@ run(async({browser,origin,errors})=>{
     page.on('dialog',d=>d.dismiss());
     page.on('pageerror',e=>errors.push(e.message));
     await installBootSnapshotter(page);
-    const cdp=await setNetwork(page,profile);
+    const cdp=await setPageNetwork(page,profile);
 
     await page.goto(origin,{waitUntil:'domcontentloaded'});
     await waitReady(page);
+    await navigatorServiceWorkerReady(page);
+    const worker=await attachServiceWorker(browser,origin);
+    await setWorkerNetwork(worker,profile);
     await createFixture(page,profile);
     await page.evaluate(()=>localStorage.setItem('fpchat:app-build','190.2'));
     await page.reload({waitUntil:'domcontentloaded'});
     await waitReady(page);
-    await navigatorServiceWorkerReady(page);
     await sleep(100);
 
-    report.scenarios.push(await traceSaved(page,cdp,origin,profile));
-    // Network.disable in traceSaved; use a fresh CDP session/profile for update.
-    const cdp2=await setNetwork(page,profile);
-    report.scenarios.push(await traceUpdate(page,cdp2,origin,profile));
+    report.scenarios.push(await traceSaved(page,cdp,worker,origin,profile));
+    // Page Network was disabled by traceSaved. Re-enable it and keep the same
+    // active Service Worker target under the same requested network profile.
+    const cdp2=await setPageNetwork(page,profile);
+    await setWorkerNetwork(worker,profile);
+    report.scenarios.push(await traceUpdate(page,cdp2,worker,origin,profile));
 
     await context.close();
   }
