@@ -36,8 +36,14 @@ jobs:
         run: npm run audit:1902:scroll-save
       - name: Initial window regression
         run: npm run test:next:12
+      - name: Scroll owner contract
+        run: npm run test:178:scroll-contract
       - name: Saved anchor regression
         run: npm run test:178:history-saved-anchor
+      - name: Delayed history user-scroll regression
+        run: npm run test:178:prepend-user-scroll
+      - name: Reply and pin jump regression
+        run: npm run test:178:history-reply-pin-jump
       - name: Unread and bottom browser regression
         run: npm run test:178:unread-restore-bottom
       - name: Same-session reuse regression
