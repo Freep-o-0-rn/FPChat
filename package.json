@@ -186,7 +186,8 @@
     "bench:next:16": "node ./scripts/benchmark-next16-reconnect.cjs",
     "bench:next:17": "node ./scripts/benchmark-next17-send-reaction.cjs",
     "audit:1902:scroll-save": "node ./scripts/audit1902-scroll-save.cjs",
-    "test:190.2:scroll-resilience": "node ./scripts/regression1902-scroll-resilience.cjs"
+    "test:190.2:scroll-resilience": "node ./scripts/regression1902-scroll-resilience.cjs",
+    "test:190.2:scroll-offline": "node ./scripts/regression1902-scroll-offline.cjs"
   },
   "license": "MIT",
   "dependencies": {
