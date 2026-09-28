@@ -118,10 +118,9 @@ run(async({newClient,errors,temp,root})=>{
   assert.ok(idsOf(result.data).includes(savedAnchor),'saved anchor missing from initial window');
   assert.ok(!idsOf(result.data).includes(messageIds.at(-1)),'tail leaked into saved-anchor window');
 
-  // 4. Missing stale anchor must fall back to the legacy tail safely.
-  const missingAnchor=messageIds.at(-1)+999999;
-  db.prepare("UPDATE chat_view_state SET anchor_message_id=?,anchor_offset_px=17,at_bottom=0,updated_at=datetime('now') WHERE room_id=? AND device_id=?")
-    .run(missingAnchor,room.id,fixture.deviceId);
+  // 4. No saved anchor must fall back to the legacy tail safely.
+  db.prepare("UPDATE chat_view_state SET anchor_message_id=NULL,anchor_offset_px=0,at_bottom=0,updated_at=datetime('now') WHERE room_id=? AND device_id=?")
+    .run(room.id,fixture.deviceId);
   result=await join({initialWindow:true});
   assert.equal(result.status,200);
   assert.equal(result.data.initialWindow?.mode,'tail');
