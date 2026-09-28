@@ -113,12 +113,12 @@ run(async({newClient,errors,temp,root})=>{
   assert.notEqual(openedOld,null,'old saved anchor was not mounted');
   assert.ok(Math.abs(openedOld.offset-17)<=3,JSON.stringify(openedOld));
   assert.equal(openedOld.atBottom,false,JSON.stringify(openedOld));
-  await page.evaluate(()=>{
+  await page.evaluate(async()=>{
+    if(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)await FPHistory174.jump();
     const box=document.getElementById('messages');
-    if(activeChatHistory?.hasNewer)throw new Error('fixture unexpectedly has newer history before tail jump');
-    FPScroll173.write(box,box.scrollHeight,'auto');
+    FPScroll173.requestBottom(box);
   });
-  await page.waitForFunction(()=>isMessagesAtBottom(document.getElementById('messages')));
+  await page.waitForFunction(()=>!activeChatHistory?.hasNewer&&!activeChatHistory?.localNewer174&&isMessagesAtBottom(document.getElementById('messages')));
 
   let blockedLeavePuts=0;
   const putPattern='**/api/rooms/'+REOPEN.roomId+'/view-state';
