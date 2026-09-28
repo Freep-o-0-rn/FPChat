@@ -205,13 +205,18 @@ async function backgroundMeasured(page,browser){
   await other.bringToFront();
   await sleep(500);
   const hidden=await page.evaluate(()=>document.visibilityState==='hidden');
+  if(!hidden){
+    await other.close();
+    return{backgroundResumeMs:null,hiddenObserved:false,supported:false};
+  }
   const t=Date.now();
   await page.bringToFront();
-  await page.waitForFunction(()=>document.visibilityState==='visible'&&window.state?.ws?.readyState===WebSocket.OPEN,null,{timeout:15000});
+  await page.waitForFunction(()=>document.visibilityState==='visible',null,{timeout:15000});
+  await waitWs(page);
   await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   const ms=Date.now()-t;
   await other.close();
-  return{backgroundResumeMs:ms,hiddenObserved:hidden};
+  return{backgroundResumeMs:ms,hiddenObserved:true,supported:true};
 }
 async function outageMeasured(page,profile){
   await waitWs(page);
