@@ -121,22 +121,25 @@ run(async({newClient,errors,temp,root})=>{
   });
   await page.waitForFunction(()=>!activeChatHistory?.hasNewer&&!activeChatHistory?.localNewer174&&isMessagesAtBottom(document.getElementById('messages')));
 
-  let blockedLeavePuts=0;
-  const putPattern='**/api/rooms/'+REOPEN.roomId+'/view-state';
-  await page.route(putPattern,async route=>{
-    if(route.request().method()==='PUT'){blockedLeavePuts++;await route.abort('failed');return;}
-    await route.continue();
-  });
+  await page.evaluate(()=>{window.__scroll1902OriginalSend=FPScroll173.sendSnapshot;FPScroll173.sendSnapshot=async()=>null;});
   await page.evaluate(()=>setView('chats'));
+  const durableBottom=await page.evaluate(async({roomId,deviceId})=>FPScroll173.snapshotForJoin(roomId,deviceId),{roomId:REOPEN.roomId,deviceId:REOPEN.deviceId});
+  assert.equal(durableBottom?.atBottom,true,JSON.stringify(durableBottom));
+  assert.ok(Number(durableBottom?.clientSeq)>0,JSON.stringify(durableBottom));
+
+  const beforeReopenDb=db.prepare('SELECT anchor_message_id,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(REOPEN.dbRoomId,REOPEN.deviceId);
+  assert.equal(Number(beforeReopenDb.at_bottom),0,JSON.stringify(beforeReopenDb));
+  assert.equal(Number(beforeReopenDb.anchor_message_id),REOPEN.oldAnchor,JSON.stringify(beforeReopenDb));
+  assert.equal(Number(beforeReopenDb.client_seq),0,JSON.stringify(beforeReopenDb));
+
   await page.evaluate(roomId=>openChat(roomId),REOPEN.roomId);
   const reopened=await visible();
-  assert.ok(blockedLeavePuts>=1,'leave did not attempt its standalone view-state PUT');
+  await page.evaluate(()=>{FPScroll173.sendSnapshot=window.__scroll1902OriginalSend;delete window.__scroll1902OriginalSend;});
   assert.equal(reopened.atBottom,true,JSON.stringify(reopened));
   const reopenDb=db.prepare('SELECT anchor_message_id,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(REOPEN.dbRoomId,REOPEN.deviceId);
   assert.equal(Number(reopenDb.at_bottom),1,JSON.stringify(reopenDb));
   assert.equal(reopenDb.anchor_message_id,null,JSON.stringify(reopenDb));
-  assert.ok(Number(reopenDb.client_seq)>0,JSON.stringify(reopenDb));
-  await page.unroute(putPattern);
+  assert.equal(Number(reopenDb.client_seq),Number(durableBottom.clientSeq),JSON.stringify({reopenDb,durableBottom}));
 
   // C. A native A scroll schedules persistence, then A -> B happens before the
   // old 900ms timer. The concrete A snapshot must be captured before transition;
