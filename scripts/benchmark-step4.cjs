@@ -47,7 +47,11 @@ async function configureNetwork(page,profile){
 async function waitBoot(page,timeout=45000){
   await page.waitForFunction(()=>window.__fpBootReady169At&&!document.getElementById('bootHold152'),null,{timeout});
 }
-async function waitWs(page,timeout=30000){
+async function waitWs(page,timeout=60000){
+  await page.evaluate(async()=>{
+    const deviceId=String(typeof activeChatDeviceId!=='undefined'&&activeChatDeviceId||'');
+    if(deviceId&&window.FPConnection170?.ensureConnected)await window.FPConnection170.ensureConnected(deviceId);
+  });
   await page.waitForFunction(()=>window.state?.ws?.readyState===WebSocket.OPEN,null,{timeout});
 }
 async function createRoom(page,label){
