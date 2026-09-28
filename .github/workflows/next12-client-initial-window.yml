@@ -1,4 +1,4 @@
-name: Next Plan Item 12 Client Initial Window
+name: Next Plan Item 12 Client Initial Window v2
 
 on:
   push:
@@ -30,6 +30,8 @@ jobs:
           node --check public/history174.js
           node --check scripts/regression-next12-client-initial-window.cjs
           node --check scripts/benchmark-next12-initial-window.cjs
+      - name: App revision contract
+        run: npm run test:next:7
       - name: Item 12 client integration
         run: npm run test:next:12
       - name: Item 11 server contract
@@ -46,7 +48,7 @@ jobs:
         run: npm run test:180:single-owner-audit
       - name: Measure item 12 slow profile
         env:
-          FPCHAT_RUNTIME_SHA: 6f47a51fe13e39fe9a37c3fcffefeef1866f49ee
+          FPCHAT_RUNTIME_SHA: 3cf04a31e45998bd2e7318b6c4dc9c980dff5316
           FPCHAT_NEXT10_OUTPUT: ${{ github.workspace }}/next12-output
         run: npm run bench:next:12
       - name: Upload item 12 measurements
