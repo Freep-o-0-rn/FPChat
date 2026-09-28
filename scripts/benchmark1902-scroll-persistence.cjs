@@ -48,18 +48,16 @@ run(async({newClient,errors,temp,root})=>{
 
   await page.evaluate(roomId=>openChat(roomId),fixture.roomId);
 
+  const requests={viewStatePuts:0,messageGets:0,joinPosts:0};
+  page.on('request',request=>{
+    let url;try{url=new URL(request.url());}catch{return;}
+    const method=request.method().toUpperCase();
+    if(/\/view-state$/.test(url.pathname)&&method==='PUT')requests.viewStatePuts++;
+    if(/\/messages$/.test(url.pathname)&&method==='GET')requests.messageGets++;
+    if(/\/join$/.test(url.pathname)&&method==='POST')requests.joinPosts++;
+  });
   await page.evaluate(()=>{
-    window.__scrollBench={viewStatePuts:0,messageGets:0,joinPosts:0,localSnapshotWrites:0};
-    const originalFetch=window.fetch.bind(window);
-    window.fetch=async function(input,init){
-      let url='';
-      try{url=typeof input==='string'?input:String(input?.url||'');}catch{}
-      const method=String(init?.method||input?.method||'GET').toUpperCase();
-      if(/\/view-state(?:\?|$)/.test(url)&&method==='PUT')window.__scrollBench.viewStatePuts++;
-      if(/\/messages(?:\?|$)/.test(url)&&method==='GET')window.__scrollBench.messageGets++;
-      if(/\/join(?:\?|$)/.test(url)&&method==='POST')window.__scrollBench.joinPosts++;
-      return originalFetch(input,init);
-    };
+    window.__scrollBench={localSnapshotWrites:0};
     const proto=Storage.prototype,originalSet=proto.setItem;
     window.__scrollBenchRestoreStorage=()=>{proto.setItem=originalSet;};
     proto.setItem=function(key,value){
@@ -89,7 +87,7 @@ run(async({newClient,errors,temp,root})=>{
 
   await page.waitForTimeout(1100);
   const afterMetrics=await page.evaluate(()=>window.FPScroll173?.snapshot?.()||null);
-  const countersAfterScroll=await page.evaluate(()=>({...window.__scrollBench}));
+  const countersAfterScroll={...requests,...await page.evaluate(()=>({...window.__scrollBench}))};
   const localSnapshot=await page.evaluate(roomId=>{
     try{return typeof STORAGE.viewState==='function'?STORAGE.get(STORAGE.viewState(roomId)):null;}catch{return null;}
   },fixture.roomId);
@@ -100,7 +98,7 @@ run(async({newClient,errors,temp,root})=>{
   const leaveWallMs=Date.now()-leaveStart;
 
   // Reset request counters only for reopen so request count is comparable.
-  await page.evaluate(()=>{window.__scrollBench.messageGets=0;window.__scrollBench.joinPosts=0;});
+  requests.messageGets=0;requests.joinPosts=0;
   const reopenStarted=Date.now();
   await page.evaluate(roomId=>openChat(roomId),fixture.roomId);
   const reopenWallMs=Date.now()-reopenStarted;
@@ -154,8 +152,8 @@ run(async({newClient,errors,temp,root})=>{
     navigation:{
       leaveWallMs,
       reopenWallMs,
-      reopenJoinPosts:reopen.counters.joinPosts,
-      postOpenMessageGets:reopen.counters.messageGets,
+      reopenJoinPosts:requests.joinPosts,
+      postOpenMessageGets:requests.messageGets,
       expectedAnchor,
       reopenedAnchor:reopen.actualAnchor,
       reopenedTargetOffset:reopen.targetOffset,
