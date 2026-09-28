@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "task": "FPChat 190.2 Telegram-like scroll position restore",
+  "branch": "fix/190.2-scroll-restore-races",
+  "base": "1e06e79d95f1ed87a7b605b659929c39bfc36127",
+  "build": "190.2",
+  "status": "ci_green_physical_devices_not_executed",
+  "baselineReproduction": {
+    "runtimeCommit": "3bd06fd942",
+    "workflowRunId": 36465313536,
+    "conclusion": "success",
+    "reproduced": {
+      "lateOldPutOverwritesNewer": true,
+      "immediateReopenSeesStaleServerState": true,
+      "directAToBLosesAPositionAndTimerWritesB": true
+    }
+  },
+  "finalVerification": {
+    "workflowRunId": 36464252383,
+    "head": "7d1dabef62ae6b568f02f4e80901935ae2b0e6c7",
+    "conclusion": "success",
+    "checks": [
+      "three-race corrected assertions",
+      "scroll resilience",
+      "offline recovery",
+      "initial window",
+      "scroll owner",
+      "saved anchor",
+      "delayed history/user scroll",
+      "reply/pin jump",
+      "unread/tail",
+      "same-session reuse",
+      "RoomContext",
+      "history page owner",
+      "gesture/scroll ownership",
+      "back scroll",
+      "scroll writer",
+      "keyboard/orientation",
+      "header keyboard",
+      "bounded DOM",
+      "read visibility",
+      "late thumbnail/layout",
+      "single-owner audit"
+    ]
+  },
+  "benchmark": {
+    "workflowRunId": 36462365373,
+    "runtimeHead": "e8e4438b1299e40c3cfa86e16edcaf4b4e6492ef",
+    "artifactId": 10987728579,
+    "artifactDigest": "sha256:2bac072ba7ace880801db379c98543c46773f5871a7f150e224bff7e7ff90139",
+    "before": {
+      "scrollHandlerMedianMs": 0.3,
+      "localSnapshotWrites": 0,
+      "networkPuts": 1,
+      "durableLocalSnapshot": false,
+      "leaveWallMs": 6,
+      "reopenWallMs": 161,
+      "joinPosts": 1,
+      "postOpenMessageGets": 4,
+      "offsetErrorPx": 0
+    },
+    "current": {
+      "scrollHandlerMedianMs": 0.3,
+      "localSnapshotWrites": 8,
+      "networkPuts": 2,
+      "durableLocalSnapshot": true,
+      "captureAverageMs": 0.14,
+      "localCaptureIntervalMs": 300,
+      "networkMaxLagMs": 900,
+      "leaveWallMs": 6,
+      "reopenWallMs": 163,
+      "joinPosts": 1,
+      "postOpenMessageGets": 4,
+      "offsetErrorPx": 0
+    }
+  },
+  "implementation": {
+    "scrollOwner": "FPScroll173",
+    "localSnapshotVersion": 2,
+    "localCaptureIntervalMs": 300,
+    "networkMaxLagMs": 900,
+    "serverOrderingField": "chat_view_state.client_seq",
+    "staleResponse": "409 VIEW_STATE_STALE",
+    "joinAccessBypassed": false,
+    "newManagerAdded": false,
+    "runtimeObserverChangedToController": false
+  },
+  "devices": {
+    "iPhone": "not_executed",
+    "Android": "not_executed"
+  },
+  "productionPublished": false,
+  "mergedToMain": false
+}
