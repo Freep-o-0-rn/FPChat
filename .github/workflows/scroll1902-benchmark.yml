@@ -6,6 +6,7 @@ on:
       - fix/190.2-scroll-restore-races
     paths:
       - '.github/workflows/scroll1902-benchmark.yml'
+      - 'scripts/benchmark1902-scroll-persistence.cjs'
 
 jobs:
   benchmark:
