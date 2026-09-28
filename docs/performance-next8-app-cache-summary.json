@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 8,
+  "build": "190.2",
+  "baselineItem6": {
+    "runtimeSha": "b75d01761706280cfc1e04d253739d32160c2ad2",
+    "runId": 36414543629,
+    "selectedResource": "/app.js?v=190.2",
+    "slowOrdinary": {
+      "durationMs": 864.1,
+      "networkStatus": 304,
+      "encodedBytes": 267,
+      "fromDiskCache": false,
+      "servedFromCache": false
+    },
+    "slowReload": {
+      "durationMs": 867.8,
+      "networkStatus": 304,
+      "encodedBytes": 267,
+      "fromDiskCache": false,
+      "servedFromCache": false
+    },
+    "normalOrdinary": {
+      "durationMs": 47.4,
+      "networkStatus": 304,
+      "encodedBytes": 267
+    },
+    "normalReload": {
+      "durationMs": 42.3,
+      "networkStatus": 304,
+      "encodedBytes": 267
+    }
+  },
+  "item8": {
+    "implementationHead": "f7849630b5cbf59b17eb57c947703d2750f9c9a6",
+    "runId": 36416821530,
+    "artifactId": 10968107003,
+    "artifactDigest": "sha256:e82d81a0c3b2327a27c33cbbf2222e6f46091bce3182a3fd7657c79643e03dd2",
+    "cachePolicy": "public, max-age=31536000, immutable",
+    "immutableUrl": "/app.js?v=190.2&r=c6cb6b3d58e5423d11d628882c00564df7b73d21",
+    "exactRevisionOnly": true,
+    "staleRevision": "410 + Cache-Control: no-store",
+    "unrevisionedApp": "falls through to ordinary static policy",
+    "excluded": [
+      "HTML",
+      "/version.json",
+      "/sw.js",
+      "/api/*"
+    ],
+    "slowOrdinary": {
+      "durationMs": 7.8,
+      "networkStatus": null,
+      "encodedBytes": 0,
+      "fromDiskCache": true,
+      "servedFromCache": false
+    },
+    "slowReload": {
+      "durationMs": 0.1,
+      "networkStatus": null,
+      "encodedBytes": 0,
+      "fromDiskCache": true,
+      "servedFromCache": true
+    },
+    "normalOrdinary": {
+      "durationMs": 7.8,
+      "networkStatus": null,
+      "encodedBytes": 0,
+      "fromDiskCache": true,
+      "servedFromCache": false
+    },
+    "normalReload": {
+      "durationMs": 0.2,
+      "networkStatus": null,
+      "encodedBytes": 0,
+      "fromDiskCache": true,
+      "servedFromCache": true
+    }
+  },
+  "reductions": {
+    "normalOrdinaryMs": 39.6,
+    "normalReloadMs": 42.1,
+    "slowOrdinaryMs": 856.3,
+    "slowReloadMs": 867.7
+  },
+  "startupWall": {
+    "item6": {
+      "normalOrdinary": 370,
+      "normalReload": 335,
+      "slowOrdinary": 4141,
+      "slowReload": 4135
+    },
+    "item8": {
+      "normalOrdinary": 402,
+      "normalReload": 353,
+      "slowOrdinary": 4083,
+      "slowReload": 4268
+    },
+    "interpretation": "single-run wall time is dominated by many other max-age=0 resources; do not attribute wall variation solely to app.js"
+  },
+  "updateRollback": {
+    "verification": "test:next:7 rerun under item8 CI",
+    "sameBrowserContext": true,
+    "immutableSyntheticResponses": true,
+    "result": "A->B changes URL and executes/returns B bytes; B->A rollback changes URL back and executes/returns A bytes",
+    "currentServerContract": "exact current r returns current bytes immutable; stale r is rejected 410 no-store"
+  }
+}
