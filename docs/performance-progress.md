@@ -86,7 +86,7 @@ Known diagnostic drift recorded for **Step 3**, not changed in Step 1: the curre
 | 1 | **done** | Working branch, architecture map and rules |
 | 2 | **done** | Baseline regressions green after stale source-guard maintenance; no runtime behavior change |
 | 3 | **done** | Observer coverage; existing stage hooks sufficient; export build identity corrected |
-| 4 | pending | Baseline performance measurements |
+| 4 | **done** | Five-run Chromium baseline: normal/throttled, 30/1000/10000 messages, media, send, reaction, scroll and 10 s outage |
 | 5 | pending | One confirmed startup wait |
 | 6 | pending | One confirmed critical JS/CSS resource |
 | 7 | pending | One confirmed server join/history bottleneck |
@@ -511,6 +511,118 @@ Rollback: revert only the regression-source-guard commits listed above. There is
 
 ### Active continuation after Step 2.2
 
-**Step 4 — collect the performance baseline.**
+Step 4 was subsequently completed. See the Step 4 section below for the current continuation point.
 
-Steps 2 and 3 are now both complete. The next stage must collect repeated measurements before choosing any optimization target.
+
+## Step 4 — performance baseline
+
+Status: **done**.
+
+### Measured code and environment
+
+- Runtime baseline SHA: `1c1e0453416203f6c916f214dae36bd1186f0047`.
+- Build: **190.2**.
+- Successful measurement workflow run: `36387427449`.
+- Measurement run HEAD: `4bf9cbdea791aca730da1960ccc89ab8af88cfad`.
+- Artifact: `10955296789`, `step4-performance-baseline`, digest `sha256:d8733c9baed9e510358bacf60c3b570538fd1ea32039f23c4d959357d4567f56`.
+- Chromium 140.0.7339.16, Linux x64 GitHub runner, Node 22.23.2, 4 vCPU, AMD EPYC 7763, ≈15.6 GiB RAM.
+- Real `server.js` against isolated temporary SQLite.
+- Synthetic fixed rooms: 30, ~1000 and ~10 000 messages.
+- Five identical runs per scenario.
+- Physical iPhone/Android: not measured.
+
+The benchmark harness is `scripts/benchmark-step4.cjs`. It is test/measurement code only; Step 4 did not optimize or alter application runtime behavior.
+
+### Network model
+
+Normal profile adds no latency or bandwidth limit.
+
+Throttled profile uses Chromium CDP `Network.emulateNetworkConditions` with:
+
+- 200 ms latency;
+- 125000 B/s download ≈ 1 Mbit/s;
+- 62500 B/s upload ≈ 0.5 Mbit/s;
+- `cellular3g` connection type.
+
+This shaping is applied in Chromium's network stack, not on the OS or server. The 10-second outage uses `BrowserContext.setOffline(true)` for 10000 ms and then restores connectivity.
+
+Site identity/localStorage are never cleared. Repeated passes preserve normal caches. Cold-media runs clear only the managed image cache through `FPStorage167.clearCache(['image'])`.
+
+### Key medians
+
+| Scenario | Normal | Throttled |
+| --- | ---: | ---: |
+| Saved-data startup | 289 ms | 4973 ms |
+| First startup through update path | 515 ms | 6830 ms |
+| Open 30 messages | 254 ms | 1095.4 ms |
+| Open ~1000 messages | 304.5 ms | 1765.3 ms |
+| Open ~10 000 messages | 271.5 ms | 3097 ms |
+| Scroll older ~1000 | 65 ms | 618.5 ms |
+| Scroll older ~10 000 | 80.8 ms | 592 ms |
+| Reaction optimistic | 2.3 ms | 3.5 ms |
+| Reaction ACK | 38.5 ms | 232.4 ms |
+| Cold photo | 178 ms | 856 ms |
+| Warm-disk photo | 135 ms | 100 ms |
+| Reconnect after 10 s offline | 104 ms | 122 ms |
+
+No p95 is reported because each group has n=5. For n≥20 the retained rule is nearest-rank `ceil(0.95*n)`.
+
+### Confirmed latency sources
+
+1. **Startup asset/update path on slow network.** Saved-data startup moves from 289 ms median to 4973 ms; the update path moves from 515 ms to 6830 ms.
+2. **Room join/history on slow network.** For the ~1000-message room, wall open is 1765.3 ms and join is 1151.9 ms. For ~10 000, wall open is 3097 ms with join 1397.1 ms and history 1272.3 ms. Nested durations are attribution only and are not summed with wall time.
+3. **Cold media transfer.** The same photo is 856 ms median cold versus 100 ms warm-disk under throttling. A representative cold loading trace has queue ≈0 ms, cache ≈10 ms, decrypt ≈3 ms and `responseAfterAdmission` ≈378 ms, so queue/decrypt are not the dominant delay in that trace.
+
+### Pre-existing send finding
+
+Normal text send succeeded 5/5 times; optimistic median 12.5 ms and ACK median 14.4 ms.
+
+Under throttling, only 3/5 samples produced the optimistic row and ACK. The successful samples had optimistic median 10.7 ms and ACK median 31 ms. Two samples were recorded as `optimistic-timeout` after 10 seconds while the socket remained open.
+
+Those two samples remain `null`, not 0. Step 4 does not assert the root cause. This is a pre-existing baseline finding for the existing `FPTextSend170` send path and should be investigated in the later send/retry/ACK performance step, not silently folded into another optimization.
+
+### Background/resume
+
+Headless Chromium did not transition the measured page into `visibilityState === 'hidden'`. Background/resume therefore remains unsupported in this laboratory run and is recorded as `null`, not zero. Physical-device acceptance is required.
+
+### Baseline files
+
+Permanent repository records:
+
+- `docs/performance-step4-baseline.md` — methodology, medians/ranges, raw five-run values and interpretation;
+- `docs/performance-step4-summary.json` — machine-readable raw baseline values;
+- `scripts/benchmark-step4.cjs` — repeatable benchmark harness.
+
+The successful CI artifact additionally contains the real `FPRuntime169.loading` exports:
+
+- `loading-open-medium-normal.json`;
+- `loading-photo-cold-normal.json`;
+- `loading-photo-warm-normal.json`;
+- `loading-open-medium-throttled.json`;
+- `loading-photo-cold-throttled.json`;
+- `loading-photo-warm-throttled.json`;
+- `step4-summary.json`.
+
+The harness verified that fixture room/device/secret values were absent from the loading exports.
+
+After the successful v8 run, only the benchmark aggregator was corrected so `null`/unsupported values cannot be coerced to numeric zero. The raw v8 samples did not change and no runtime rerun was required for that reporting-only correction.
+
+### Regression / behavior impact
+
+Step 4 introduced no application optimization and no production/runtime behavior change. All application measurements target the fixed runtime SHA above.
+
+Earlier Step 2/3 behavioral and ownership gates remain the baseline acceptance set. The benchmark itself completed all requested laboratory scenarios in the successful v8 run.
+
+### Targets are not results
+
+The 100 ms response target and 600 ms repeated-open target on a weak Android are optimization acceptance goals only. Step 4 does not claim those targets were achieved, and the GitHub runner is not a weak Android.
+
+### Rollback
+
+The benchmark script and Step 4 documentation can be reverted without any application/data migration. No production rollback is needed because runtime behavior was not changed.
+
+### Current continuation
+
+**Step 5 — isolate one confirmed startup wait.**
+
+Use the Step 4 startup evidence to choose exactly one measured startup dependency/wait. Do not begin Step 6 or unrelated room/media/send optimization in the same change.
