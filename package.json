@@ -183,7 +183,8 @@
     "bench:next:14": "node ./scripts/benchmark-next14-photo-cache.cjs",
     "test:next:15": "node ./scripts/regression-next15-progressive-photo.cjs",
     "bench:next:15": "node ./scripts/benchmark-next15-progressive-photo.cjs",
-    "bench:next:16": "node ./scripts/benchmark-next16-reconnect.cjs"
+    "bench:next:16": "node ./scripts/benchmark-next16-reconnect.cjs",
+    "bench:next:17": "node ./scripts/benchmark-next17-send-reaction.cjs"
   },
   "license": "MIT",
   "dependencies": {
