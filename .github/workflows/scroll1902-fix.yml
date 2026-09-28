@@ -6,6 +6,18 @@ on:
       - fix/190.2-scroll-restore-races
     paths:
       - '.github/workflows/scroll1902-fix.yml'
+      - 'public/app.js'
+      - 'public/room-open170.js'
+      - 'public/version.json'
+      - 'server.js'
+      - 'src/db.js'
+      - 'scripts/audit1902-scroll-save.cjs'
+      - 'scripts/regression1902-scroll-resilience.cjs'
+      - 'scripts/regression178-scroll-contract.cjs'
+      - 'scripts/regression178-history-saved-anchor.cjs'
+      - 'scripts/regression178-unread-restore-bottom-browser.cjs'
+      - 'scripts/regression-next12-client-initial-window.cjs'
+      - 'package.json'
 
 jobs:
   verify:
