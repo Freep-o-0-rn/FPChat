@@ -280,14 +280,18 @@
 
       let buildSuffix = '';
       let reactionBuildSuffix188 = '';
+      let loaderVersionResult174 = null;
       try {
         window.FPBoot152.mark186('version-start');
         const res = await fetch('/version.json', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           const buildId = String(data?.build ?? '').trim();
-          if (/^\d+(?:\.\d+)*$/.test(buildId)) {
+          if (/^\d+(?:\.\d+)*$/.test(buildId) && Number.isFinite(Number(buildId))) {
             buildSuffix = `?v=${encodeURIComponent(buildId)}`;
+            // Reuse is safe only for the exact build that also versions the
+            // startup resource graph loaded below.
+            loaderVersionResult174 = Object.freeze({build:buildId,resourceBuild:buildId});
           }
           const reactionRevision = String(data?.updatedAt ?? '').trim();
           if (reactionRevision) {
@@ -323,7 +327,7 @@
       let resolveOwners174;
       const ownersReady174=new Promise(resolve=>{resolveOwners174=resolve;});
       window.addEventListener('fpchat:send-owners-ready174',()=>resolveOwners174(true),{once:true});
-      window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),execution:'definitions before app; navigation after room/open/send owners'});
+      window.FPStartup174=Object.freeze({dependencies:startupDependencies174,preloaded:preload174,ready:ownersReady174,fail:()=>resolveOwners174(false),versionResult:loaderVersionResult174,execution:'definitions before app; navigation after room/open/send owners'});
 
       // Build 188: reaction owners are feature-only and load after boot-ready so
       // reactions never extend the stable Build 187 critical startup path.
