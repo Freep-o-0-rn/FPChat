@@ -3307,3 +3307,184 @@ No DB/cache migration, identity reset or runtime rollback is required.
 
 Item 17 is next only if explicitly requested.
 
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 17
+
+Status: **done — send/reaction manager, DOM and frame-opportunity metrics are separated; runtime unchanged**.
+
+### Plan mapping
+
+- Follow-up item: **17 — split state change from visible response**.
+- This is measurement semantics only.
+- Item 18 was not started.
+
+### Historical baseline is preserved
+
+Historical Step 4 values remain unchanged in `docs/performance-step4-summary.json`.
+
+Reaction historical semantics:
+
+- optimistic = immediate `FPReactionManager188.get()`;
+- ACK = mutation completion plus two nested `requestAnimationFrame` callbacks;
+- target reaction-pill DOM was not independently verified.
+
+Send historical semantics:
+
+- optimistic = matching outgoing DOM row;
+- ACK = that row promoted to numeric message id;
+- `FPMessageStore172` optimistic state was not independently measured.
+
+Historical throttled send had 3/5 successes and two `optimistic-timeout` failures.
+
+### New metric events
+
+Send:
+
+- `managerStateMs`: `FPMessageStore172` optimistic record for unique outgoing text;
+- `domChangeMs`: matching outgoing message row/text observed;
+- `rafOpportunityMs`: first rAF callback scheduled after that DOM state is observed;
+- `ackMs`: matching row promoted to numeric server message id;
+- success additionally requires canonical store text/id to match the promoted row.
+
+Reaction:
+
+- `managerStateMs`: `FPReactionManager188` optimistic own-heart state;
+- `domChangeMs`: target heart pill exists with `aria-pressed=true`;
+- `rafOpportunityMs`: first rAF callback after that target pill state is observed;
+- `ackMs`: mutation promise resolves;
+- success additionally requires final manager + target pill to still represent own heart.
+
+After each reaction measurement, cleanup is verified before reuse.
+
+### rAF terminology
+
+`requestAnimationFrame` is recorded only as the nearest browser frame callback opportunity after the required DOM state.
+
+It is not described as hardware paint, physical presentation or a guaranteed visible pixel timestamp.
+
+### Failure accounting
+
+Every requested sample is retained.
+
+- missing stages remain `null`, never 0;
+- failures are counted by stage;
+- success rate is recorded separately;
+- successful samples must verify the actual final action result.
+
+### Results
+
+Five attempts per action/profile.
+
+Normal send:
+
+- 5/5 success;
+- manager state median: **0.8 ms**;
+- DOM median: **2.6 ms**;
+- rAF opportunity median: **13.0 ms**;
+- ACK median: **5.1 ms**.
+
+Throttled send:
+
+- 5/5 success;
+- manager state median: **0.6 ms**;
+- DOM median: **1.9 ms**;
+- rAF opportunity median: **4.0 ms**;
+- ACK median: **33.2 ms**.
+
+The historical two throttled send timeouts did not reproduce in this run.
+
+Normal reaction:
+
+- 5/5 success;
+- manager state median: **0.7 ms**;
+- target pill DOM median: **0.7 ms**;
+- rAF opportunity median: **10.9 ms**;
+- ACK median: **4.1 ms**;
+- cleanup: 5/5.
+
+Throttled reaction:
+
+- 5/5 success;
+- manager state median: **1.0 ms**;
+- target pill DOM median: **1.0 ms**;
+- rAF opportunity median: **1.7 ms**;
+- ACK median: **214.3 ms**;
+- cleanup: 5/5.
+
+Do not calculate speedup percentages against historical ACK values because the metric boundaries are intentionally different.
+
+### Ownership
+
+Unchanged:
+
+- `FPSendManager177`: stateless dispatcher;
+- `FPTextSend170`: text submit owner;
+- `FPMessageStore172`: canonical message state;
+- existing pending text/ACK path;
+- `FPReactionManager188`: reaction state;
+- `FPReactionRenderer188`: reaction DOM worker;
+- `FPReactionArbiter188`: reaction mutation serialization;
+- `FPRoomContext170` / generation / AbortSignal;
+- `FPRuntime169`: passive observer only.
+
+Benchmark-local MutationObservers/listeners are removed after each sample and own no runtime control path.
+
+### Verification
+
+Workflow `36449713023`: **SUCCESS**.
+
+Artifact:
+
+- id `10981923302`;
+- digest `sha256:e518db1d9db13b68546839f01c5fc93e0d2574200b7abc35ea21ac6235f6cca6`.
+
+Passed:
+
+- benchmark syntax;
+- `test:177:send-manager`;
+- `test:178:message-render-owner`;
+- `regression1884-reaction-interaction.cjs`;
+- `bench:next:17`.
+
+Measured runtime:
+
+`2bf734e918dfb7e31d14d574d52a7d3256076000`.
+
+Build remains **190.2**.
+
+### Files
+
+Measurement:
+
+- `scripts/benchmark-next17-send-reaction.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next17-send-reaction.md`;
+- `docs/performance-next17-send-reaction-summary.json`;
+- this journal.
+
+No runtime/application source file was changed.
+
+Temporary item-17 workflow is removed after preserving the result.
+
+### Limits
+
+- Chromium/Linux CI only;
+- no physical iPhone/Android/PWA display timing;
+- five samples per action/profile; no p95;
+- rAF is not hardware presentation;
+- historical/new ACK values have different event boundaries.
+
+### Rollback
+
+Remove item-17 benchmark/npm script/docs.
+
+No runtime rollback, DB migration, cache clear or identity reset is required.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 18 is next only if explicitly requested.
+
