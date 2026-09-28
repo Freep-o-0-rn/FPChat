@@ -12,9 +12,10 @@ const blockedEvents=read('src/blocked-invite-events165.js');
 const client=read('public/user-blocks165.js');
 
 // Production passes the one canonical server owner into the blocked-invite event store.
-assert(server.includes("const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);"),'canonical block owner construction changed');
+const canonicalBlockOwnerAt=server.search(/\bconst\s+fpUserBlocks165\s*=\s*createUserBlocks165\s*\(/);
+assert(canonicalBlockOwnerAt>=0,'canonical block owner construction changed');
 assert(server.includes("createBlockedInviteEventStore(db, { userBlocks: fpUserBlocks165 })"),'blocked invite event store does not receive canonical owner');
-assert(server.indexOf('createUserBlocks165(db)')<server.indexOf('createBlockedInviteEventStore(db, { userBlocks: fpUserBlocks165 })'),'canonical owner must exist before dependent store');
+assert(canonicalBlockOwnerAt<server.indexOf('createBlockedInviteEventStore(db, { userBlocks: fpUserBlocks165 })'),'canonical owner must exist before dependent store');
 
 // The bypass is gone: blocked-invite event module may not own/read chat_request_blocks directly.
 assert(!blockedEvents.includes('chat_request_blocks'),'blocked invite event store still reads canonical table directly');
