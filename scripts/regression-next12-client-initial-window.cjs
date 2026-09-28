@@ -55,7 +55,8 @@ run(async({newClient,errors,temp,root})=>{
   const markAllRead=db.prepare("UPDATE messages SET status='read',delivered_at=COALESCE(delivered_at,datetime('now')),read_at=COALESCE(read_at,datetime('now')) WHERE room_id=?");
 
   // A keeps its seeded first unread at index 200 and also has an older saved
-  // anchor, proving unread remains the first priority.
+  // reading anchor. The saved non-bottom position must win: new unread must
+  // not yank a user away from old history.
   A.savedAnchor=A.ids[100];
   A.unread=A.ids[200];
   upsertView.run(A.dbRoomId,A.deviceId,A.savedAnchor,13,0);
@@ -228,7 +229,7 @@ run(async({newClient,errors,temp,root})=>{
       bMounted:Boolean(findMessageElement(bTarget)),
       events:[...window.__next12RoomEvents]
     };
-  },{a:A.roomId,b:B.roomId,aTarget:A.unread,bTarget:B.savedAnchor});
+  },{a:A.roomId,b:B.roomId,aTarget:A.savedAnchor,bTarget:B.savedAnchor});
   assert.equal(aba.stateRoomId,A.roomId,JSON.stringify(aba));
   assert.equal(aba.contextRoomId,A.roomId,JSON.stringify(aba));
   assert.equal(aba.aMounted,true,JSON.stringify(aba));
@@ -242,7 +243,7 @@ run(async({newClient,errors,temp,root})=>{
 
   db.close();
   assert.deepEqual(errors,[]);
-  console.log('PASS item 12 current server opens first unread/saved anchor without client before+after hydration');
+  console.log('PASS item 12 current server keeps saved old-history position ahead of unread fallback and avoids client before+after hydration');
   console.log('PASS item 12 FPHistory174 continues older/newer from server-provided cursors');
   console.log('PASS item 12 old-server legacy join falls back to existing client around requests');
   console.log('PASS item 12 deleted/stale anchor server tail fallback is honored without retry');
