@@ -235,7 +235,7 @@ run(async({newClient,errors})=>{
   const final=await snap();
   assert.ok(final.maxActiveBlob<=3,'item 15 introduced extra media fetch parallelism beyond existing current/neighbor slots');
   assert.equal(await page.evaluate(()=>next15.thumbCalls),thumbCallsBefore,'viewer introduced thumbnail I/O');
-  assert.equal(final.layer,'media-viewer');
+  assert.equal(final.layer,'viewer');
   await page.locator('.media-viewer-close').click();
   assert.equal((await snap()).pointer,null);
   assert.deepEqual(errors,[]);
