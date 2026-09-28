@@ -143,16 +143,17 @@ run(async({newClient,errors,temp,root})=>{
     return{elapsedMs,state,requests:roomRequests(item.roomId)};
   }
 
-  // 1. Current server + first unread: no client around requests for the target.
-  let result=await openAndInspect(A,A.unread,false);
+  // 1. Current server + saved old-history position + unread: the saved
+  // non-bottom anchor wins, so new unread does not yank the reader away.
+  let result=await openAndInspect(A,A.savedAnchor,false);
   let rows=result.requests;
   const joinA=rows.find(row=>row.path.endsWith('/join'));
   assert.ok(joinA,'A join missing');
   assert.equal(JSON.parse(joinA.postData||'{}').initialWindow,true,'client did not opt into initial window');
-  assert.equal(rows.some(row=>row.before===String(A.unread+1)),false,'A redundantly fetched before unread');
-  assert.equal(rows.some(row=>row.after===String(A.unread)),false,'A redundantly fetched after unread');
-  assert.equal(result.state.lastMounted,false,'A unexpectedly mounted latest tail instead of unread window');
-  assert.equal(result.state.hasNewer,true,'A unread window lost newer continuation');
+  assert.equal(rows.some(row=>row.before===String(A.savedAnchor+1)),false,'A redundantly fetched before saved anchor');
+  assert.equal(rows.some(row=>row.after===String(A.savedAnchor)),false,'A redundantly fetched after saved anchor');
+  assert.equal(result.state.lastMounted,false,'A unexpectedly mounted latest tail instead of saved old-history window');
+  assert.equal(result.state.hasNewer,true,'A saved window lost newer continuation');
 
   // 2. Current server + saved anchor: no client around requests; both history
   // directions remain loadable through the existing FPHistory174 owner.
