@@ -197,3 +197,139 @@ This evidence therefore points toward follow-up **item 5** (remove one proven no
 - Request byte accounting uses CDP `encodedDataLength`.
 - Service-worker/cache flags are Chromium observations from this isolated localhost stand.
 - Nested startup phases overlap; they are attribution boundaries and are not added together.
+
+
+---
+
+## Correction 3.1 — Service Worker network-emulation coverage
+
+This section preserves the original item-3 measurements above as **historical evidence** and corrects only the interpretation/timings affected by Service Worker network coverage.
+
+### Why item 3 under-measured version.json on the slow profile
+
+The original item-3 stand applied `Network.emulateNetworkConditions` only to the page CDP target.
+
+However, `sw.js` handles `/version.json` with:
+
+`event.respondWith(fetch(event.request, { cache: 'no-store' }))`
+
+That upstream fetch runs from the Service Worker target, which has its own CDP Network domain.
+
+An isolated diagnostic run proved the gap.
+
+GitHub Actions run: `36409730941`.
+
+| Probe | Page wall | Worker upstream | Result |
+| --- | ---: | ---: | --- |
+| 200 ms throttle on page target only, SW active | 3.7 ms | 1.8 ms | SW upstream did **not** inherit page throttle |
+| Same request with 200 ms throttle applied to page **and SW target** | **204.9 ms** | **202.6 ms** | expected latency appears |
+| Control context with Service Worker blocked, page target throttled | **226.7 ms** | n/a | page-target throttle works for direct network |
+
+For the throttled SW request Chromium observed:
+
+- a unique `/version.json?probe=...` request in the **Service Worker target**;
+- HTTP 200;
+- HTTP/1.1;
+- 409 encoded bytes;
+- `fromDiskCache=false`.
+
+This is direct evidence that the Service Worker fetch reaches the server/network layer and that the old page-only emulation did not cover it.
+
+The page-level `fromServiceWorker=true` flag means the page response came through the Service Worker interception path. It is **not evidence that the response came from cache**.
+
+Likewise, zero encoded bytes in the page-target event is not cache evidence: the corrected worker-target trace records 409 encoded bytes for the upstream response.
+
+### Corrected measurement configuration
+
+The startup benchmark was changed only as test infrastructure:
+
+- the requested network profile is now applied to both the page target and the active Service Worker target;
+- the Service Worker target is observed separately for its upstream requests;
+- page logical requests and Service Worker upstream requests are kept as separate accounting surfaces to avoid double-counting;
+- application runtime, `sw.js`, startup owners and production configuration are unchanged.
+
+Corrected startup run:
+
+- GitHub Actions `36409985895`;
+- artifact `10963583079` (`next31-corrected-startup`);
+- digest `sha256:d84d31af228e54db7e35d4044d537a3f0a4930c8d7672a5229daf699ebe74100`;
+- measured runtime SHA remains `1eb7a97184a307562c51525aa358450f8346ea36`.
+
+### Corrected saved-data startup
+
+| Boundary | Normal | Slow |
+| --- | ---: | ---: |
+| wall | 346 ms | **4199 ms** |
+| loader → boot-ready | 215.5 ms | **3865.5 ms** |
+| first version boundary | 6.4 ms | **212.3 ms** |
+| version-ready → owners-ready | 66.5 ms | **1278.9 ms** |
+| service-worker registration | 1.0 ms | 1.7 ms |
+| second version/update gate | 10.7 ms | **218.9 ms** |
+| layers | 44.7 ms | 224.1 ms |
+| final asset settle | 16.7 ms | 27.1 ms |
+
+Corrected Service Worker upstream `version.json` durations:
+
+- normal: 2.7 ms, 4.5 ms;
+- slow: **210.2 ms, 217.2 ms**.
+
+The second logical version request starts 1492.9 ms after the first on the slow profile. That start delay is mostly the already-existing owners sequence plus the first version wait; the second request's own upstream duration is about 217 ms.
+
+### Corrected update path
+
+Normal update path:
+
+- total wall: **521 ms**;
+- four SW-upstream version requests across two navigations: 2.2, 6.9, 2.0, 8.1 ms.
+
+Slow update path:
+
+- total wall: **6441 ms**;
+- four SW-upstream version requests: **207.7, 213.1, 206.8, 212.1 ms**.
+
+For the final slow navigation:
+
+- first version boundary: 209.2 ms;
+- owners wait: **1283.4 ms**;
+- service-worker registration: 2.0 ms;
+- second version/update gate: **214.8 ms**;
+- layers: 224.0 ms;
+- asset settle: 28.4 ms;
+- loader → boot-ready: **4096.6 ms**.
+
+The two duplicate app-side version requests in the slow update path are the 2nd and 4th upstream requests above: about **213 ms and 212 ms**.
+
+### Historical vs corrected interpretation
+
+The original item-3 statement that the second `version.json` itself costs only about 5–11 ms on the slow profile is **superseded**.
+
+Corrected conclusion:
+
+- the duplicate request is real;
+- under the requested 200 ms network model it costs about **215 ms per navigation**;
+- it is sequential because `checkAppVersionOnEntry()` runs after `FPStartup174.ready` and Service Worker registration;
+- owners still cost about **1.28 s** on the slow profile;
+- the later resource/UI chain still costs roughly **2 s** in the same startup family.
+
+So the duplicate version request is **not the largest startup cost**, but it is now a directly measured, removable sequential wait.
+
+### Choice between follow-up item 4 and item 5
+
+With corrected SW coverage, the evidence now favors **follow-up item 4** as the next small change.
+
+Reason:
+
+- item 4 has one concrete confirmed cause: a duplicate sequential `version.json` request;
+- its slow-profile cost is about **215 ms per navigation**;
+- on the real update path there are two such duplicate app-side requests across two navigations, about 213 ms + 212 ms of upstream request time;
+- item 5 may ultimately have larger upside, because owner/resource waits are longer, but item 3/3.1 has not yet proved that any **single optional dependency** is solely responsible for those longer intervals.
+
+This is a prioritization decision only. Item 4 is **not implemented** in 3.1.
+
+### Remaining limits
+
+- One corrected run per requested scenario; this is a diagnostic timeline, not a distribution.
+- Chromium/Linux only; no physical iPhone/Android validation.
+- The slow profile is CDP emulation, not a real mobile radio.
+- Service Worker upstream timing is now covered, but browser-internal service-worker update traffic such as the browser's own `sw.js` update check is not claimed to be fully modeled by this instrumentation.
+- `fromServiceWorker` and zero page-level encoded bytes are explicitly not treated as cache evidence.
