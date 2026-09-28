@@ -152,7 +152,7 @@
         method: 'POST',
         signal: context.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: state.nick, deviceId })
+        body: JSON.stringify({ displayName: state.nick, deviceId, initialWindow: true })
       });
       diagnostic186?.step(trace186,'join-headers');
       if(!response.ok)diagnostic186?.fail(trace186,'join',null,response.status);
