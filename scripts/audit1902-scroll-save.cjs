@@ -145,15 +145,7 @@ run(async({newClient,errors,temp,root})=>{
   // old 900ms timer. The concrete A snapshot must be captured before transition;
   // no stale timer is allowed to reinterpret it as room B.
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
-  const writes=[];
-  const wildcard='**/api/rooms/*/view-state';
-  await page.route(wildcard,async route=>{
-    if(route.request().method()==='PUT'){
-      const url=new URL(route.request().url());
-      writes.push({roomId:url.pathname.split('/')[3],body:JSON.parse(route.request().postData()||'{}')});
-    }
-    await route.continue();
-  });
+  const bBefore=db.prepare('SELECT anchor_message_id,anchor_offset_px,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(B.dbRoomId,B.deviceId);
   const aBefore=await page.evaluate(()=>{
     const box=document.getElementById('messages');
     const max=Math.max(0,box.scrollHeight-box.clientHeight);
@@ -164,34 +156,25 @@ run(async({newClient,errors,temp,root})=>{
   });
   assert.ok(aBefore?.anchorMessageId,'A native position missing before direct transition');
   await page.waitForTimeout(40);
-  const preSwitchDiag=await page.evaluate(({roomId,deviceId})=>({
-    stateRoomId:state.roomId,
-    scroll:FPScroll173.snapshot(),
-    local:STORAGE.get(STORAGE.viewState(roomId)),
-    boxConnected:Boolean(document.getElementById('messages')?.isConnected),
-    atBottom:isMessagesAtBottom(document.getElementById('messages')),
-    deviceId
-  }),{roomId:A.roomId,deviceId:A.deviceId});
-  console.log('SCROLL1902_A_PRE_SWITCH '+JSON.stringify(preSwitchDiag));
+  const aLocalBefore=await page.evaluate(roomId=>STORAGE.get(STORAGE.viewState(roomId)),A.roomId);
+  assert.ok(aLocalBefore?.anchorMessageId,JSON.stringify(aLocalBefore));
+  assert.equal(aLocalBefore.atBottom,false,JSON.stringify(aLocalBefore));
+
   await page.evaluate(roomId=>openChat(roomId),B.roomId);
   await page.waitForTimeout(1050);
-  console.log('SCROLL1902_A_WRITES '+JSON.stringify(writes));
 
-  const aWrites=writes.filter(row=>row.roomId===A.roomId);
-  const bWrites=writes.filter(row=>row.roomId===B.roomId);
-  const postSwitchDiag=await page.evaluate(roomId=>({
-    stateRoomId:state.roomId,
-    scroll:FPScroll173.snapshot(),
-    localA:STORAGE.get(STORAGE.viewState(roomId))
-  }),A.roomId);
   const aRow=db.prepare('SELECT anchor_message_id,anchor_offset_px,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(A.dbRoomId,A.deviceId);
-  console.log('SCROLL1902_A_POST_SWITCH '+JSON.stringify({postSwitchDiag,aRow}));
-  assert.ok(aWrites.length>=1,'direct A->B did not flush A position');
-  assert.equal(bWrites.length,0,'A delayed timer was rebound to room B: '+JSON.stringify(writes));
-
   assert.equal(Number(aRow.at_bottom),0,JSON.stringify(aRow));
-  assert.ok(Number(aRow.anchor_message_id)>0,JSON.stringify(aRow));
-  assert.ok(Number(aRow.client_seq)>0,JSON.stringify(aRow));
+  assert.equal(Number(aRow.anchor_message_id),Number(aLocalBefore.anchorMessageId),JSON.stringify({aRow,aLocalBefore}));
+  assert.ok(Math.abs(Number(aRow.anchor_offset_px)-Number(aLocalBefore.anchorOffsetPx))<=1,JSON.stringify({aRow,aLocalBefore}));
+  assert.equal(Number(aRow.client_seq),Number(aLocalBefore.clientSeq),JSON.stringify({aRow,aLocalBefore}));
+
+  const bRow=db.prepare('SELECT anchor_message_id,anchor_offset_px,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(B.dbRoomId,B.deviceId);
+  assert.deepEqual(
+    {anchor_message_id:bRow.anchor_message_id,anchor_offset_px:Number(bRow.anchor_offset_px),at_bottom:Number(bRow.at_bottom),client_seq:Number(bRow.client_seq)},
+    {anchor_message_id:bBefore.anchor_message_id,anchor_offset_px:Number(bBefore.anchor_offset_px),at_bottom:Number(bBefore.at_bottom),client_seq:Number(bBefore.client_seq)},
+    'A delayed timer mutated room B: '+JSON.stringify({before:bBefore,after:bRow})
+  );
 
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
   const restored=await page.evaluate(anchorId=>{
@@ -201,7 +184,6 @@ run(async({newClient,errors,temp,root})=>{
   },Number(aRow.anchor_message_id));
   assert.notEqual(restored,null,'A saved anchor was not restored after A->B->A');
   assert.ok(Math.abs(restored-Number(aRow.anchor_offset_px))<=3,JSON.stringify({restored,row:aRow}));
-  await page.unroute(wildcard);
 
   const metrics=await page.evaluate(()=>FPScroll173.snapshot());
   assert.equal(metrics.localCaptureIntervalMs,300);
