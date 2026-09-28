@@ -11,12 +11,9 @@ run(async({browser,origin,errors})=>{
   let releaseVisual;
   const visualGate=new Promise(resolve=>{releaseVisual=resolve;});
   let visualRequestedAt=null;
-  let appRequestedAt=null;
-
   page.on('request',request=>{
     const path=new URL(request.url()).pathname;
     if(path==='/reply-swipe-visual184.js'&&visualRequestedAt===null)visualRequestedAt=Date.now();
-    if(path==='/app.js'&&appRequestedAt===null)appRequestedAt=Date.now();
   });
 
   await page.route('**/reply-swipe-visual184.js*',async route=>{
@@ -29,18 +26,26 @@ run(async({browser,origin,errors})=>{
   assert.notEqual(visualRequestedAt,null,'reply visual request did not start');
 
   await page.waitForTimeout(350);
-  const blockedBeforeRelease=appRequestedAt===null;
+  const beforeRelease=await page.evaluate(()=>({
+    appScriptCount:[...document.scripts].filter(s=>{try{return new URL(s.src,location.href).pathname==='/app.js';}catch{return false;}}).length,
+    visualInstalled:Boolean(window.FPReplySwipeVisual184)
+  }));
+  const blockedBeforeRelease=beforeRelease.appScriptCount===0;
+  const releasedAt=Date.now();
   releaseVisual();
   await nav;
+  await page.waitForFunction(()=>[...document.scripts].some(s=>{try{return new URL(s.src,location.href).pathname==='/app.js';}catch{return false;}}),null,{timeout:10000});
+  const appInsertedAt=Date.now();
   await page.waitForFunction(()=>window.__fpBootReady169At&&!document.getElementById('bootHold152'),null,{timeout:30000});
-  assert.notEqual(appRequestedAt,null,'app.js request did not start after visual release');
 
   const result={
     blockedBeforeRelease,
-    visualToAppRequestMs:appRequestedAt-visualRequestedAt
+    appScriptCountBeforeRelease:beforeRelease.appScriptCount,
+    visualInstalledBeforeRelease:beforeRelease.visualInstalled,
+    releaseToAppScriptMs:appInsertedAt-releasedAt
   };
   console.log('NEXT5_PREFLIGHT '+JSON.stringify(result));
-  assert.equal(blockedBeforeRelease,true,'current startup no longer waits for reply visual; preflight assumption changed');
-  assert(result.visualToAppRequestMs>=300,'held reply visual must visibly delay app.js request');
+  assert.equal(blockedBeforeRelease,true,'current startup no longer waits for reply visual before inserting app.js');
+  assert.equal(beforeRelease.visualInstalled,false,'held reply visual unexpectedly installed before release');
   assert.deepEqual(errors,[]);
 }).catch(error=>{console.error(error?.stack||error);process.exitCode=1;});
