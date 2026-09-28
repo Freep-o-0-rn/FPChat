@@ -24,6 +24,7 @@ on:
       - 'scripts/regression-next13-session-reuse.cjs'
       - 'scripts/check-build170.js'
       - 'scripts/regression180-single-owner-audit.cjs'
+      - 'scripts/regression178-unread-restore-bottom.cjs'
       - 'scripts/regression178-unread-restore-bottom-browser.cjs'
       - 'scripts/regression-next12-client-initial-window.cjs'
       - 'package.json'
