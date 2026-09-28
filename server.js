@@ -49,9 +49,55 @@ const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').creat
 const UPLOAD_DIR = process.env.FPCHAT_UPLOAD_DIR || path.join(__dirname, 'data', 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 110 * 1024 * 1024 } });
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const APP_JS_PATH = path.join(PUBLIC_DIR, 'app.js');
+const VERSION_JSON_PATH = path.join(PUBLIC_DIR, 'version.json');
+
+function gitBlobSha190(buffer) {
+  const body = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  return crypto.createHash('sha1')
+    .update(Buffer.from(`blob ${body.length}\0`))
+    .update(body)
+    .digest('hex');
+}
+function readAppRevisionCacheState190() {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(VERSION_JSON_PATH, 'utf8'));
+    const revision = String(manifest?.appRevision || '').trim().toLowerCase();
+    const appBytes = fs.readFileSync(APP_JS_PATH);
+    const actualRevision = gitBlobSha190(appBytes);
+    return {
+      revision,
+      actualRevision,
+      valid: /^[a-f0-9]{40}$/.test(revision) && revision === actualRevision
+    };
+  } catch {
+    return { revision: '', actualRevision: '', valid: false };
+  }
+}
+const fpAppRevisionCache190 = readAppRevisionCacheState190();
+
 const app = express();
 app.use(express.json({ limit: '128kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.get('/app.js', (req, res, next) => {
+  const requestedRevision = typeof req.query.r === 'string'
+    ? req.query.r.trim().toLowerCase()
+    : '';
+  if (!requestedRevision) return next();
+
+  // Long-lived caching is safe only for the exact content-derived URL.
+  // Never serve current bytes under a stale revision URL.
+  if (!fpAppRevisionCache190.valid) {
+    res.set('Cache-Control', 'no-store');
+    return res.status(503).type('text/plain').send('app revision unavailable');
+  }
+  if (requestedRevision !== fpAppRevisionCache190.revision) {
+    res.set('Cache-Control', 'no-store');
+    return res.status(410).type('text/plain').send('stale app revision');
+  }
+  return res.sendFile(APP_JS_PATH, { maxAge: '1y', immutable: true });
+});
+app.use(express.static(PUBLIC_DIR));
 
 const socketsByDevice = new Map();
 const HISTORY_PAGE_SIZE = 100;
