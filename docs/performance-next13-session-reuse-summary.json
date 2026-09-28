@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 13,
+  "build": "190.2",
+  "runtimeSha": "43d05dbffe20f2bff779f9683aaf194b3f4e0cd2",
+  "appRevision": "2ceecf0f26a9ca8988b4eb5258efaedf53d9d2e1",
+  "finalRun": {
+    "workflowRunId": 36434066515,
+    "workflowHeadSha": "ff1370afeae740203fb500873a45a3eff72a02dd",
+    "artifactId": 10974732044,
+    "artifactDigest": "sha256:ea1052f8d00068c85fa60e1e21df3eed614a8a12d2e10a2daec25f37cbdfa4a4"
+  },
+  "implementation": {
+    "scope": "chat -> list -> same chat in one browser session",
+    "access": "POST /join remains mandatory before any RAM reuse",
+    "store": "existing FPMessageStore172 only; no new persistent storage",
+    "eligibility": [
+      "room was successfully rendered earlier in this session",
+      "server join selects the current authoritative window",
+      "every server-selected message has a safe canonical MessageStore record",
+      "same encrypted content metadata, or canonical edit/delete state is at least as new"
+    ],
+    "fallback": "If any server-selected message is unavailable or unsafe in RAM, the whole window uses the existing decrypt/render path.",
+    "updates": "Existing WebSocket/message-actions/lifecycle synchronization updates canonical MessageStore state.",
+    "unreadAndPosition": "join unread/viewState/cursors remain authoritative; FPScroll173 restores position"
+  },
+  "validation": {
+    "editWhileList": true,
+    "deleteWhileList": true,
+    "revokedAccess": true,
+    "unreadRefresh": true,
+    "savedReadingPosition": true,
+    "incompleteWindowRejected": true,
+    "joinRequiredEveryReopen": true,
+    "noPersistentStoreAdded": true,
+    "messageStoreOwnerPreserved": true
+  },
+  "benchmark": {
+    "environment": "isolated Linux headless Chromium + local SQLite; no network throttling",
+    "pairs": 5,
+    "messagesPerRoom": 300,
+    "initialTailMessages": 100,
+    "firstOpen": {
+      "rawMs": [
+        183.5,
+        183.9,
+        184,
+        184.6,
+        198.1
+      ],
+      "medianMs": 184,
+      "rangeMs": [
+        183.5,
+        198.1
+      ],
+      "decryptCallsMedian": 100
+    },
+    "repeatOpen": {
+      "rawMs": [
+        136,
+        136,
+        136.5,
+        138.2,
+        152.8
+      ],
+      "medianMs": 136.5,
+      "rangeMs": [
+        136,
+        152.8
+      ],
+      "decryptCallsMedian": 0
+    },
+    "delta": {
+      "medianMs": -47.5,
+      "medianPct": -25.82,
+      "decryptCalls": -100
+    },
+    "qualification": "Both first and repeat opens still execute the normal join access check. This benchmark isolates same-session RAM/decrypt/render reuse on local transport; it is not a production/mobile forecast."
+  },
+  "ciPassed": [
+    "test:next:7",
+    "test:next:13",
+    "test:next:12",
+    "check:170",
+    "test:178:message-store-incoming",
+    "test:178:message-store-ack",
+    "test:179:explicit-message-actions",
+    "test:178:history-saved-anchor",
+    "test:178:unread-restore-bottom",
+    "test:180:single-owner-audit",
+    "bench:next:13"
+  ],
+  "historicalFailedRun": {
+    "workflowRunId": 36433728539,
+    "reason": "Regression incorrectly required decrypt fallback after delete. Existing sync had already cached the newly exposed neighbor message, so the post-delete window remained fully and safely reusable. Product behavior was correct; the test was corrected."
+  },
+  "limits": [
+    "Five benchmark pairs only, so no p95.",
+    "Headless Chromium/local SQLite, no network throttling.",
+    "No physical iPhone/Android measurement.",
+    "RAM reuse lasts only for the current page session and disappears on reload.",
+    "Media reuse requires exact media metadata equality; otherwise the whole window falls back."
+  ]
+}
