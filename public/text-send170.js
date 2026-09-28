@@ -128,8 +128,18 @@
         try { autoResizeMessageInput(input); } catch {}
       }
 
+      let draftCleanup = null;
       if (unchanged) {
-        try { await clearDraftOnServer(roomId); } catch {}
+        try { draftCleanup = clearDraftOnServer(roomId); } catch {}
+      }
+
+      // The message is already in the existing pendingTextSends owner. Release
+      // only the form-level double-submit guard now; draft I/O stays ordered by
+      // the existing draft state barrier and may finish later.
+      sendingForms.delete(form);
+
+      if (draftCleanup) {
+        try { await draftCleanup; } catch {}
       }
       finish(operation, 'queued');
     } catch (error) {
