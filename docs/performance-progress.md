@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–3 completed; repeated-send draft lock fixed and startup mandatory waits measured**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–3 plus diagnostic 3.1 completed; startup SW-network coverage corrected**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–3 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–3 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1139,3 +1139,147 @@ Remove the benchmark script and item-3 documentation/journal entry. No runtime/d
 **No next item started automatically.**
 
 Measurement evidence currently points to follow-up item 5 rather than item 4, but execution requires an explicit user request.
+
+
+## Follow-up plan diagnostic: item 3.1 — Service Worker network coverage
+
+Status: **done — measurement gap confirmed and test stand corrected; runtime unchanged**.
+
+### Why 3.1 was necessary
+
+Item 3 applied Chromium network emulation only to the page CDP target.
+
+Current `sw.js` intercepts `/version.json` and performs its own upstream:
+
+`fetch(event.request, { cache: 'no-store' })`
+
+That fetch runs in the Service Worker target, not in the page target.
+
+The original item-3 slow measurements therefore did not prove that the configured 200 ms latency reached the Service Worker upstream request.
+
+### Isolated coverage proof
+
+Run `36409730941` used three diagnostic paths.
+
+1. Service Worker active, 200 ms throttle on page target only:
+   - page fetch wall: **3.7 ms**;
+   - worker upstream: **1.8 ms**;
+   - worker request observed, status 200, HTTP/1.1, 409 encoded bytes, `fromDiskCache=false`.
+
+2. Same Service Worker path, 200 ms throttle applied to both page and worker target:
+   - page fetch wall: **204.9 ms**;
+   - worker upstream: **202.6 ms**.
+
+3. Diagnostic control with Service Worker blocked and only the page target throttled:
+   - direct request wall: **226.7 ms**.
+
+Conclusion: **coverage gap confirmed**. Page-target emulation does not automatically apply to the Service Worker target in this stand.
+
+The worker-target request used a unique query string and was directly observed by the worker CDP Network domain. This confirms the request reached the server/network layer in the diagnostic scenario.
+
+### Cache interpretation correction
+
+Historical item-3 page events reported:
+
+- `fromServiceWorker=true`;
+- zero page-level encoded bytes.
+
+Those values are **not cache proof**.
+
+The corrected worker-target trace records 409 encoded bytes for each upstream `version.json` response while `fromDiskCache=false`.
+
+The accurate interpretation is:
+
+- `fromServiceWorker=true` means the page response came through the Service Worker interception path;
+- zero encoded bytes at the page target means the upstream body was accounted on another target;
+- neither fact proves a cache hit.
+
+### Stand-only fix
+
+Only test/measurement infrastructure changed:
+
+- `scripts/benchmark-next31-sw-network-coverage.cjs` adds the isolated proof;
+- `scripts/benchmark-next3-startup-waterfall.cjs` now applies the requested network profile to both the page and active Service Worker targets;
+- Service Worker upstream requests are observed separately from page logical requests to avoid double-counting.
+
+No `public/*`, `sw.js`, server, owner, manager, arbiter or production configuration was changed.
+
+### Corrected startup measurements
+
+Corrected run:
+
+- GitHub Actions `36409985895`;
+- artifact `10963583079`;
+- digest `sha256:d84d31af228e54db7e35d4044d537a3f0a4930c8d7672a5229daf699ebe74100`;
+- runtime SHA still `1eb7a97184a307562c51525aa358450f8346ea36`.
+
+Saved-data startup:
+
+| Boundary | Normal | Slow |
+| --- | ---: | ---: |
+| wall | 346 ms | **4199 ms** |
+| loader → boot-ready | 215.5 ms | **3865.5 ms** |
+| first version boundary | 6.4 ms | **212.3 ms** |
+| owners wait | 66.5 ms | **1278.9 ms** |
+| service-worker registration | 1.0 ms | 1.7 ms |
+| second version/update gate | 10.7 ms | **218.9 ms** |
+| layers | 44.7 ms | 224.1 ms |
+| assets settle | 16.7 ms | 27.1 ms |
+
+Service Worker upstream version durations:
+
+- normal: 2.7 ms and 4.5 ms;
+- slow: **210.2 ms and 217.2 ms**.
+
+Corrected second-request start delay on saved slow startup: **1492.9 ms**. This includes the first network wait plus the existing owner chain; the second request itself costs about 217 ms.
+
+Corrected real update path:
+
+- normal wall: **521 ms**;
+- slow wall: **6441 ms**;
+- slow SW version requests across two navigations: **207.7, 213.1, 206.8, 212.1 ms**.
+
+The duplicate app-side checks are the second and fourth requests above: about **213 ms + 212 ms** of upstream request time across the two-navigation update path.
+
+### Historical measurements preserved
+
+The original item-3 report and JSON remain in the repository and are not rewritten as if they never existed.
+
+The old statement that slow-network `version.json` itself costs only ~5–11 ms is marked as superseded in `docs/performance-next3-startup-waterfall.md`.
+
+Corrected values are stored separately in:
+
+- `docs/performance-next31-corrected-summary.json`.
+
+### Decision between item 4 and item 5
+
+With corrected Service Worker coverage, the next justified small change is **follow-up item 4**.
+
+Reason:
+
+- there is now one directly confirmed sequential cause;
+- the duplicate version request costs about **215 ms per slow-network navigation**;
+- it is removable without first having to identify which one optional resource dominates a multi-resource critical chain;
+- item 5 may have larger eventual upside, but item 3/3.1 has not yet proved one single optional dependency as the causal owner of the larger ~1.28 s / ~2 s intervals.
+
+This only selects the next candidate. Item 4 was **not started**.
+
+### Files
+
+Added/updated for 3.1:
+
+- `scripts/benchmark-next31-sw-network-coverage.cjs`;
+- `scripts/benchmark-next3-startup-waterfall.cjs`;
+- `docs/performance-next31-corrected-summary.json`;
+- `docs/performance-next3-startup-waterfall.md`;
+- `docs/performance-progress.md`.
+
+### Rollback
+
+Revert only the measurement scripts and 3.1 documentation. No runtime/data rollback is required.
+
+### Continuation point
+
+**No optimization started automatically.**
+
+Measurement evidence now supports follow-up item **4** as the next explicit prompt.
