@@ -55,6 +55,13 @@ run(async({browser,origin,errors})=>{
   assert.equal(currentUrl.searchParams.get('r'),actualRevision);
   assert.equal(gitBlobSha(Buffer.from(current.body)),actualRevision,'browser must receive bytes matching current appRevision');
 
+  await page.close();
+
+  const syntheticContext=await browser.newContext({viewport:{width:1100,height:760},serviceWorkers:'block'});
+  const syntheticPage=await syntheticContext.newPage();
+  syntheticPage.on('pageerror',e=>errors.push(e.message));
+  syntheticPage.on('dialog',d=>d.dismiss());
+
   const bodyA=appText+"\\n;window.__fpNext7RevisionBytes='A';\\n";
   const bodyB=appText+"\\n;window.__fpNext7RevisionBytes='B';\\n";
   const revA=gitBlobSha(Buffer.from(bodyA));
@@ -65,11 +72,11 @@ run(async({browser,origin,errors})=>{
   const bodies=new Map([[revA,bodyA],[revB,bodyB]]);
   const versionTemplate={...version,build:'190.2'};
 
-  await page.route('**/version.json*',route=>{
+  await syntheticPage.route('**/version.json*',route=>{
     const payload={...versionTemplate,appRevision:servedRevision};
     return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(payload)});
   });
-  await page.route('**/app.js*',route=>{
+  await syntheticPage.route('**/app.js*',route=>{
     const requestUrl=new URL(route.request().url());
     const revision=requestUrl.searchParams.get('r');
     const body=bodies.get(revision);
@@ -83,10 +90,10 @@ run(async({browser,origin,errors})=>{
   });
 
   const loadSynthetic=async(expected)=>{
-    await page.reload({waitUntil:'domcontentloaded'});
-    await page.waitForFunction(()=>window.__fpBootReady169At&&!document.getElementById('bootHold152'),null,{timeout:30000});
-    await page.waitForFunction(marker=>window.__fpNext7RevisionBytes===marker,expected.marker,{timeout:10000});
-    return page.evaluate(async(expectedRevision)=>{
+    await syntheticPage.goto(origin,{waitUntil:'domcontentloaded'});
+    await syntheticPage.waitForFunction(()=>window.__fpBootReady169At&&!document.getElementById('bootHold152'),null,{timeout:30000});
+    await syntheticPage.waitForFunction(marker=>window.__fpNext7RevisionBytes===marker,expected.marker,{timeout:10000});
+    return syntheticPage.evaluate(async(expectedRevision)=>{
       const appScript=[...document.scripts].find(s=>{try{return new URL(s.src,location.href).pathname==='/app.js';}catch{return false;}});
       const preload=[...document.querySelectorAll('link[rel="preload"][as="script"]')]
         .find(link=>{try{return new URL(link.href,location.href).pathname==='/app.js';}catch{return false;}});
@@ -115,6 +122,7 @@ run(async({browser,origin,errors})=>{
   assert.equal(rolledBack.marker,'A');
   assert.equal(gitBlobSha(Buffer.from(rolledBack.body)),revA,'rollback URL must return rollback bytes');
   assert.notEqual(updated.scriptUrl,rolledBack.scriptUrl,'content revision must change app.js URL across update/rollback');
+  await syntheticContext.close();
 
   assert.deepEqual(errors,[]);
   console.log('PASS appRevision equals Git blob SHA of public/app.js');
