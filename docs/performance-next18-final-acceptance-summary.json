@@ -1,0 +1,299 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 18,
+  "status": "ci_complete_physical_devices_not_executed",
+  "build": "190.2",
+  "runtimeSha": "2bf734e918dfb7e31d14d574d52a7d3256076000",
+  "runs": {
+    "finalAcceptance": {
+      "id": 36451711515,
+      "conclusion": "success",
+      "head": "b66d22ae4bef644d6f0fa110ed8d35e27a0a888f",
+      "artifactId": 10983859611,
+      "artifactDigest": "sha256:385bbe3fc66c715386d7cea3fa35e5db8e753849c57d00f827893dd07fa9a01b"
+    },
+    "reconnect10s": {
+      "id": 36453355336,
+      "conclusion": "success",
+      "head": "b2196f0e534fd4c9d8c370699ab7edfdd6c51918",
+      "artifactId": 10984156959,
+      "artifactDigest": "sha256:3a199cee586f5bffd49f3b95d8321f6c7f82378b1adef1da096065027986b126"
+    },
+    "startup": {
+      "id": 36453900608,
+      "conclusion": "success",
+      "head": "dfe0811b7ff3a1598cec9752147cadab39b11aea",
+      "artifactId": 10984886207,
+      "artifactDigest": "sha256:eb10de9a94d09d39f7f829d0043ab41923d19b523ecc14681f352424e57ced1e"
+    }
+  },
+  "startup": {
+    "historicalBeforeItem4": {
+      "savedNormal": {
+        "wallMs": 346,
+        "versionCount": 2,
+        "secondVersionGateMs": 10.7
+      },
+      "savedSlow": {
+        "wallMs": 4199,
+        "versionCount": 2,
+        "secondVersionGateMs": 218.9
+      },
+      "updateNormal": {
+        "wallMs": 521,
+        "versionCount": 4,
+        "secondVersionGateMs": 11.9
+      },
+      "updateSlow": {
+        "wallMs": 6441,
+        "versionCount": 4,
+        "secondVersionGateMs": 214.8
+      }
+    },
+    "current": {
+      "savedNormal": {
+        "wallMs": 366,
+        "versionCount": 1,
+        "secondVersionGateMs": 0.2
+      },
+      "savedSlow": {
+        "wallMs": 4199,
+        "versionCount": 1,
+        "secondVersionGateMs": 0.2,
+        "ownersWaitMs": 1278.6
+      },
+      "updateNormal": {
+        "wallMs": 503,
+        "versionCount": 2,
+        "secondVersionGateMs": 0.1
+      },
+      "updateSlow": {
+        "wallMs": 6549,
+        "versionCount": 2,
+        "secondVersionGateMs": 0.2
+      }
+    },
+    "qualification": "wall times are single diagnostic samples; confirmed structural result is duplicate version request/gate removal"
+  },
+  "roomOpen": {
+    "baselineItem10Ms": {
+      "tail": 964.8,
+      "savedAnchor": 2131.4,
+      "firstUnread": 2044.5
+    },
+    "currentItem18Ms": {
+      "tail": 965.2,
+      "savedAnchor": 1430.3,
+      "firstUnread": 1397.7
+    },
+    "deltaMs": {
+      "tail": 0.4,
+      "savedAnchor": -701.1,
+      "firstUnread": -646.8
+    },
+    "deltaPct": {
+      "tail": 0.04,
+      "savedAnchor": -32.89,
+      "firstUnread": -31.64
+    },
+    "attempts": {
+      "tail": 5,
+      "savedAnchor": 5,
+      "firstUnread": 5
+    },
+    "targetValidation": {
+      "savedAnchor": "5/5",
+      "firstUnread": "5/5"
+    },
+    "remainingPostOpenLatestGetsPerRun": 3
+  },
+  "sameSessionReopen": {
+    "pairs": 5,
+    "firstMedianMs": 182.5,
+    "repeatMedianMs": 137.4,
+    "deltaMs": -45.1,
+    "deltaPct": -24.71,
+    "firstDecryptMedian": 100,
+    "repeatDecryptMedian": 0,
+    "historicalItem13": {
+      "firstMedianMs": 184,
+      "repeatMedianMs": 136.5,
+      "deltaPct": -25.82
+    }
+  },
+  "media": {
+    "samplesPerState": 5,
+    "controlledSameRunner": true,
+    "normal": {
+      "warm": {
+        "oldOriginalMs": 41.2,
+        "previewMs": 9.7,
+        "currentOriginalMs": 91.1
+      },
+      "httpRetained": {
+        "oldOriginalMs": 58.8,
+        "previewMs": 18,
+        "currentOriginalMs": 93
+      },
+      "httpCold": {
+        "oldOriginalMs": 57.9,
+        "previewMs": 8.4,
+        "currentOriginalMs": 109.2
+      }
+    },
+    "throttled": {
+      "warm": {
+        "oldOriginalMs": 33.3,
+        "previewMs": 5.7,
+        "currentOriginalMs": 79.6
+      },
+      "httpRetained": {
+        "oldOriginalMs": 294.6,
+        "previewMs": 5.7,
+        "currentOriginalMs": 361.3
+      },
+      "httpCold": {
+        "oldOriginalMs": 44276.2,
+        "previewMs": 5.7,
+        "currentOriginalMs": 18394.8
+      }
+    },
+    "qualification": "do not infer an original-transfer speedup from cold 44s vs 18s because the known benchmark has two timing clusters"
+  },
+  "reconnect": {
+    "naturalOfflineMs": {
+      "normal": [
+        10007,
+        10006,
+        10006,
+        10007,
+        10005
+      ],
+      "throttled": [
+        10006,
+        10004,
+        10005,
+        10007,
+        10005
+      ]
+    },
+    "natural": {
+      "normal": {
+        "attempts": 5,
+        "breaks": 0,
+        "livePreserved": 5,
+        "reconnectMedianMs": null
+      },
+      "throttled": {
+        "attempts": 5,
+        "breaks": 0,
+        "livePreserved": 5,
+        "reconnectMedianMs": null
+      }
+    },
+    "confirmedBreak": {
+      "normal": {
+        "attempts": 5,
+        "breaksConfirmed": 5,
+        "autoRecovered": 5,
+        "reconnectMedianMs": 16,
+        "rangeMs": [
+          15,
+          25
+        ]
+      },
+      "throttled": {
+        "attempts": 5,
+        "breaksConfirmed": 5,
+        "autoRecovered": 5,
+        "reconnectMedianMs": 465,
+        "rangeMs": [
+          463,
+          465
+        ]
+      }
+    },
+    "profile": {
+      "normalProbeMedianMs": 3.9,
+      "throttledProbeMedianMs": 229,
+      "addedMedianMs": 225.1,
+      "effective": true
+    },
+    "observerCallsEnsureConnected": false
+  },
+  "sendReaction": {
+    "normal": {
+      "send": {
+        "attempts": 5,
+        "successes": 5,
+        "managerMs": 0.7,
+        "domMs": 2.4,
+        "rafOpportunityMs": 12.6,
+        "ackMs": 4.6
+      },
+      "reaction": {
+        "attempts": 5,
+        "successes": 5,
+        "managerMs": 0.6,
+        "domMs": 0.6,
+        "rafOpportunityMs": 10.5,
+        "ackMs": 3.7
+      }
+    },
+    "throttled": {
+      "send": {
+        "attempts": 5,
+        "successes": 5,
+        "managerMs": 0.6,
+        "domMs": 2.2,
+        "rafOpportunityMs": 12.3,
+        "ackMs": 33
+      },
+      "reaction": {
+        "attempts": 5,
+        "successes": 5,
+        "managerMs": 0.9,
+        "domMs": 0.9,
+        "rafOpportunityMs": 1.8,
+        "ackMs": 223.1
+      }
+    },
+    "historicalThrottledSend": {
+      "attempts": 5,
+      "successes": 3,
+      "failures": {
+        "optimistic-timeout": 2
+      }
+    },
+    "qualification": "new and historical metric boundaries differ; rAF opportunity is not hardware presentation"
+  },
+  "devices": {
+    "iPhone": {
+      "input": "not_executed",
+      "history": "not_executed",
+      "media": "not_executed",
+      "realBackground": "not_executed"
+    },
+    "Android": {
+      "input": "not_executed",
+      "history": "not_executed",
+      "media": "not_executed",
+      "realBackground": "not_executed"
+    },
+    "reason": "no physical devices attached to the isolated runner"
+  },
+  "remaining": [
+    "three post-open no-cursor GET /messages?limit=100 requests remain",
+    "phone-photo HTTP-cold original has unexplained ~18s/~44s timing clusters",
+    "decode-before-swap adds tens of milliseconds to original-ready in warm/retained cases",
+    "same-session MessageStore reuse is RAM-only",
+    "natural Chromium offline preserves the socket and therefore does not provide natural reconnect latency",
+    "physical mobile input/history/media/background acceptance is not executed",
+    "requestAnimationFrame is not hardware presentation",
+    "no production/Cloudflare Tunnel acceptance",
+    "five-sample groups do not support p95"
+  ],
+  "runtimeChanged": false,
+  "productionPublished": false
+}
