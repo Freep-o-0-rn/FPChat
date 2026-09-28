@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 9,
+  "build": "190.2",
+  "baseHead": "dcd9f92796b41231939ea38148874fdcb86aa11f",
+  "preflight": {
+    "normal": {
+      "runId": 36419046699,
+      "artifactId": 10967179484,
+      "artifactDigest": "sha256:2ffc1db75c4439b3b110a127215a4a62143aab77d2b1e9633d52916851e62857",
+      "startupMs": 394,
+      "jsCssEncodedBytes": 1267065,
+      "contentEncodings": [],
+      "app": {
+        "encodedBytes": 203797,
+        "durationMs": 72.2,
+        "contentEncoding": null
+      },
+      "appRawBytes": 203445,
+      "cssRawBytes": 22435
+    },
+    "slow": {
+      "runId": 36419329084,
+      "artifactId": 10967254875,
+      "artifactDigest": "sha256:5db9adb411ab702fadd4596426d43c5f2fd515b8b5b81dcef9aa51d69461178c",
+      "profile": "200ms latency, ~1 Mbit/s down, ~0.5 Mbit/s up",
+      "startupMs": 11481,
+      "jsCssEncodedBytes": 1158897,
+      "contentEncodings": [],
+      "app": {
+        "encodedBytes": 203797,
+        "durationMs": 4123,
+        "contentEncoding": null
+      }
+    }
+  },
+  "implementation": {
+    "mechanism": "single built-in Node zlib middleware for static JS/CSS responses",
+    "encodings": [
+      "br",
+      "gzip",
+      "identity"
+    ],
+    "preferred": "br when acceptable and quality is not lower than gzip",
+    "thresholdBytes": 1024,
+    "brotliQuality": 4,
+    "gzipLevel": 6,
+    "cacheKey": "content SHA-1 + selected encoding",
+    "vary": "Accept-Encoding",
+    "exclusions": [
+      "HTML",
+      "/version.json",
+      "/sw.js",
+      "/api/*",
+      "non-JS/CSS",
+      "Range requests"
+    ],
+    "cacheHeaders": "existing ETag and Cache-Control preserved"
+  },
+  "final": {
+    "runId": 36419759923,
+    "artifactId": 10969415405,
+    "artifactDigest": "sha256:8a518a4f918b272bcbd9f2bb1ce9818e9ce7dbe069e25be453f1ca327197ea8e",
+    "regression": "success",
+    "raw": {
+      "appIdentityBytes": 203445,
+      "appBrBytes": 51434,
+      "appGzipBytes": 52734,
+      "cssIdentityBytes": 22435,
+      "cssBrBytes": 5528,
+      "cssGzipBytes": 5327
+    },
+    "normal": {
+      "startupMs": 374,
+      "jsCssEncodedBytes": 375257,
+      "contentEncodings": [
+        "br"
+      ],
+      "app": {
+        "encodedBytes": 51808,
+        "durationMs": 43.3,
+        "contentEncoding": "br"
+      }
+    },
+    "slow": {
+      "startupMs": 5753,
+      "jsCssEncodedBytes": 343216,
+      "contentEncodings": [
+        "br"
+      ],
+      "app": {
+        "encodedBytes": 51808,
+        "durationMs": 1723.3,
+        "contentEncoding": "br"
+      }
+    }
+  },
+  "deltas": {
+    "normalJsCssBytes": -891808,
+    "normalJsCssReductionPct": 70.38,
+    "slowJsCssBytes": -815681,
+    "slowJsCssReductionPct": 70.38,
+    "normalStartupMs": -20,
+    "normalStartupReductionPct": 5.08,
+    "slowStartupMs": -5728,
+    "slowStartupReductionPct": 49.89,
+    "appTransferBytes": -151989,
+    "appTransferReductionPct": 74.58,
+    "appSlowDurationMs": -2399.7,
+    "appSlowDurationReductionPct": 58.2
+  },
+  "limits": [
+    "localhost Chromium/Linux only",
+    "single startup run per profile",
+    "CDP network emulation is not a physical mobile radio",
+    "production/Cloudflare configuration was not changed or measured"
+  ]
+}
