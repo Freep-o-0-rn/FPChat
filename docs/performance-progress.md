@@ -146,9 +146,9 @@ Delete `optimization/performance-series` or reset it to `7fa7a4b0d64c22d4aa80969
 
 ## Continuation point
 
-**Current continuation: Step 4 — collect the performance baseline.**
+**Current continuation: Step 5 — investigate one confirmed startup wait.**
 
-Steps 2 and 3 are complete. The baseline behavior/ownership suites are green, so the next permitted stage is measurement only; do not optimize before Step 4 identifies measured bottlenecks.
+Steps 2–4 are complete. The next permitted change is the single startup bottleneck selected from the Step 4 baseline; do not combine it with room/history/media optimization.
 
 
 ## Step 2 — baseline regressions
@@ -360,9 +360,9 @@ Revert the test-only change in `scripts/regression180-single-owner-audit.cjs` to
 
 ### Continuation point
 
-**Step 2 complete. Next: Step 4, after the already completed Step 3 observer check.**
+**Step 2 complete. Step 4 baseline was later collected successfully after Step 3.**
 
-The ownership baseline is green. Do not introduce optimization before the Step 4 measured baseline is collected.
+The ownership baseline remained green through the measurement stage.
 
 
 ## Step 3 — observer coverage
@@ -466,9 +466,7 @@ Revert the `runtime169.js` build-identity patch and the paired regression assert
 
 ### Continuation point
 
-**Next: Step 4 — collect the performance baseline.**
-
-Step 3 is complete and Step 2.2 has now also been closed with green ownership/block checks.
+**Step 3 complete. Step 4 baseline was later collected successfully.**
 
 
 ### Step 2.2 completion
@@ -626,3 +624,115 @@ The benchmark script and Step 4 documentation can be reverted without any applic
 **Step 5 — isolate one confirmed startup wait.**
 
 Use the Step 4 startup evidence to choose exactly one measured startup dependency/wait. Do not begin Step 6 or unrelated room/media/send optimization in the same change.
+
+
+## Step 4 — performance baseline
+
+Status: **done**.
+
+Detailed report: `docs/performance-step4-baseline.md`.
+
+### Measurement identity
+
+- Runtime baseline SHA: `1c1e0453416203f6c916f214dae36bd1186f0047`.
+- Successful measurement run HEAD: `4bf9cbdea791aca730da1960ccc89ab8af88cfad`.
+- Build: **190.2**.
+- GitHub Actions run: `36387427449` — success.
+- Artifact: `10955296789` (`step4-performance-baseline`), digest `sha256:d8733c9baed9e510358bacf60c3b570538fd1ea32039f23c4d959357d4567f56`.
+- Browser: Chromium 140.0.7339.16, 1100×760.
+- Runner: Linux x64, Node 22.23.2, 4 vCPU AMD EPYC 7763, ~15.6 GiB RAM.
+- Physical iPhone/Android: not measured.
+
+### Network model
+
+Normal: no added latency/bandwidth shaping.
+
+Throttled:
+- 200 ms latency;
+- 125000 B/s download (~1 Mbit/s);
+- 62500 B/s upload (~0.5 Mbit/s);
+- Chromium CDP `Network.emulateNetworkConditions`, `cellular3g`.
+
+10-second outage:
+- `BrowserContext.setOffline(true)` for 10000 ms;
+- then `setOffline(false)`;
+- the requested CDP profile is re-applied after recovery.
+
+The shaping occurs in Chromium's network stack, not at OS/server level.
+
+### Cache/data rules
+
+- Site identity and localStorage were not cleared.
+- Repeated normal passes retained browser/managed caches.
+- Cold-media passes cleared only FPStorage167 image media cache through its public API.
+- Synthetic rooms were isolated: 30, ~1000 and ~10000 messages.
+- Each scenario used 5 identical runs.
+- p95 was not reported for n=5; if n>=20 is collected later, nearest-rank `ceil(0.95*n)` is the defined rule.
+- Nested diagnostic durations are not summed into wall-clock durations.
+
+### Core medians
+
+| Scenario | Normal | Throttled |
+| --- | ---: | ---: |
+| Startup with saved data | 289 ms | 4973 ms |
+| First startup after update | 515 ms | 6830 ms |
+| Open 30-message room | 254 ms | 1095.4 ms |
+| Open ~1000-message room | 304.5 ms | 1765.3 ms |
+| Open ~10000-message room | 271.5 ms | 3097 ms |
+| Scroll older ~1000 | 65 ms | 618.5 ms |
+| Scroll older ~10000 | 80.8 ms | 592 ms |
+| Reaction optimistic | 2.3 ms | 3.5 ms |
+| Reaction ACK | 38.5 ms | 232.4 ms |
+| Send optimistic, successful samples | 12.5 ms | 10.7 ms (n=3) |
+| Send ACK, successful samples | 14.4 ms | 31 ms (n=3) |
+| Cold photo | 178 ms | 856 ms |
+| Warm disk photo | 135 ms | 100 ms |
+| Reconnect after 10 s offline | 104 ms | 122 ms |
+
+### Three confirmed latency sources
+
+1. **Startup asset/update path under slow network.**
+   - saved-data startup: 289 ms → 4973 ms median;
+   - update path: 515 ms → 6830 ms median.
+   This is the selected input for Step 5.
+
+2. **Room join/history under slow network.**
+   - ~1000 messages: wall open 1765.3 ms; join median 1151.9 ms;
+   - ~10000 messages: wall open 3097 ms; join median 1397.1 ms and history median 1272.3 ms.
+   This is retained for the later room/history steps; it must not be mixed into Step 5.
+
+3. **Cold media transfer under slow network.**
+   - cold photo median 856 ms;
+   - warm-disk photo median 100 ms.
+   A representative cold trace shows approximately queue 0 ms, cache 10 ms, decrypt 3 ms and response-after-admission 378 ms. The dominant delay is not the media-slot queue or decryption.
+
+### Additional baseline findings
+
+- Background/resume is unsupported in this headless Chromium run because the measured page did not reliably enter `document.visibilityState === 'hidden'`. The result is `null`, never 0 ms.
+- Under the throttled profile, text send succeeded in 3/5 benchmark samples. Two samples produced no optimistic row within the 10-second benchmark window while the socket remained open. They are recorded as `optimistic-timeout` with `null` latency. Step 4 does not assign a root cause; this is a pre-existing baseline finding, not a regression from future optimization.
+- `visible-frame` / `paint-opportunity` remain frame opportunities, not hardware-paint timestamps.
+- The 100 ms interaction and 600 ms repeated-open figures remain targets only; they are not claimed as weak-Android results.
+
+### Baseline files
+
+The successful artifact contains:
+
+- `step4-summary.json`;
+- `loading-open-medium-normal.json`;
+- `loading-photo-cold-normal.json`;
+- `loading-photo-warm-normal.json`;
+- `loading-open-medium-throttled.json`;
+- `loading-photo-cold-throttled.json`;
+- `loading-photo-warm-throttled.json`.
+
+All loading exports report Build 190.2 and were checked not to contain the fixture room/device/secret values.
+
+### Runtime impact
+
+Step 4 introduced **no runtime optimization**. The committed additions are measurement/reproducibility assets and documentation. The runtime baseline remains `1c1e0453416203f6c916f214dae36bd1186f0047`.
+
+### Continuation point
+
+**Step 5 — inspect and change only one confirmed startup wait.**
+
+Use the Step 4 startup baseline as the before-state. Do not combine startup work with room join/history, media, send or other independent findings.
