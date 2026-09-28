@@ -96,7 +96,14 @@ const fetchAssignmentFiles=Object.entries(publicSources)
   .filter(([,source])=>/window\.fetch\s*=/.test(source))
   .map(([name])=>name)
   .sort();
-assert.deepEqual(fetchAssignmentFiles,legacyFiles,'unregistered legacy window.fetch assignment exists');
+// room-lifecycle.js no longer installs window.fetch, but FPNetwork171 intentionally
+// retains its legacy spec as a compatibility admission for older/runtime-reordered
+// code. Audit active assignments separately from that compatibility-only spec.
+const compatibilityOnlyFetchSpecs=new Set(['room-lifecycle.js']);
+const activeLegacyFiles=legacyFiles.filter(name=>!compatibilityOnlyFetchSpecs.has(name));
+assert.deepEqual(fetchAssignmentFiles,activeLegacyFiles,'unregistered legacy window.fetch assignment exists');
+assert(legacyFiles.includes('room-lifecycle.js'),'room-lifecycle compatibility fetch spec missing');
+assert(!/window\.fetch\s*=/.test(publicSources['room-lifecycle.js']),'room-lifecycle unexpectedly reinstalls a direct window.fetch adapter');
 assert.equal(occurrences(network,"Object.defineProperty(xhrProto, 'open', {"),1,'XHR open owner accessor count changed');
 assert.equal(occurrences(network,"Object.defineProperty(xhrProto, 'send', {"),1,'XHR send owner accessor count changed');
 const xhrAssignmentFiles=Object.entries(publicSources)
