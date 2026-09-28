@@ -23,6 +23,14 @@ on:
       - 'scripts/regression178-gesture-layer-browser.cjs'
       - 'scripts/regression-next13-session-reuse.cjs'
       - 'scripts/check-build170.js'
+      - 'scripts/regression178-back-scroll.cjs'
+      - 'scripts/regression178-back-scroll-browser.cjs'
+      - 'scripts/regression178-scroll-writer.cjs'
+      - 'scripts/regression178-scroll-writer-browser.cjs'
+      - 'scripts/regression178-keyboard-orientation.cjs'
+      - 'scripts/regression178-keyboard-orientation-browser.cjs'
+      - 'scripts/regression178-header-keyboard.cjs'
+      - 'scripts/regression178-header-keyboard-browser.cjs'
       - 'scripts/regression180-single-owner-audit.cjs'
       - 'scripts/regression178-unread-restore-bottom.cjs'
       - 'scripts/regression178-unread-restore-bottom-browser.cjs'
@@ -78,5 +86,13 @@ jobs:
         run: npm run test:178:history-page-owner
       - name: Gesture and scroll ownership
         run: npm run test:178:gesture-layer-lifecycle
+      - name: Back scroll browser regression
+        run: npm run test:178:back-scroll
+      - name: Scroll writer regression
+        run: npm run test:178:scroll-writer
+      - name: Keyboard and orientation regression
+        run: npm run test:178:keyboard-orientation
+      - name: Header keyboard regression
+        run: npm run test:178:header-keyboard
       - name: Single-owner audit
         run: npm run test:180:single-owner-audit
