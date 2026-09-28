@@ -1012,12 +1012,22 @@ function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[.
 const scrollCoordinator={
   phase:'idle',roomId:null,box:null,generation:0,pendingIntent:null,openingInterrupted:false,lastProgrammaticAt:0,lastUserIntentAt:0,
   latestSnapshots:new Map(),pendingPersistence:new Map(),localTimers:new Map(),networkTimers:new Map(),lastCaptureAt:new Map(),
+  interactionVersions:new Map(),persistedInteractionVersions:new Map(),
   metrics:{captures:0,localWrites:0,networkWrites:0,staleRejects:0,scrollWrites:0,captureCostMs:0},
   isOpening(box=this.box){return this.phase==='opening'&&(!box||box===this.box);},
   isProgrammaticWindow(){return performance.now()-this.lastProgrammaticAt<VIEW_STATE_PROGRAMMATIC_GUARD_MS;},
+  markPositionIntent(roomId=this.roomId){
+    const key=String(roomId||'');if(!key)return;
+    this.interactionVersions.set(key,(this.interactionVersions.get(key)||0)+1);
+  },
+  hasUnsavedPositionIntent(roomId=this.roomId){
+    const key=String(roomId||'');if(!key)return false;
+    return (this.interactionVersions.get(key)||0)>(this.persistedInteractionVersions.get(key)||0);
+  },
   noteUserIntent(box=this.box){
     if(!box||box!==this.box)return;
     this.lastUserIntentAt=performance.now();
+    this.markPositionIntent(this.roomId);
     if(this.phase==='opening')this.openingInterrupted=true;
   },
   bindOpeningIntent(box){
@@ -1049,6 +1059,8 @@ const scrollCoordinator={
     this.stop();
     this.box=box;this.roomId=roomId;this.phase='opening';this.generation+=1;
     this.pendingIntent=null;this.openingInterrupted=false;
+    this.interactionVersions.set(String(roomId),0);
+    this.persistedInteractionVersions.set(String(roomId),0);
     box.dataset.scrollPhase='opening';
     this.bindOpeningIntent(box);
   },
@@ -1131,6 +1143,7 @@ const scrollCoordinator={
   focus(target,behavior='smooth',topGap=8){
     const box=this.box||target?.closest?.('#messages');
     if(!target||!box)return false;
+    this.markPositionIntent(this.roomId);
     if(this.isOpening(box)){
       const messageId=Number(target.dataset?.messageId||target.dataset?.id);
       if(Number.isSafeInteger(messageId)&&messageId>0)this.pendingIntent={type:'focus',messageId,behavior,topGap};
@@ -1164,6 +1177,7 @@ const scrollCoordinator={
       capturedAt:Date.now(),
       contextGeneration:context?.roomId===roomId?Number(context.generation)||null:null,
       tabId:viewStateTabId,
+      interactionVersion:this.interactionVersions.get(String(roomId))||0,
       reason:String(reason||'scroll').slice(0,40)
     };
     this.metrics.captures++;
@@ -1182,6 +1196,7 @@ const scrollCoordinator={
       if(!safeLocalViewStateSet(STORAGE.viewState(roomId),snapshot))return null;
       this.latestSnapshots.set(roomId,snapshot);
       this.lastCaptureAt.set(roomId,performance.now());
+      this.persistedInteractionVersions.set(roomId,Math.max(this.persistedInteractionVersions.get(roomId)||0,Number(base.interactionVersion)||0));
       this.metrics.localWrites++;
       return snapshot;
     })();
@@ -1221,6 +1236,7 @@ const scrollCoordinator={
     }
     if(this.phase!=='ready')return;
     if(this.isProgrammaticWindow()&&performance.now()-this.lastUserIntentAt>VIEW_STATE_PROGRAMMATIC_GUARD_MS)return;
+    if(performance.now()-this.lastUserIntentAt>VIEW_STATE_PROGRAMMATIC_GUARD_MS)this.markPositionIntent(this.roomId);
     this.scheduleSave(box);
   },
   latestSnapshot(roomId,deviceId=null){
@@ -1297,17 +1313,22 @@ const scrollCoordinator={
     return this.sendSnapshot(snapshot,{keepalive});
   },
   captureBeforeLeave(reason='leave',{keepalive=true}={}){
-    const roomId=this.roomId||state.roomId,box=this.box||document.getElementById('messages');
+    const roomId=String(this.roomId||state.roomId||''),box=this.box||document.getElementById('messages');
     if(!roomId)return Promise.resolve(null);
     const localTimer=this.localTimers.get(roomId);
     if(localTimer){clearTimeout(localTimer);this.localTimers.delete(roomId);}
     const networkTimer=this.networkTimers.get(roomId);
     if(networkTimer){clearTimeout(networkTimer);this.networkTimers.delete(roomId);}
-    const persist=this.phase==='ready'
+
+    const dirty=this.phase==='ready'&&this.hasUnsavedPositionIntent(roomId);
+    const persist=dirty
       ?this.captureNow(reason,{force:true,roomId,box})
       :(this.pendingPersistence.get(roomId)||Promise.resolve(this.latestSnapshot(roomId)));
     const work=Promise.resolve(persist).then(snapshot=>{
-      if(snapshot)void this.sendSnapshot(snapshot,{keepalive});
+      // A stale/background tab that has not changed its position must never
+      // manufacture a newer sequence from old geometry. It may only flush a
+      // snapshot that this tab already created.
+      if(snapshot&&snapshot.tabId===viewStateTabId)void this.sendSnapshot(snapshot,{keepalive});
       return snapshot;
     });
     return work;
@@ -1322,6 +1343,7 @@ const scrollCoordinator={
       const timer=map.get(key);if(timer)clearTimeout(timer);map.delete(key);
     }
     this.latestSnapshots.delete(key);this.pendingPersistence.delete(key);this.lastCaptureAt.delete(key);
+    this.interactionVersions.delete(key);this.persistedInteractionVersions.delete(key);
     clearLocalViewStateSnapshot(key);
   },
   snapshot(){
@@ -1494,7 +1516,7 @@ const FPComposer177=Object.freeze({
 window.FPComposer177=FPComposer177;
 async function renderChatView(messages,deviceId,viewState=null){const view=captureRoomView170();resetUnreadDividerSession(state.roomId);messages=Array.isArray(messages)?messages:[];const reusableWindow=window.FPMessageStore172?.reuseWindow?.(state.roomId,messages);const reusableById=Array.isArray(reusableWindow)&&reusableWindow.length===messages.length?new Map(reusableWindow.map((record)=>[Number(record?.id),record])):null;activeChatDeviceId=deviceId;pendingIncomingReadIds=[];initialMessagesScrollPending=true;messageCache.clear();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}els.content.innerHTML=`<div class='chat-view'><div class='chat-header'><div><strong>${safeText(state.roomNames[state.roomId]||`Комната ${shortId(state.roomId)}`)}</strong><div id='presenceLine' class='presence-line'></div><div id='connectionWarning' class='connection-warning hidden'></div></div><div class='chat-header-actions'><button id='backMob' class='mobile-only btn btn-icon' aria-label='Назад'>←</button><button id='reloadBtn' class='btn btn-icon' aria-label='Обновить'>↻</button><button id='menuBtn' class='btn btn-icon' aria-label='Меню чата'>⋮</button></div></div><div class='messages' id='messages'></div><button id='newMessagesPill' class='new-messages-pill hidden' type='button'></button><div id='replyComposerBar' class='reply-composer-bar hidden'></div><form class='send composer' id='sendForm'><button class='composer-icon composer-attach' type='button' aria-label='Вложения'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='M16.5 6.5l-7.8 7.8a3 3 0 104.2 4.2l8.1-8.1a5 5 0 10-7.1-7.1L5.6 11.6a7 7 0 109.9 9.9l6.4-6.4'/></svg></button><div class='composer-input-wrap'><textarea id='msgInput' placeholder='Сообщение'></textarea><button class='composer-emoji' type='button' aria-label='Emoji'><svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='9'/><path d='M8.5 10h.01M15.5 10h.01M8.5 14.5c1 1.2 2.1 1.8 3.5 1.8'/></svg></button></div><button id='sendBtn' class='btn-send composer-send' type='submit' disabled>➤</button><input id='mediaFileInput' type='file' accept='image/*,video/*' multiple hidden></form></div><div id='mediaPreviewRoot'></div>`; document.getElementById('backMob')?.addEventListener('click',()=>{if(window.fpCommitChatBackTransition?.())return;showChatsList();}); document.getElementById('reloadBtn').onclick=()=>window.location.reload(); document.getElementById('menuBtn').onclick=(e)=>{e.preventDefault();e.stopPropagation();const rect=e.currentTarget.getBoundingClientRect();showRoomMenu(state.roomId,rect.right,rect.bottom+6)};setupChatBackSwipe(document.querySelector('.chat-view'));const box=document.getElementById('messages');box.dataset.lastDayKey=''; unreadVisibleObserver=new IntersectionObserver((entries)=>{entries.forEach((entry)=>FPReadState178.admitVisible(entry,box));},{root:box,threshold:0.2}); const receivedIds=messages.filter((message)=>message.sender_device_id!==deviceId&&message.status==='sent').map((message)=>Number(message.id)).filter((id)=>Number.isSafeInteger(id)&&id>0); await FPWork174.each(messages,async m=>{appendDateSeparatorIfNeeded(box,m.created_at);const mine=m.sender_device_id===deviceId;const reusable=reusableById?.get(Number(m.id));const txt=reusable?.deleted?'':(reusable&&typeof reusable.text==='string'?reusable.text:await decryptText(m.iv,m.ciphertext,view.key).catch(()=>"[cannot decrypt]")); if(!isRoomViewCurrent170(view))return; appendMessage(box,m,txt,mine,false);window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'first-message-mounted');},{current:()=>isRoomViewCurrent170(view)});if(!isRoomViewCurrent170(view))return;window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'text-ready',messages.length);if(receivedIds.length)markMessagesReceived(state.roomId,deviceId,receivedIds);recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();
 box.addEventListener('scroll',()=>{scheduleViewStateSave();recomputePendingUnread();updateUnreadIndicators();updateReplyComposerBar();});
-document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
+document.getElementById('newMessagesPill').onclick=()=>{scrollCoordinator.noteUserIntent(document.getElementById('messages'));if(window.FPHistory174){void FPHistory174.goToUnread();return;}const firstUnread=document.querySelector('.msg[data-read="0"][data-incoming="1"]');if(firstUnread){scrollCoordinator.focus(firstUnread,'smooth',8);return;}scrollCoordinator.requestBottom(document.getElementById('messages'));};
 renderPresenceStatus();
 const mediaFileInput=document.getElementById('mediaFileInput');const attachBtn=document.querySelector('.composer-attach');if(attachBtn&&mediaFileInput){attachBtn.onclick=(e)=>{e.preventDefault();mediaFileInput.click();};mediaFileInput.onchange=async()=>{const files=Array.from(mediaFileInput.files||[]);mediaFileInput.value='';if(!files.length)return;await openMediaPreviewFromFiles(files);};}const form=document.getElementById('sendForm'),input=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'); if(form&&input&&sendBtn){const syncSendBtn=()=>window.FPComposer177?.syncUI?.(form); window.FPComposer177?.bind?.(form,view.roomId); form.onsubmit=async(e)=>{e.preventDefault();const t=input.value.trim();if(!t)return;const ok=await ensureWsConnected(activeChatDeviceId);if(!ok||!state.ws||state.ws.readyState!==WebSocket.OPEN||state.ws.deviceId!==activeChatDeviceId){alert('Нет соединения. Попробуйте обновить чат.');return;}const enc=await encryptText(t);const draft=ensureDraftState(state.roomId);const replyToMessageId=draft.replyTo?.messageId||null;if(replyToMessageId){markReplyTargetRead(replyToMessageId);}const clientMessageId=crypto.randomUUID();const createdAt=new Date().toISOString();const outbound={type:'message:send',roomId:state.roomId,clientMessageId,...enc,notificationPreview:t.slice(0,80),replyToMessageId};const tempMessage={id:clientMessageId,client_message_id:clientMessageId,ciphertext:enc.ciphertext,iv:enc.iv,reply_to_message_id:replyToMessageId,status:'sending',created_at:createdAt,delivered_at:null,read_at:null,sender_name:state.nick,sender_device_id:activeChatDeviceId,type:'text',media:[]};const box=document.getElementById('messages');try{appendDateSeparatorIfNeeded(box,createdAt);appendMessage(box,tempMessage,t,true,true);upsertRoomMessage(state.roomId,tempMessage,{text:t,unread:0});if(!queuePendingTextSend(outbound))throw new Error('queue');}catch{alert('Не удалось отправить сообщение. Проверьте соединение.');return;}input.value='';draft.text='';draft.replyTo=null;updateReplyComposerBar();await clearDraftOnServer(state.roomId);syncSendBtn();autoResizeMessageInput(input);}; window.FPTextSend170?.bindCurrentForm?.();syncSendBtn();autoResizeMessageInput(input);window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'draft-start');await loadDraftForCurrentRoom();window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'draft-ready');if(!isRoomViewCurrent170(view))return;syncSendBtn();window.FPRuntime169?.loading?.step(window.FPRuntime169?.loading?.roomToken(view.context),'composer-ready');}}function buildMediaFallbackText(media=[],caption=''){const c=String(caption||'').trim();if(c)return c;if(media.length===1)return media[0]?.media_kind==='video'?'Видео':'Фото';if(media.length>1)return'Альбом';return'Медиа';}
  async function fetchMediaThumbUrl(media,trace=null){
