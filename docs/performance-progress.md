@@ -3488,3 +3488,279 @@ No runtime rollback, DB migration, cache clear or identity reset is required.
 
 Item 18 is next only if explicitly requested.
 
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 18
+
+Status: **CI acceptance complete; physical iPhone/Android acceptance not executed**.
+
+### Scope
+
+Only follow-up item **18 — compare result and check devices** was performed.
+
+No application runtime behavior was changed and nothing was published to the production server.
+
+One benchmark-only correction was made during acceptance:
+
+- `scripts/benchmark-next16-reconnect.cjs` still used a 2.5 s natural outage;
+- historical Step 4 used 10 s;
+- the stand now uses 10 s and records actual `offlineMs`.
+
+### Final CI acceptance
+
+Primary acceptance workflow `36451711515`: **SUCCESS**.
+
+Artifact:
+
+- id `10983859611`;
+- digest `sha256:385bbe3fc66c715386d7cea3fa35e5db8e753849c57d00f827893dd07fa9a01b`.
+
+Passed related regressions:
+
+- startup/version/cache: `test:next:4`, `test:next:7`, `test:next:8`, `test:next:9`;
+- repeated input/send: `test:next:2`, `test:177:send-manager`, `test:178:message-render-owner`;
+- history/reopen: `test:next:11`, `test:next:12`, `test:next:13`, saved-anchor, unread-restore and history-page owner checks;
+- media/gesture: `test:next:15`, viewer lifecycle, gesture/layer lifecycle, Build 185 photo zoom, media cache and Build 190 media browser;
+- connection ownership: `check:170`, `test:180:single-owner-audit`;
+- reaction interaction: `regression1884-reaction-interaction.cjs`.
+
+No new runtime defect was confirmed by these regressions.
+
+### Startup repeat
+
+Workflow `36453900608`: **SUCCESS**.
+
+Artifact:
+
+- id `10984886207`;
+- digest `sha256:eb10de9a94d09d39f7f829d0043ab41923d19b523ecc14681f352424e57ced1e`.
+
+Confirmed structural result remains:
+
+- saved startup logical version requests: **2 -> 1**;
+- update across two navigations: **4 -> 2**;
+- saved slow second-version gate: **218.9 ms -> 0.2 ms**;
+- update slow final second-version gate: **214.8 ms -> 0.2 ms**.
+
+Current single-run wall values:
+
+- saved normal: 366 ms;
+- saved slow: 4199 ms;
+- update normal: 503 ms;
+- update slow: 6549 ms.
+
+Do not claim wall-time speedup from these single runs. Current saved-slow owner wait is still about **1278.6 ms**.
+
+### Room-open before / current
+
+Same 1500-message/slow-profile stand, five samples per scenario:
+
+| Scenario | Item 10 baseline | Item 18 repeat | Delta |
+| --- | ---: | ---: | ---: |
+| Tail/end | 964.8 ms | 965.2 ms | +0.4 ms |
+| Saved anchor | 2131.4 ms | 1430.3 ms | -701.1 ms / -32.89% |
+| First unread | 2044.5 ms | 1397.7 ms | -646.8 ms / -31.64% |
+
+Validation:
+
+- saved target mounted 5/5;
+- saved hasNewer 5/5;
+- first-unread target mounted 5/5;
+- first-unread ID matched 5/5.
+
+Remaining: three post-open no-cursor `GET /messages?limit=100` requests per room open are still observed from existing sync/reconnect behavior.
+
+### Same-session reopen repeat
+
+Five pairs:
+
+- first open median: **182.5 ms**, decrypt median 100;
+- same-session reopen median: **137.4 ms**, decrypt median 0;
+- delta: **-45.1 ms / -24.71%**.
+
+Earlier item-13 result was 184.0 -> 136.5 ms / -25.82%, so the result remains consistent.
+
+Reuse is still RAM-only and disappears on page reload.
+
+### Controlled media before / after
+
+Item-14 baseline and current item-15 runtime were rerun sequentially on the same runner with the same 4032×3024 / 2,186,611 B JPEG fixture.
+
+Normal:
+
+| Cache | Old original-only | Current preview | Current original |
+| --- | ---: | ---: | ---: |
+| Managed warm | 41.2 ms | 9.7 ms | 91.1 ms |
+| HTTP retained | 58.8 ms | 18.0 ms | 93.0 ms |
+| HTTP cold | 57.9 ms | 8.4 ms | 109.2 ms |
+
+Throttled:
+
+| Cache | Old original-only | Current preview | Current original |
+| --- | ---: | ---: | ---: |
+| Managed warm | 33.3 ms | 5.7 ms | 79.6 ms |
+| HTTP retained | 294.6 ms | 5.7 ms | 361.3 ms |
+| HTTP cold | 44,276.2 ms | 5.7 ms | 18,394.8 ms |
+
+Confirmed product result: the ready thumbnail is displayed almost immediately instead of waiting for the original.
+
+Do not call 44 s -> 18 s a transfer speedup: the cold-original stand has a known unexplained two-cluster distribution around ~18 s/~44 s.
+
+### Reconnect — corrected 10-second acceptance
+
+The benchmark-only 2.5 s mismatch was corrected and separately rerun.
+
+Workflow `36453355336`: **SUCCESS**.
+
+Artifact:
+
+- id `10984156959`;
+- digest `sha256:3a199cee586f5bffd49f3b95d8321f6c7f82378b1adef1da096065027986b126`.
+
+Actual natural offline durations were 10004–10007 ms.
+
+Natural outage:
+
+- normal: old socket stayed live 5/5, reconnect = null;
+- throttled: old socket stayed live 5/5, reconnect = null.
+
+Confirmed explicit break while offline:
+
+- normal: 5/5 breaks, 5/5 automatic recoveries, median 16 ms;
+- throttled: 5/5 breaks, 5/5 automatic recoveries, median 465 ms.
+
+Observer still never calls `ensureConnected()`.
+
+Profile effect verified:
+
+- normal probe median 3.9 ms;
+- throttled probe median 229.0 ms;
+- added median +225.1 ms.
+
+### Send/reaction repeated acceptance
+
+Current item-17 metrics, five attempts each:
+
+Send:
+
+- normal: 5/5; manager 0.7 ms, DOM 2.4 ms, rAF opportunity 12.6 ms, ACK 4.6 ms;
+- throttled: 5/5; manager 0.6 ms, DOM 2.2 ms, rAF opportunity 12.3 ms, ACK 33.0 ms.
+
+Reaction:
+
+- normal: 5/5; manager 0.6 ms, target DOM 0.6 ms, rAF opportunity 10.5 ms, ACK 3.7 ms;
+- throttled: 5/5; manager 0.9 ms, target DOM 0.9 ms, rAF opportunity 1.8 ms, ACK 223.1 ms.
+
+Historical throttled send was 3/5 with two `optimistic-timeout` failures. They did not reproduce, but this is not proof they can never recur.
+
+Historical/new ACK boundaries differ; no speedup percentage is claimed.
+
+rAF remains a browser frame callback opportunity, not hardware presentation.
+
+### Physical device acceptance
+
+No physical device is available to this environment.
+
+iPhone:
+
+- input — **NOT EXECUTED**;
+- history — **NOT EXECUTED**;
+- media — **NOT EXECUTED**;
+- real background/return — **NOT EXECUTED**.
+
+Android:
+
+- input — **NOT EXECUTED**;
+- history — **NOT EXECUTED**;
+- media — **NOT EXECUTED**;
+- real background/return — **NOT EXECUTED**.
+
+Desktop/headless Chromium and mobile viewport emulation are not counted as device acceptance.
+
+#### Short user scenario
+
+Run once on each real device:
+
+1. Input: send five distinct messages rapidly, including a send immediately after prior ACK; add/remove one reaction. Check no stuck composer/duplicates and normal status progression.
+2. History: leave a long chat at a non-bottom point, reopen, then repeat with unread messages. Check saved offset and first unread; no jump to bottom.
+3. Media: open a normal phone photo; check immediate preview -> sharp original without geometry jump, pinch/pan, then swipe and close while another original is loading. Video play badge must remain video-only.
+4. Real background: switch to Home/another app for ~30 s and return, preferably once with media/send pending. Check room/position, automatic sync/reconnect if the socket broke, no duplicate actions and no dead gestures.
+
+Do not record a physical pass until the steps are actually performed.
+
+### Successful attempt summary
+
+- saved-anchor room-open: 5/5;
+- first-unread room-open: 5/5;
+- same-session reopen: 5/5;
+- progressive media: 5/5 per cache/network scenario;
+- natural reconnect classification: 10/10 as preserved-live-socket outcomes with reconnect null;
+- confirmed-break automatic recovery: 10/10;
+- send: 10/10;
+- reaction: 10/10;
+- reaction cleanup: 10/10;
+- iPhone physical acceptance: 0 executed;
+- Android physical acceptance: 0 executed.
+
+### Remaining defects / limitations
+
+1. Three post-open no-cursor latest-page requests remain.
+2. Throttled HTTP-cold phone-photo original has unexplained ~18 s/~44 s timing clusters.
+3. Decode-before-swap adds tens of milliseconds to original-ready in warm/retained media cases.
+4. Same-session MessageStore reuse is RAM-only.
+5. Natural Chromium offline preserves the socket; confirmed-break recovery remains a separate harness scenario.
+6. Physical iPhone/Android input/history/media/background acceptance is still missing, including the historical first-open photo gesture concern on real mobile hardware.
+7. rAF is not hardware presentation.
+8. Five-sample groups have no meaningful p95.
+9. No production/Cloudflare Tunnel performance acceptance was performed.
+
+### Ownership
+
+Item 18 added no new owner/controller.
+
+Preserved:
+
+- FPRoomContext170;
+- FPConnection170;
+- FPSyncCoordinator176;
+- FPNetwork171 / FPStorage167;
+- FPMessageStore172;
+- FPHistory174 / FPScroll173;
+- FPSendManager177 / FPTextSend170;
+- FPReactionManager188 / renderer / arbiter;
+- FPMediaManager177 / FPLayer173 / FPGesture135;
+- passive FPRuntime169.
+
+### Files
+
+Measurement-only correction:
+
+- `scripts/benchmark-next16-reconnect.cjs`.
+
+Documentation:
+
+- `docs/performance-next18-final-acceptance.md`;
+- `docs/performance-next18-final-acceptance-summary.json`;
+- this journal.
+
+Temporary item-18 workflows are removed after preserving results.
+
+No `public/*`, server runtime, DB/schema, Service Worker or updater file was changed.
+
+### Rollback
+
+There is no application/runtime rollback.
+
+Repository-only rollback:
+
+- revert the item-18 10-second reconnect-stand adjustment if necessary;
+- remove item-18 report/summary/journal entry.
+
+No DB/cache migration, identity reset or production action is required.
+
+### Final status
+
+**Isolated Chromium/Linux acceptance: complete and green.**
+
+**Physical iPhone/Android acceptance: not executed.**
+
+No production deployment was performed.
+
