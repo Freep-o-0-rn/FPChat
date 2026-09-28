@@ -635,6 +635,12 @@ function parseInvite(){const m=location.pathname.match(/^\/i\/([A-Z0-9]{16,64})$
 function getKnownDeviceIds(){const ids=new Set();const stableDeviceId=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(stableDeviceId)ids.add(stableDeviceId);for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key||!key.startsWith('fpchat:room:'))continue;const val=STORAGE.get(key);if(val?.deviceId)ids.add(String(val.deviceId));}return [...ids];}
 function parseChat(){const m=location.pathname.match(/^\/chat\/([A-Z0-9]{16})$/); return m?m[1]:null;}
 function getInitialScrollTargetId(data){
+  const initialWindow=data?.initialWindow;
+  if(Number(initialWindow?.version)===1){
+    if(initialWindow?.mode==='tail')return null;
+    const serverTargetId=Number(initialWindow?.targetMessageId);
+    if(initialWindow?.mode==='around'&&Number.isSafeInteger(serverTargetId)&&serverTargetId>0)return serverTargetId;
+  }
   const unreadCount=Number(data?.unreadCount);
   const firstUnreadId=Number(data?.firstUnreadMessageId);
   if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;
@@ -643,6 +649,8 @@ function getInitialScrollTargetId(data){
   return Number.isSafeInteger(savedAnchorId)&&savedAnchorId>0?savedAnchorId:null;
 }
 async function hydrateHistoryForInitialPosition(roomId,deviceId,data,view=captureRoomView170()){
+  const latestInitial=data?.initialWindow?.latestMessage;
+  if(latestInitial&&Number.isSafeInteger(Number(latestInitial.id))&&Number(latestInitial.id)>0)data.latestMessage174=latestInitial;
   if(window.FPHistory174)return FPHistory174.hydrate(view,data);
   const anchorId=getInitialScrollTargetId(data);
   let messages=Array.isArray(data?.messages)?[...data.messages]:[];
