@@ -1,4 +1,4 @@
-name: Next Plan Item 15 Progressive Photo v2
+name: Next Plan Item 15 Progressive Photo v3
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +28,7 @@ jobs:
           node --check public/app.js
           node --check public/media-gallery134.js
           node --check scripts/regression-next15-progressive-photo.cjs
+          node --check scripts/benchmark-next15-progressive-photo.cjs
       - name: App revision contract
         run: npm run test:next:7
       - name: Item 15 progressive photo
@@ -44,3 +45,15 @@ jobs:
         run: npm run test:186:media-cache
       - name: Build 190 media
         run: npm run test:190:browser
+      - name: Measure preview to original
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT15_OUTPUT: ${{ github.workspace }}/next15-output
+        run: npm run bench:next:15
+      - name: Upload item 15 measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next15-progressive-photo
+          path: next15-output
+          if-no-files-found: warn
