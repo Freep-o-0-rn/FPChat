@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 6,
+  "build": "190.2",
+  "runtimeSha": "b75d01761706280cfc1e04d253739d32160c2ad2",
+  "workflowRunId": 36414543629,
+  "artifactId": 10965878305,
+  "artifactDigest": "sha256:0410f672ad0ea0228a86ae24a827f98640903ed619b1487156dee59405d4f447",
+  "stand": {
+    "environment": "isolated localhost Chromium/Linux",
+    "productionInference": false,
+    "ordinaryOpen": "new page in same browser context after a priming run; cache, localStorage and SW registration retained",
+    "reload": "page.reload() on that already-open page; same context/site data/cache retained",
+    "slowProfile": "200 ms latency, ~1 Mbit/s down, ~0.5 Mbit/s up; page target and active Service Worker target throttled"
+  },
+  "scenarios": {
+    "normalOrdinaryOpen": {
+      "wallMs": 370,
+      "jsCssRequests": 81,
+      "encodedKiB": 21,
+      "network304": 81,
+      "conditional": 72,
+      "diskCache": 0,
+      "servedFromCache": 0,
+      "cacheControl": "public, max-age=0"
+    },
+    "normalReload": {
+      "wallMs": 335,
+      "jsCssRequests": 81,
+      "encodedKiB": 21,
+      "network304": 80,
+      "conditional": 70,
+      "diskCache": 0,
+      "servedFromCache": 0,
+      "cacheControl": "public, max-age=0"
+    },
+    "slowOrdinaryOpen": {
+      "wallMs": 4141,
+      "jsCssRequests": 76,
+      "encodedKiB": 19.5,
+      "network304": 75,
+      "conditional": 66,
+      "diskCache": 0,
+      "servedFromCache": 0,
+      "cacheControl": "public, max-age=0"
+    },
+    "slowReload": {
+      "wallMs": 4135,
+      "jsCssRequests": 77,
+      "encodedKiB": 19.5,
+      "network304": 75,
+      "conditional": 61,
+      "diskCache": 0,
+      "servedFromCache": 0,
+      "cacheControl": "public, max-age=0"
+    }
+  },
+  "selectedResource": {
+    "path": "/app.js",
+    "url": "/app.js?v=190.2",
+    "reason": "critical executable startup resource with ~864-868 ms repeat 304 validation on the slow localhost profile",
+    "normalOrdinary": {
+      "durationMs": 47.4,
+      "logicalStatus": 200,
+      "networkStatus": 304,
+      "encodedBytes": 267,
+      "cacheControl": "public, max-age=0",
+      "etag": "W/\"31ab5-1a0e7b9ecd6\"",
+      "ifNoneMatch": "W/\"31ab5-1a0e7b9ecd6\"",
+      "fromDiskCache": false,
+      "servedFromCache": false
+    },
+    "normalReload": {
+      "durationMs": 42.3,
+      "logicalStatus": 200,
+      "networkStatus": 304,
+      "encodedBytes": 267,
+      "cacheControl": "public, max-age=0",
+      "etag": "W/\"31ab5-1a0e7b9ecd6\"",
+      "ifNoneMatch": "W/\"31ab5-1a0e7b9ecd6\"",
+      "fromDiskCache": false,
+      "servedFromCache": false
+    },
+    "slowOrdinary": {
+      "durationMs": 864.1,
+      "logicalStatus": 200,
+      "networkStatus": 304,
+      "encodedBytes": 267,
+      "cacheControl": "public, max-age=0",
+      "etag": "W/\"31ab5-1a0e7b9ecd6\"",
+      "ifNoneMatch": "W/\"31ab5-1a0e7b9ecd6\"",
+      "fromDiskCache": false,
+      "servedFromCache": false
+    },
+    "slowReload": {
+      "durationMs": 867.8,
+      "logicalStatus": 200,
+      "networkStatus": 304,
+      "encodedBytes": 267,
+      "cacheControl": "public, max-age=0",
+      "etag": "W/\"31ab5-1a0e7b9ecd6\"",
+      "ifNoneMatch": "W/\"31ab5-1a0e7b9ecd6\"",
+      "fromDiskCache": false,
+      "servedFromCache": false
+    }
+  },
+  "contentUrlCheck": {
+    "beforeRef": "63664e5c013cfb44bda7f179b383a6460fd595d2",
+    "beforeAppBlobSha": "80b9a3952322f27a15cda9292c5ba2e7ff2840e3",
+    "afterAppBlobSha": "c6cb6b3d58e5423d11d628882c00564df7b73d21",
+    "contentChanged": true,
+    "beforeBuild": "190.2",
+    "afterBuild": "190.2",
+    "loaderExpression": "/app.js${buildSuffix}",
+    "beforeUrl": "/app.js?v=190.2",
+    "afterUrl": "/app.js?v=190.2",
+    "urlChanged": false
+  },
+  "interpretation": {
+    "localhost": "repeat JS/CSS requests are predominantly validator-based network revalidations; Chromium reports logical 200 but Network extra info reports 304",
+    "cacheProof": "fromDiskCache=false and requestServedFromCache=false in these traces; no claim of memory/disk hit is made",
+    "production": "no production/CDN cache policy conclusion is drawn from localhost Express behavior",
+    "noRuntimeChange": true
+  }
+}
