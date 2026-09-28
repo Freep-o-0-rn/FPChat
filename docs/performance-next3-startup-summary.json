@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 3,
+  "build": "190.2",
+  "runtimeSha": "1eb7a97184a307562c51525aa358450f8346ea36",
+  "workflowRunId": 36408339641,
+  "artifactId": 10963820289,
+  "artifactDigest": "sha256:e837166c1c02b2da9cd180682149212e99ebfc9fd89f4f9517fb5015f2b0e07b",
+  "scenarios": {
+    "savedNormal": {
+      "wallMs": 341,
+      "loaderToBootReadyMs": 210.2,
+      "versionMs": 4.2,
+      "ownersWaitMs": 66.1,
+      "serviceWorkerMs": 8,
+      "secondVersionGateMs": 9.6,
+      "coreReadyToBootReadyOwnerStartMs": 57.5,
+      "layersMs": 41.2,
+      "assetsMs": 22,
+      "requestCount": 95,
+      "encodedKiB": 30.2,
+      "serviceWorkerResponses": 2,
+      "diskCacheResponses": 0,
+      "secondVersionStartDelayMs": 78.3,
+      "secondVersionDurationMs": 6.9
+    },
+    "savedSlow": {
+      "wallMs": 3997,
+      "loaderToBootReadyMs": 3655.9,
+      "versionMs": 6.9,
+      "ownersWaitMs": 1291.2,
+      "serviceWorkerMs": 0.9,
+      "secondVersionGateMs": 12.7,
+      "coreReadyToBootReadyOwnerStartMs": 2096.5,
+      "layersMs": 223.4,
+      "assetsMs": 22.8,
+      "requestCount": 92,
+      "encodedKiB": 22.4,
+      "serviceWorkerResponses": 2,
+      "diskCacheResponses": 0,
+      "secondVersionStartDelayMs": 1298.9,
+      "secondVersionDurationMs": 10.8
+    },
+    "updateNormal": {
+      "wallMs": 503,
+      "navigations": 2,
+      "totalEncodedKiB": 44.1,
+      "requestCount": 152,
+      "serviceWorkerResponses": 4,
+      "diskCacheResponses": 0,
+      "detectNav": {
+        "versionMs": 4.5,
+        "ownersWaitMs": 58.1,
+        "serviceWorkerMs": 3.5,
+        "updateGateMs": 27.1,
+        "secondVersionStartDelayMs": 66.1,
+        "secondVersionDurationMs": 10.1
+      },
+      "finalNav": {
+        "loaderToBootReadyMs": 211.9,
+        "versionMs": 3.7,
+        "ownersWaitMs": 57.2,
+        "serviceWorkerMs": 2.5,
+        "secondVersionGateMs": 7.1,
+        "coreReadyToBootReadyOwnerStartMs": 70.3,
+        "layersMs": 40.7,
+        "assetsMs": 28.4,
+        "secondVersionStartDelayMs": 63.6,
+        "secondVersionDurationMs": 4.6
+      },
+      "nav1EncodedKiB": 13.6,
+      "nav2EncodedKiB": 30.5
+    },
+    "updateSlow": {
+      "wallMs": 6280,
+      "navigations": 2,
+      "totalEncodedKiB": 140.9,
+      "requestCount": 138,
+      "serviceWorkerResponses": 4,
+      "diskCacheResponses": 0,
+      "detectNav": {
+        "versionMs": 4.1,
+        "ownersWaitMs": 1284.3,
+        "serviceWorkerMs": 2,
+        "updateGateMs": 24.3,
+        "secondVersionStartDelayMs": 1290.4,
+        "secondVersionDurationMs": 9.1
+      },
+      "finalNav": {
+        "loaderToBootReadyMs": 4318.5,
+        "versionMs": 3.9,
+        "ownersWaitMs": 1286.2,
+        "serviceWorkerMs": 1.7,
+        "secondVersionGateMs": 11.7,
+        "coreReadyToBootReadyOwnerStartMs": 2768,
+        "layersMs": 225.2,
+        "assetsMs": 20.3,
+        "secondVersionStartDelayMs": 1291.8,
+        "secondVersionDurationMs": 9.5
+      },
+      "nav1EncodedKiB": 10.9,
+      "nav2EncodedKiB": 130,
+      "largestTransferredScriptsKiB": {
+        "voice.js": 63.4,
+        "message-context.js": 32.6,
+        "swipe-fix.js": 14.6
+      }
+    }
+  },
+  "conclusion": {
+    "secondVersionRequest": "real but small request duration; its late start is gated by owners/service-worker sequence",
+    "nextEvidence": "item 5 has higher measured potential than item 4; not executed"
+  }
+}
