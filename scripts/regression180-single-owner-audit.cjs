@@ -216,7 +216,7 @@ for(const name of [
 }
 
 // Block authority + timers are separated by responsibility.
-assert.equal(occurrences(server,"const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);"),1,'canonical block owner instance duplicated');
+assert.equal(count(server,/\bconst\s+fpUserBlocks165\s*=\s*createUserBlocks165\s*\(/g),1,'canonical block owner instance duplicated');
 assert.equal(occurrences(blocks,'const watcher = setInterval(() => {'),1,'server block watcher count changed');
 assert(blocks.includes('}, 1000);'),'server block watcher cadence changed');
 assert.equal(count(clientBlocks,/setInterval\s*\(/g),2,'client block compatibility/status timer inventory changed');
