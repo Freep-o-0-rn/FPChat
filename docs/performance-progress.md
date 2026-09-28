@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–8 plus diagnostic 3.1 completed; revisioned app.js now uses safe long-lived immutable caching**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–9 plus diagnostic 3.1 completed; static JS/CSS compression verified on the local server**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–8 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–9 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1964,3 +1964,173 @@ Item-7 URL revisioning can remain independently.
 **No next item started automatically.**
 
 Follow-up item 9 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 9
+
+Status: **done — static JS/CSS compression added on the local application server**.
+
+### Preflight
+
+Accessible localhost stand had no compression.
+
+Raw `Accept-Encoding: br, gzip` requests returned:
+
+- no `Content-Encoding`;
+- no `Vary: Accept-Encoding`;
+- full uncompressed app.js/styles.css bodies.
+
+Normal browser cold-start:
+
+- 394 ms;
+- 1,267,065 B JS/CSS encoded transfer.
+
+Slow browser cold-start:
+
+- 11,481 ms;
+- 1,158,897 B JS/CSS encoded transfer.
+
+Slow profile remained:
+
+- 200 ms latency;
+- ~1 Mbit/s down;
+- ~0.5 Mbit/s up.
+
+### Implementation
+
+One compression mechanism was added using built-in Node `zlib`.
+
+It applies only to GET static `.js/.css` responses.
+
+Excluded:
+
+- `sw.js`;
+- `/api/*`;
+- HTML;
+- `version.json`;
+- non-JS/CSS;
+- Range requests.
+
+Negotiation supports:
+
+- Brotli;
+- gzip;
+- identity.
+
+Eligible responses include:
+
+`Vary: Accept-Encoding`
+
+Existing ETag and Cache-Control behavior remains authoritative.
+
+Bodies below 1 KiB and `no-transform` responses are left uncompressed.
+
+Compressed representations are cached in memory by exact content SHA-1 plus encoding.
+
+### Negotiation verification
+
+`test:next:9` confirms:
+
+- `br, gzip` → Brotli;
+- `gzip` → gzip;
+- `br;q=0, gzip;q=1` → gzip;
+- `br;q=0, gzip;q=0, identity;q=1` → uncompressed identity;
+- identity body exactly equals the original app.js bytes;
+- compressed body decompresses to the exact original bytes;
+- `Vary: Accept-Encoding` exists;
+- ETag conditional request still returns 304;
+- HTML/version.json/sw.js/API do not receive compression.
+
+### Raw size
+
+app.js:
+
+- identity: 203445 B;
+- Brotli: 51434 B;
+- gzip: 52734 B.
+
+styles.css:
+
+- identity: 22435 B;
+- Brotli: 5528 B;
+- gzip: 5327 B.
+
+### Browser before/after
+
+Normal:
+
+- JS/CSS transfer: 1,267,065 → **375,257 B**;
+- reduction: **891,808 B / 70.38%**;
+- startup: 394 → **374 ms**.
+
+Slow:
+
+- JS/CSS transfer: 1,158,897 → **343,216 B**;
+- reduction: **815,681 B / 70.38%**;
+- startup: 11,481 → **5753 ms**.
+
+app.js slow:
+
+- encoded transfer: 203797 → **51808 B**;
+- duration: 4123 → **1723.3 ms**.
+
+The transfer reduction is direct. Startup-time deltas are single-run diagnostics, not stable percentile results.
+
+### Verification
+
+Final workflow `36419759923` — SUCCESS.
+
+Passed:
+
+- `test:next:9`;
+- `test:next:8`;
+- `test:next:7`;
+- `test:186:startup`;
+- normal compressed benchmark;
+- slow compressed benchmark.
+
+Final artifact:
+
+- `10969415405`;
+- digest `sha256:8a518a4f918b272bcbd9f2bb1ce9818e9ce7dbe069e25be453f1ca327197ea8e`.
+
+Historical no-compression evidence remains:
+
+- normal run `36419046699`, artifact `10967179484`;
+- slow run `36419329084`, artifact `10967254875`.
+
+### Files
+
+Runtime/server:
+
+- `server.js`.
+
+Regression/measurement:
+
+- `scripts/regression-next9-static-compression.cjs`;
+- `scripts/benchmark-next9-static-compression.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next9-static-compression.md`;
+- `docs/performance-next9-static-compression-summary.json`;
+- this journal.
+
+No Service Worker, client owner/manager/arbiter, DB/schema, updater, HTML/version cache policy or production proxy/CDN configuration changed.
+
+### Production limit
+
+The compression policy was verified only on the local FPChat application server. Cloudflare or reverse-proxy compression was not changed or measured.
+
+### Rollback
+
+Remove `staticCompression190`, the zlib import, and item-9 test/benchmark registration.
+
+No data migration is involved.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Follow-up item 10 is next only if explicitly requested.
