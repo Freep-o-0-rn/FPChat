@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
+const {execFileSync}=require('node:child_process');
 const {run}=require('./browser-harness174.cjs');
 
 const SAMPLES=5;
@@ -21,29 +22,72 @@ function stats(values){
   return{n:clean.length,median:round(median),min:round(clean[0]),max:round(clean.at(-1)),p95:null,p95Rule:'not calculated for n < 20'};
 }
 
-function profileConfig(profile,{offline=false}={}){
+function requestedProfile(profile){
   if(profile==='throttled'){
     return{
-      offline:Boolean(offline),
-      latency:200,
-      downloadThroughput:125000,
-      uploadThroughput:62500,
-      connectionType:'cellular3g'
+      targetRttMs:200,
+      downloadBitsPerSecond:1000000,
+      uploadBitsPerSecond:500000,
+      implementation:'Linux tc/netem on loopback; 100 ms one-way delay in each direction, server->client 1 mbit, client->server 500 kbit'
     };
   }
+  return{
+    targetRttMs:0,
+    downloadBitsPerSecond:null,
+    uploadBitsPerSecond:null,
+    implementation:'no loopback qdisc shaping'
+  };
+}
+
+function cdpOfflineConfig(offline){
   return{
     offline:Boolean(offline),
     latency:0,
     downloadThroughput:-1,
     uploadThroughput:-1,
-    connectionType:'wifi'
+    connectionType:offline?'none':'wifi'
   };
 }
 
-async function applyProfile(session,profile,{offline=false}={}){
-  const config=profileConfig(profile,{offline});
+async function setOfflineState(session,offline){
+  const config=cdpOfflineConfig(offline);
   await session.send('Network.emulateNetworkConditions',config);
   return config;
+}
+
+function runTc(args,{allowFail=false}={}){
+  try{
+    return execFileSync('sudo',['-n','tc',...args],{encoding:'utf8'}).trim();
+  }catch(error){
+    if(allowFail)return String(error?.stderr||error?.message||'').trim();
+    throw error;
+  }
+}
+
+function clearHostProfile(){
+  runTc(['qdisc','del','dev','lo','root'],{allowFail:true});
+}
+
+function readTcState(){
+  return{
+    qdisc:runTc(['-s','qdisc','show','dev','lo'],{allowFail:true}),
+    filters:runTc(['-s','filter','show','dev','lo','parent','1:'],{allowFail:true})
+  };
+}
+
+function applyHostProfile(profile,serverPort){
+  clearHostProfile();
+  if(profile!=='throttled'){
+    return{profile,configured:true,requested:requestedProfile(profile),tcState:readTcState()};
+  }
+  const port=String(Number(serverPort));
+  if(!/^\d+$/.test(port)||Number(port)<=0)throw Error('next16 invalid loopback server port');
+  runTc(['qdisc','add','dev','lo','root','handle','1:','prio','bands','3']);
+  runTc(['qdisc','add','dev','lo','parent','1:1','handle','10:','netem','delay','100ms','rate','1mbit']);
+  runTc(['qdisc','add','dev','lo','parent','1:2','handle','20:','netem','delay','100ms','rate','500kbit']);
+  runTc(['filter','add','dev','lo','protocol','ip','parent','1:','prio','1','u32','match','ip','sport',port,'0xffff','flowid','1:1']);
+  runTc(['filter','add','dev','lo','protocol','ip','parent','1:','prio','2','u32','match','ip','dport',port,'0xffff','flowid','1:2']);
+  return{profile,configured:true,requested:requestedProfile(profile),tcState:readTcState()};
 }
 
 async function waitBoot(page,timeout=45000){
@@ -182,13 +226,13 @@ async function naturalOutageSample(page,session,profile,roomId,index){
   const oldBefore=await observerSnapshot(page);
 
   const offlineStarted=Date.now();
-  const offlineConfig=await applyProfile(session,profile,{offline:true});
+  const offlineConfig=await setOfflineState(session,true);
   await page.waitForFunction(()=>navigator.onLine===false,null,{timeout:5000}).catch(()=>{});
   await page.waitForTimeout(2500);
   const during=await observerSnapshot(page);
 
   const restoreStarted=Date.now();
-  const restoreConfig=await applyProfile(session,profile,{offline:false});
+  const restoreConfig=await setOfflineState(session,false);
   await page.waitForFunction(()=>navigator.onLine!==false,null,{timeout:5000}).catch(()=>{});
 
   let reconnectMs=null;
@@ -291,7 +335,7 @@ async function confirmedBreakSample(page,session,profile,roomId,index){
   await prepareConnected(page,roomId);
   const initial=await installPassiveObserver(page);
 
-  const offlineConfig=await applyProfile(session,profile,{offline:true});
+  const offlineConfig=await setOfflineState(session,true);
   await page.waitForFunction(()=>navigator.onLine===false,null,{timeout:5000}).catch(()=>{});
   await page.waitForTimeout(250);
 
@@ -300,10 +344,10 @@ async function confirmedBreakSample(page,session,profile,roomId,index){
     await page.waitForFunction(()=>window.__next16Observer?.oldClosed===true,null,{timeout:5000});
   }catch{}
   const beforeRestore=await observerSnapshot(page);
-  const breakConfirmed=Boolean(beforeRestore.oldClosed&&beforeRestore.oldReadyState===WebSocket.CLOSED);
+  const breakConfirmed=Boolean(beforeRestore.oldClosed&&beforeRestore.oldReadyState===3);
 
   const restoreStarted=Date.now();
-  const restoreConfig=await applyProfile(session,profile,{offline:false});
+  const restoreConfig=await setOfflineState(session,false);
   await page.waitForFunction(()=>navigator.onLine!==false,null,{timeout:5000}).catch(()=>{});
 
   let reconnectMs=null;
@@ -399,8 +443,8 @@ run(async({browser,newClient,origin,errors})=>{
       physicalDevice:false,
       samplesPerProfile:SAMPLES,
       networkProfiles:{
-        normal:profileConfig('normal'),
-        throttled:profileConfig('throttled')
+        normal:requestedProfile('normal'),
+        throttled:requestedProfile('throttled')
       }
     },
     contract:{
@@ -408,7 +452,7 @@ run(async({browser,newClient,origin,errors})=>{
       passiveConnectionObserver:'FPConnection170.subscribe + old WebSocket close listener + owner/current snapshots',
       recoveryCondition:'different current WebSocket object is OPEN and FPConnection170.snapshot().open is true',
       naturalNoBreakRule:'reconnectMs remains null and outcome is live_connection_preserved when the original socket never closes',
-      profileRule:'the same CDP Network session restores online state with the requested latency/throughput values before passive recovery wait starts'
+      profileRule:'Linux tc/netem remains active for the whole profile block, including offline -> online recovery; CDP only toggles offline state without replacing latency/rate shaping'
     },
     raw:{normal:[],throttled:[]},
     summary:{},
@@ -419,17 +463,28 @@ run(async({browser,newClient,origin,errors})=>{
       'If Chromium keeps the old WebSocket alive during the natural outage, that sample is not called reconnect and reconnectMs is null.',
       'The confirmed-break scenario closes the already-observed old socket while offline only to create a proven break; recovery after restore is left to the existing lifecycle/sync/connection owners.',
       'No runtime source is modified by item 16.',
+      'The throttled loopback profile is applied at OS packet level so HTTP and WebSocket traffic share the same shaping.',
+      'tc qdisc/filter state and an HTTP latency probe verify that shaping is active.',
       'Five samples per profile; no p95.'
     ]
   };
 
-  for(const profile of ['normal','throttled']){
-    await applyProfile(session,profile,{offline:false});
-    for(let i=0;i<SAMPLES;i++){
-      report.raw[profile].push(await naturalOutageSample(page,session,profile,fixture.roomId,i));
-      report.raw[profile].push(await confirmedBreakSample(page,session,profile,fixture.roomId,i));
+  const serverPort=Number(new URL(origin).port);
+  report.hostProfiles={};
+  try{
+    for(const profile of ['normal','throttled']){
+      report.hostProfiles[profile]={before:applyHostProfile(profile,serverPort),after:null};
+      await setOfflineState(session,false);
+      for(let i=0;i<SAMPLES;i++){
+        report.raw[profile].push(await naturalOutageSample(page,session,profile,fixture.roomId,i));
+        report.raw[profile].push(await confirmedBreakSample(page,session,profile,fixture.roomId,i));
+      }
+      report.hostProfiles[profile].after=readTcState();
+      report.summary[profile]=summarize(report.raw[profile]);
     }
-    report.summary[profile]=summarize(report.raw[profile]);
+  }finally{
+    clearHostProfile();
+    await setOfflineState(session,false).catch(()=>{});
   }
 
   const normalProbes=report.raw.normal.map(row=>row.profileProbeMs);
@@ -446,14 +501,14 @@ run(async({browser,newClient,origin,errors})=>{
       throttledStats.median>=150&&
       throttledStats.median-normalStats.median>=120
     ),
-    probe:'cache-busted /version.json fetch executed after each recovery while the same requested CDP profile remained active'
+    probe:'cache-busted /version.json fetch after each recovery while the same tc/netem profile remained active; CDP only toggled offline/online'
   };
 
   for(const profile of ['normal','throttled']){
     const rows=report.raw[profile];
     assert(rows.every(row=>row.observerCalledEnsureConnected===false),'measurement observer called ensureConnected');
     for(const row of rows){
-      assert.deepEqual(row.restoreConfig,profileConfig(profile,{offline:false}),'restore did not retain requested profile');
+      assert.deepEqual(row.restoreConfig,cdpOfflineConfig(false),'offline restore config changed unexpectedly');
       assert.equal(row.profileProbeStatus,200,'network profile probe failed');
       if(row.kind==='natural-network-outage'&&!row.breakObservedEventually){
         assert.equal(row.reconnectMs,null,'no-break natural outage must not report reconnect');
@@ -462,11 +517,20 @@ run(async({browser,newClient,origin,errors})=>{
   }
 
   const confirmed=[...report.raw.normal,...report.raw.throttled].filter(row=>row.kind==='confirmed-break-during-outage');
+
+  fs.writeFileSync(path.join(OUT,'next16-reconnect-summary.json'),JSON.stringify(report,null,2)+'\n');
+  console.log('NEXT16_DIAGNOSTIC '+JSON.stringify({
+    summary:report.summary,
+    profileVerification:report.profileVerification,
+    hostProfiles:report.hostProfiles
+  }));
+
   assert(confirmed.some(row=>row.breakConfirmed),'stand failed to produce any confirmed old-socket break');
   assert(confirmed.filter(row=>row.breakConfirmed).every(row=>row.automaticRecovered),'confirmed break did not auto-recover through existing owner');
   assert.equal(report.profileVerification.effective,true,'throttled profile effect was not verified');
   assert.equal(errors.length,0,'browser errors: '+JSON.stringify(errors));
 
+  report.status='complete';
   fs.writeFileSync(path.join(OUT,'next16-reconnect-summary.json'),JSON.stringify(report,null,2)+'\n');
   console.log('NEXT16_RESULT '+JSON.stringify(report));
 }).catch(error=>{
