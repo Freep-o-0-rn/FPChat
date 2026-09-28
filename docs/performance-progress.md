@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–6 plus diagnostic 3.1 completed; repeated static JS/CSS cache behavior measured without runtime changes**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–7 plus diagnostic 3.1 completed; app.js now has a content-derived URL revision**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–6 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–7 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1722,3 +1722,81 @@ No `public/*`, server runtime, `sw.js`, DB/schema, owner/manager/arbiter or upda
 **No next item started automatically.**
 
 Follow-up item 7 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 7
+
+Status: **done — app.js URL now changes with app.js content**.
+
+### Scope
+
+Selected resource from item 6: `public/app.js`.
+
+The project-wide build mechanism remains unchanged. Only app.js received a minimal content-derived revision.
+
+### Revision contract
+
+`public/version.json` now contains:
+
+`appRevision: c6cb6b3d58e5423d11d628882c00564df7b73d21`
+
+This is the Git blob SHA of the exact current `public/app.js` bytes.
+
+`scripts/regression-next7-app-revision.cjs` recomputes the Git blob SHA and fails if app.js changes without a matching appRevision update.
+
+### URL
+
+Current app.js URL:
+
+`/app.js?v=190.2&r=c6cb6b3d58e5423d11d628882c00564df7b73d21`
+
+All other startup resources keep the existing `?v=build` scheme.
+
+The app preload and executable script both use the same `appBuildSuffix190`, and the browser regression requires their resolved URLs to be identical.
+
+### Update / rollback verification
+
+Final CI run `36415957342` passed.
+
+Confirmed:
+
+- current appRevision matches current app.js bytes;
+- current revision URL returns those exact bytes;
+- synthetic content update changes the URL and executes/returns the updated bytes;
+- rollback changes the URL back and executes/returns the rollback bytes in the same browser context;
+- `test:next:4` remains green;
+- `test:186:startup` remains green;
+- `test:180:rollback-contract` remains green.
+
+The synthetic A/B fixture uses a Service Worker-blocked diagnostic context only so the test can control server bytes. The real current startup is separately verified with the normal Service Worker path.
+
+### Files
+
+Runtime/config:
+
+- `public/version.json`;
+- `public/index.html`.
+
+Regression:
+
+- `scripts/regression-next7-app-revision.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next7-app-revision.md`;
+- this journal entry.
+
+No app.js runtime logic, Service Worker, server, DB/schema, owner/manager/arbiter, updater logic or project-wide build system changed.
+
+### Rollback
+
+Remove appRevision, restore app.js to the common buildSuffix URL, and remove `test:next:7`.
+
+No data migration is involved.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Follow-up item 8 is next only if explicitly requested.
