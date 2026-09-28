@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–2 completed; repeated-send draft lock reproduced and fixed**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–3 completed; repeated-send draft lock fixed and startup mandatory waits measured**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1 and 2 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–3 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -976,3 +976,166 @@ Revert the item-2 changes in `public/text-send170.js` and `public/app.js`, resto
 **No next follow-up item started automatically.**
 
 The repeated-send draft-lock defect is fixed and covered. Original Step 5 remains independently pending, and any next work must be explicitly selected by the user.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 3
+
+Status: **done — startup mandatory waits measured; runtime unchanged**.
+
+### Plan mapping
+
+- Follow-up plan item: **3 — measure mandatory startup waits**.
+- This is the measurement prerequisite requested before choosing follow-up item 4 or 5 for the original performance-series Step 5.
+- Original Step 5 is **not** completed by this measurement.
+- No follow-up item 4 or 5 was executed automatically.
+
+### Measured runtime and stand
+
+Measured runtime SHA:
+
+`1eb7a97184a307562c51525aa358450f8346ea36`
+
+Build: **190.2**.
+
+Successful measurement run:
+
+- GitHub Actions `36408339641`;
+- artifact `10963820289` (`next3-startup-waterfall`);
+- digest `sha256:e837166c1c02b2da9cd180682149212e99ebfc9fd89f4f9517fb5015f2b0e07b`.
+
+For each network profile the browser context retained localStorage, identity, service-worker registration and ordinary caches. One synthetic room with saved local access was used.
+
+Profiles:
+
+- normal: no added latency/bandwidth limit;
+- slow: Chromium CDP `Network.emulateNetworkConditions`, 200 ms latency, 125000 B/s download (~1 Mbit/s), 62500 B/s upload (~0.5 Mbit/s), `cellular3g`.
+
+The update scenario used the real application path by setting the local build to 190.1 and allowing `checkAppVersionOnEntry → applyAppUpdate → location.reload` to run unchanged.
+
+### Main startup timeline
+
+Saved-data startup:
+
+| Boundary | Normal | Slow |
+| --- | ---: | ---: |
+| wall | 341 ms | 3997 ms |
+| loader → boot-ready | 210.2 ms | 3655.9 ms |
+| first version request | 4.2 ms | 6.9 ms |
+| version-ready → owners-ready | 66.1 ms | **1291.2 ms** |
+| service worker | 8.0 ms | 0.9 ms |
+| second version/update gate | 9.6 ms | 12.7 ms |
+| core-ready → boot-ready owner start | 57.5 ms | **2096.5 ms** |
+| layers | 41.2 ms | 223.4 ms |
+| final asset settle | 22.0 ms | 22.8 ms |
+
+Update path:
+
+- normal total wall: **503 ms**, two navigations;
+- slow total wall: **6280 ms**, two navigations.
+
+Slow update detection navigation:
+
+- version: 4.1 ms;
+- owners wait: **1284.3 ms**;
+- service worker: 2.0 ms;
+- update gate: 24.3 ms.
+
+Slow final navigation after update:
+
+- version: 3.9 ms;
+- owners wait: **1286.2 ms**;
+- service worker: 1.7 ms;
+- second version gate: 11.7 ms;
+- core-ready → boot-ready owner start: **2768.0 ms**;
+- layers: 225.2 ms;
+- final asset settle: 20.3 ms.
+
+### Second version.json request
+
+There are two startup version requests per navigation:
+
+1. loader request from `index.html`;
+2. `checkAppVersionOnEntry()` request from `app.js` after owners and service-worker registration.
+
+Measured first-request → second-request start delay:
+
+- saved normal: **78.3 ms**;
+- saved slow: **1298.9 ms**;
+- update detection normal: **66.1 ms**;
+- update final normal: **63.6 ms**;
+- update detection slow: **1290.4 ms**;
+- update final slow: **1291.8 ms**.
+
+Actual second request durations were only about **4.6–10.8 ms**.
+
+All observed version responses were explicitly marked by Chromium as `fromServiceWorker=true`, with zero encoded network body bytes and `fromDiskCache=false`.
+
+Therefore the large slow-network “delay of the second version request” is primarily **delay before it is allowed to start**, caused by the required owner chain. The duplicate request itself is real but was not a major transfer bottleneck on this stand.
+
+### Requests, transfer and cache evidence
+
+| Scenario | Requests | Encoded transfer | SW responses | Disk-cache responses |
+| --- | ---: | ---: | ---: | ---: |
+| saved normal | 95 | 30.2 KiB | 2 | 0 |
+| saved slow | 92 | 22.4 KiB | 2 | 0 |
+| update normal | 152 | 44.1 KiB | 4 | 0 |
+| update slow | 138 | **140.9 KiB** | 4 | 0 |
+
+For slow update:
+
+- first navigation: 10.9 KiB;
+- final navigation after cache/update work: **130.0 KiB**.
+
+Largest encoded script transfers in that final slow navigation:
+
+- `voice.js`: ~63.4 KiB;
+- `message-context.js`: ~32.6 KiB;
+- `swipe-fix.js`: ~14.6 KiB.
+
+No response was explicitly marked as disk-cache served. Warm static resources often transferred only a few hundred encoded bytes despite much larger source sizes; this is cache/revalidation-like evidence, but the captured flags do not prove a specific memory-cache path. Production cache policy is not inferred from this localhost Chromium stand.
+
+### Resource attribution
+
+On saved slow startup, before `owners-ready`, long existing resource observations include `network171.js` (~675 ms) and the required send-owner chain through `text-send170.js` and `media-send170.js`.
+
+After `core-ready`, another existing resource chain delays entry into the boot-ready readiness loop. Representative overlapping observations include:
+
+- `boot-ready152.js` ~813 ms;
+- `media-gallery134.js` ~802 ms;
+- `viewport-layout136.js` ~754 ms;
+- `gesture-manager135.js` ~664 ms;
+- `system-chat144.js` ~634 ms;
+- `global-search156.js` ~622 ms;
+- `build165-ui.js` ~610 ms.
+
+These timings overlap and are not summed.
+
+### Decision evidence for original Step 5
+
+The measurement does **not** support treating duplicate `version.json` as the main startup bottleneck. Removing it would save only the small second-request/gate duration in this stand, while required owner/resource waits are measured in hundreds to thousands of milliseconds.
+
+Therefore the evidence favors follow-up **item 5** over item 4 as the next investigation for original Step 5.
+
+This is only a decision from measurement. Item 5 was **not** started, and no specific optional dependency has yet been removed.
+
+### Permanent files
+
+- `scripts/benchmark-next3-startup-waterfall.cjs` — isolated measurement harness;
+- `docs/performance-next3-startup-waterfall.md` — detailed timeline and interpretation;
+- `docs/performance-next3-startup-summary.json` — compact machine-readable values.
+
+The full raw request waterfall remains in CI artifact `10963820289`.
+
+### Runtime impact
+
+None for item 3. No `public/*`, server, schema, owner/manager/arbiter or production configuration was changed by the measurement task.
+
+### Rollback
+
+Remove the benchmark script and item-3 documentation/journal entry. No runtime/data rollback is required.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Measurement evidence currently points to follow-up item 5 rather than item 4, but execution requires an explicit user request.
