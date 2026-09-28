@@ -1,0 +1,151 @@
+# FPChat performance optimization progress
+
+## Current state
+
+- Series status: **Step 1 completed — architecture and working rules fixed**.
+- Repository: `Freep-o-0-rn/FPChat`.
+- Verified source branch: `build/190-media-swipe-preview`.
+- Verified source build: **190.2**.
+- Verified source SHA: `7fa7a4b0d64c22d4aa809692032a0c1dd0f3aced`.
+- Performance working branch: `optimization/performance-series`.
+- Branch base: exactly `7fa7a4b0d64c22d4aa809692032a0c1dd0f3aced`.
+- At Step 1 verification there were no newer commits on `build/190-media-swipe-preview`.
+- `AGENTS.md` is not present anywhere in the verified tree; no repository-local AGENTS instructions were available to apply.
+- `public/version.json` remains Build 190.2. Step 1 does not assign a new build number.
+- Production/server state is not changed by this step and is not inferred from GitHub.
+- The GitHub operation cannot inspect or overwrite a user's uncommitted local working tree; creating this remote branch from the verified SHA leaves local files untouched.
+
+## Architecture ownership map
+
+The map below is based on the current code at the verified base. It distinguishes owner/arbiter responsibilities from executors and consumers instead of inventing new managers.
+
+| Area | Real owner / arbiter | Executors / consumers | Files and boundaries |
+| --- | --- | --- | --- |
+| Startup / boot | `FPBoot152` + `FPStartup174` startup contract | `boot-ready152.js` releases the UI after required owners/assets are ready | `public/index.html`, `public/boot-ready152.js`. `FPStartup174.ready` is a dependency/readiness promise, not a second app coordinator. Preload fetches do not change execution order. |
+| Browser lifecycle | `FPLifecycle170` | subscribers react to normalized lifecycle events | `public/lifecycle170.js`. It normalizes signals only; it does not reconnect WS, sync, render, or cancel room work itself. |
+| Room context | `FPRoomContext170` | room/open/send operations use captured context | `public/room-context170.js`. Owns room generation, transition context, operation `AbortController`/`AbortSignal`, commit/end checks. |
+| Room open / join | `room-open170` active owner using `FPRoomContext170` | existing renderer and history path perform rendering | `public/room-open170.js`. Join requests use the room context signal and stale checks after awaits. |
+| WebSocket current slot / reconnect | `FPConnection170` | legacy/app workers consume the current socket | `public/connection170.js`. Owns one stable current WebSocket/reconnect slot and socket generation. |
+| Sync triggers | `FPSyncCoordinator176` is a thin adapter, not a state owner | `syncAllRoomsAfterReconnect` and `startAppSessionSync` in `public/app.js` | `public/sync-coordinator176.js`, `public/app.js`. No separate queue/retry/polling state is owned by the adapter. |
+| Network / XHR | `FPNetwork171` | feature layers call normal fetch/XHR or `FPNetwork171.upload` | `public/network171.js`. Owns centralized fetch/XHR dispatch and media download admission/budget. |
+| Media CacheStorage physical mutation | `FPNetwork171` mutation gate | `FPStorage167` cache policy/read path; `FPStorage167ClearGuard` exclusive clear coordination | `public/network171.js`, `public/storage167.js`, `public/storage167-clear-guard.js`, `public/storage167-cache-fix.js`. Managed cache is `fpchat-media-v167`; clear waits for active media/cache work. |
+| Canonical message state | `FPMessageStore172` | render/history/status consumers read merged records | `public/message-store172.js`. Owns merge precedence, identity promotion, status monotonicity and tombstones. It does not create a persistent outgoing queue. |
+| Retry of pending text sends | existing runtime queue in `app.js` | `FPTextSend170` queues into it; ACK/status clears/promotes it | `public/app.js`, `public/text-send170.js`. Current queue remains runtime-only. |
+| History mounted range | `FPHistory174` | `FPWork174` slices work; MessageStore supplies canonical state; FPScroll performs scroll writes | `public/history174.js`, `public/work174.js`. Current constants are `PAGE=100`, `LIMIT=300`. History owns the mounted window, not canonical message content. |
+| Message rendering | current renderer surface in `app.js`; `FPMessageRender178` is the incoming-message adapter | `appendMessage`, `renderChatView`, history renderer | `public/app.js`, `public/history174.js`. This is an execution surface, not a second message store. |
+| Media lifecycle | `FPMediaManager177` | preview, voice UI, microphone and viewer lifecycle consumers | `public/app.js`. Owns preview identity/open/close/cancel, generated preview thumbnail ObjectURL lifecycle, voice UI delegation, microphone resource lifecycle and viewer open/close delegation. |
+| Media viewer interaction | admission/claim: `FPGesture135`; layer priority: `FPLayer173`; executor: runtime owner `media-gallery185` | photo pan/pinch, viewer swipe, video picture-surface gesture | `public/media-gallery134.js`, `public/gesture-manager135.js`, `public/layer-manager173.js`. Gallery also carries its own generation checks for stale hydration/assets. |
+| Media I/O | `FPNetwork171` is network/cache owner | common `readEncryptedMedia174` path and gallery/message consumers | `public/network171.js`, `public/app.js`, `public/media-gallery134.js`. Resource admission remains centralized; consumers keep AbortSignal/generation checks. |
+| Send dispatch | `FPSendManager177` thin stateless dispatcher | `FPTextSend170`, `FPMediaSend170`, voice executor in `voice.js` | `public/send-manager177.js`, `public/text-send170.js`, `public/media-send170.js`, `public/voice.js`. Dispatcher owns no queue or message state. |
+| Text send | `FPTextSend170` | runtime retry queue + MessageStore/render path | `public/text-send170.js`, `public/app.js`. Captures room/key/device context and starts a room operation before async work. |
+| Media send | `FPMediaSend170` | `FPNetwork171.upload` + stable WS | `public/media-send170.js`. Validates prepared thumbnail, uses room operation signal, and cleans pending upload on cancellation before commit. |
+| Voice send | voice executor in `voice.js`, dispatched through `FPSendManager177` | media/network/WS path | `public/voice.js`. Starts `FPRoomContext170.beginOperation(..., 'voice-send')`; no separate send manager is introduced. |
+| UI layer state | `FPLayer173` | overlays/viewer/selection/composer claim layer tokens | `public/layer-manager173.js`. Owns priority and current top layer. |
+| Gesture arbitration | `FPGesture135` | drawer/reply/selection/voice/viewer executors request/claim actions | `public/gesture-manager135.js`. It is the arbiter; feature executors retain their specific behavior. |
+| DOM lifecycle observation | `FPDOM173` | feature modules subscribe to mounted/unmounted events | `public/dom-lifecycle173.js`. DOM is a projection; this owner does not own chat/message state. |
+| Message scroll geometry | `FPScroll173` | history, unread, reply focus, viewport helpers delegate writes | `public/app.js`. It is the message-scroll writer for bottom/focus/prepend preservation. |
+| Mobile viewport geometry | `FPViewport173` | keyboard/orientation/visual viewport corrections; delegates message bottom pinning to `FPScroll173` | `public/viewport-fix.js`. It owns mobile viewport geometry, not message history/scroll state. |
+| Keyboard/list surface state | `FPViewport136` | layout synchronization | `public/viewport-layout136.js`. Registered as keyboard-state owner; not a replacement for `FPScroll173`. |
+| Performance observation | `FPRuntime169` only observes | owners emit explicit loading hooks; browser Performance API supplies bounded resource/long-task observations | `public/runtime169.js` plus explicit owner hooks. It must not become a scheduler, transport, store, renderer, gesture owner or state coordinator. |
+
+## FPRuntime169 contract
+
+Verified in `public/runtime169.js`:
+
+- the file explicitly states that it does **not** own chat logic, transport, rendering, gestures, storage or message state;
+- `registerOwner` records ownership metadata only;
+- resource and long-task data are observed through browser Performance APIs;
+- `loading` uses explicit owner hooks and a bounded record set;
+- room traces are tied to existing room contexts and cancellation;
+- no text, room/media/device/message IDs, URLs, keys, request bodies or raw error messages are intended in the loading export;
+- missing/unsupported measurements are not to be interpreted as zero.
+
+Known diagnostic drift recorded for **Step 3**, not changed in Step 1: the current loading report still hardcodes `build: '186.5'` and downloads as `FPChat-186.5-loading.json` even though the verified client build is 190.2. This is documentation only here; runtime remains untouched.
+
+## Rules for the optimization series
+
+1. Execute only the requested step. Keep one independently reviewable logical change at a time.
+2. If multiple independent causes are discovered, fix at most one in the current step and record the rest as explicit substeps.
+3. Before changing runtime behavior, record the reproduced delay/problem, responsible owner and verification method.
+4. If the problem is already solved in current code, document that result instead of changing code for activity's sake.
+5. Preserve existing managers/arbiters and single writers. Do not add a duplicate scheduler, store, WebSocket owner, cache writer, gesture arbiter or persistent outgoing queue.
+6. Preserve room generation/AbortSignal checks, post-await freshness checks, idempotency, ACK/clientMessageId, unread/anchor behavior, access control, device identity/recovery, `data/.env` and privacy.
+7. `FPRuntime169` stays passive. No global API interception is added for diagnostics, and diagnostics must not collect message text, secrets, IDs or URLs.
+8. Keep diagnostic storage bounded. A missing metric is unknown, not zero.
+9. Before each behavioral patch, save a baseline. After it, run relevant regressions plus cancellation/error/repeated-call checks and compare before/after measurements.
+10. Do not disable behavior tests or source guards merely to make the suite green; classify stale guards separately from behavioral failures.
+11. Do not run a full `npm install` when dependencies are already usable. Tests use isolated data.
+12. Do not clear user identity or change production during the optimization series.
+13. Do not change a real build number merely to label internal performance steps. Step number + commit SHA identify intermediate states until release preparation.
+14. After every step update this file with status, change/reason, owner, commit/diff, measurements, tests, unverified items, rollback and exact next step. Do not start the next step automatically.
+
+## Step table
+
+| Step | Status | Scope |
+| ---: | --- | --- |
+| 1 | **done** | Working branch, architecture map and rules |
+| 2 | pending | Baseline regressions |
+| 3 | pending | Observer coverage |
+| 4 | pending | Baseline performance measurements |
+| 5 | pending | One confirmed startup wait |
+| 6 | pending | One confirmed critical JS/CSS resource |
+| 7 | pending | One confirmed server join/history bottleneck |
+| 8 | pending | One confirmed media-card geometry jump |
+| 9 | pending | Earlier useful text/composer |
+| 10 | pending | Initial history-window experiment |
+| 11 | pending | Reuse existing RAM state |
+| 12 | pending | Decide whether persistent history cache is needed |
+| 13 | conditional | Storage adapter only if Step 12 justifies it |
+| 14 | conditional | Cache write/invalidation only if Steps 12–13 justify it |
+| 15 | conditional | Cache read only if Steps 12–14 justify it |
+| 16 | pending | Prioritize selected viewer media before neighbors |
+| 17 | conditional | Media queue priority only if Step 16 is insufficient |
+| 18 | pending | One confirmed cache-maintenance conflict |
+| 19 | pending | One message-status render hotspot |
+| 20 | pending | One reaction/edit/dependency render hotspot |
+| 21 | pending | One confirmed main-thread long task |
+| 22 | pending | Bounded DOM/history anchor |
+| 23 | pending | One measured geometry/gesture conflict |
+| 24 | pending | One duplicate sync/join/history path |
+| 25 | pending | Send/retry/ACK responsiveness on poor network |
+| 26 | pending | One background/resume duplicate operation |
+| 27 | pending | One confirmed resource leak |
+| 28 | conditional | Worker only for remaining measured CPU bottleneck |
+| 29 | conditional | Visual-effect reduction only if profiling proves cost |
+| 30 | pending | Full functional/race regression matrix |
+| 31 | pending | Device performance acceptance against Step 4 |
+| 32 | pending | Release build, updater consistency and rollback |
+
+## Step 1 verification
+
+### Changed
+
+- Created remote branch `optimization/performance-series` from the exact verified 190.2 SHA.
+- Added this progress document.
+- No application/runtime/server behavior was changed.
+- No version, service worker cache suffix, updater build, schema or dependency was changed.
+
+### Measurements
+
+None. Step 1 is architecture/process setup; no performance result is claimed.
+
+### Tests
+
+No behavioral suite was required for this docs-only change. The base SHA and branch state were read directly from GitHub, and ownership was checked against current source files.
+
+### Unverified / open
+
+- Physical iPhone/Android behavior is not part of Step 1.
+- Production deployment/version was not inspected or changed.
+- The user's local uncommitted working tree is not visible through the GitHub connector.
+- The hardcoded 186.5 loading-report label is recorded for Step 3 and intentionally not fixed here.
+
+### Rollback
+
+Delete `optimization/performance-series` or reset it to `7fa7a4b0d64c22d4aa809692032a0c1dd0f3aced`. The source branch `build/190-media-swipe-preview` is untouched.
+
+## Continuation point
+
+**Next step: 2 — verify baseline regressions.**
+
+Do not start Step 3 or any optimization until Step 2 establishes the current test baseline and separates real behavior failures from stale build/source guards or environment limitations.
