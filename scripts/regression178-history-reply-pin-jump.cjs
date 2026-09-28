@@ -53,10 +53,12 @@ for (const forbidden of ['fetch(', 'new AbortController', 'request174', 'history
   assert(!pinJump.includes(forbidden), 'pin jump introduced independent history ownership: ' + forbidden);
 }
 
-const appScriptPos = indexHtml.indexOf('script.src = \`/app.js\${buildSuffix}\`;');
+const appScriptPos = indexHtml.indexOf('script.src = \`/app.js\${appBuildSuffix190}\`;');
 const pinsScriptPos = indexHtml.indexOf('messagePins.src = \`/message-pins.js\${buildSuffix}\`;');
 assert(appScriptPos >= 0 && pinsScriptPos > appScriptPos,
-  'message-pins.js is no longer loaded after app.js in the normal startup chain');
+  'message-pins.js is no longer loaded after app.js in the current normal startup chain');
+assert(indexHtml.includes("'message-pins.js':['message-actions.js']"),
+  'startup dependency map no longer keeps message-pins behind message-actions/app chain');
 
 assert(historyJump.includes('return jumpWindow(anchor);'),
   'FPHistory174.jump(anchor) no longer delegates to jumpWindow');
