@@ -123,9 +123,13 @@
     const normalizedRoomId = normalizeRoomId(roomId);
     const previousRoomId = normalizeRoomId(state?.roomId);
     if (previousRoomId) {
-      // Capture the concrete old room before beginTransition can replace its
-      // RoomContext or rendering can replace the messages DOM. No network wait.
-      window.FPScroll173?.captureBeforeLeave?.('direct-room-switch', { keepalive: true });
+      // Freeze the concrete old-room snapshot before beginTransition/render can
+      // replace RoomContext or the messages DOM. captureBeforeLeave waits only
+      // for local durable snapshot sequencing; its network PUT remains fire-and-forget.
+      // This prevents A -> B from losing A when the 900 ms timer has not fired yet.
+      try {
+        await window.FPScroll173?.captureBeforeLeave?.('direct-room-switch', { keepalive: true });
+      } catch {}
     }
     const persisted = STORAGE.get(STORAGE.roomState(roomId));
     if (!persisted?.secret || !persisted?.deviceId) {
