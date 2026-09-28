@@ -1,0 +1,163 @@
+name: Next Plan Item 18 Final Performance Acceptance
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next18-final-acceptance.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Syntax
+        run: |
+          node --check scripts/benchmark-next12-initial-window.cjs
+          node --check scripts/benchmark-next13-session-reuse.cjs
+          node --check scripts/benchmark-next15-progressive-photo.cjs
+          node --check scripts/benchmark-next16-reconnect.cjs
+          node --check scripts/benchmark-next17-send-reaction.cjs
+          node --check scripts/compare-next15-item14.cjs
+
+      - name: Startup and cache follow-up regressions
+        run: |
+          npm run test:next:4
+          npm run test:next:7
+          npm run test:next:8
+          npm run test:next:9
+
+      - name: Input and repeated-send regression
+        run: npm run test:next:2
+
+      - name: History and same-session regressions
+        run: |
+          npm run test:next:11
+          npm run test:next:12
+          npm run test:next:13
+          npm run test:178:history-saved-anchor
+          npm run test:178:unread-restore-bottom
+          npm run test:178:history-page-owner
+
+      - name: Media and gesture regressions
+        run: |
+          npm run test:next:15
+          npm run test:177:media-viewer-lifecycle
+          npm run test:178:gesture-layer-lifecycle
+          npm run test:185:browser
+          npm run test:186:media-cache
+          npm run test:190:browser
+
+      - name: Connection ownership regressions
+        run: |
+          npm run check:170
+          npm run test:180:single-owner-audit
+
+      - name: Send and reaction ownership regressions
+        run: |
+          npm run test:177:send-manager
+          npm run test:178:message-render-owner
+          node ./scripts/regression1884-reaction-interaction.cjs
+
+      - name: Repeat room-open benchmark
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT10_OUTPUT: ${{ github.workspace }}/next18-output/next12
+        run: npm run bench:next:12
+
+      - name: Repeat same-session reopen benchmark
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT13_OUTPUT: ${{ github.workspace }}/next18-output/next13
+        run: npm run bench:next:13
+
+      - name: Prepare controlled media baseline worktree
+        run: |
+          git worktree add /tmp/fpchat-item14 205e07055781a31e9bc957f33d52afe8b805589c
+          ln -s "${GITHUB_WORKSPACE}/node_modules" /tmp/fpchat-item14/node_modules
+
+      - name: Repeat item 14 media baseline on same runner
+        working-directory: /tmp/fpchat-item14
+        env:
+          FPCHAT_RUNTIME_SHA: 43d05dbffe20f2bff779f9683aaf194b3f4e0cd2
+          FPCHAT_NEXT14_OUTPUT: ${{ github.workspace }}/next18-output/item14
+        run: node ./scripts/benchmark-next14-photo-cache.cjs
+
+      - name: Repeat progressive media benchmark on same runner
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT15_OUTPUT: ${{ github.workspace }}/next18-output/item15
+        run: npm run bench:next:15
+
+      - name: Compare repeated media before and after
+        env:
+          FPCHAT_ITEM14_SUMMARY: ${{ github.workspace }}/next18-output/item14/next14-photo-cache-summary.json
+          FPCHAT_ITEM15_SUMMARY: ${{ github.workspace }}/next18-output/item15/next15-progressive-photo-summary.json
+          FPCHAT_ITEM15_COMPARE_OUTPUT: ${{ github.workspace }}/next18-output/item15-controlled-comparison.json
+          FPCHAT_ITEM14_COMMIT: 205e07055781a31e9bc957f33d52afe8b805589c
+          FPCHAT_ITEM15_COMMIT: 2bf734e918dfb7e31d14d574d52a7d3256076000
+        run: node ./scripts/compare-next15-item14.cjs
+
+      - name: Repeat reconnect benchmark
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT16_OUTPUT: ${{ github.workspace }}/next18-output/next16
+        run: npm run bench:next:16
+
+      - name: Repeat send and reaction benchmark
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT17_OUTPUT: ${{ github.workspace }}/next18-output/next17
+        run: npm run bench:next:17
+
+      - name: Record device acceptance status
+        run: |
+          mkdir -p next18-output
+          cat > next18-output/device-acceptance.json <<'JSON'
+          {
+            "iPhone": {
+              "status": "not_executed",
+              "reason": "No physical iPhone is attached to the isolated GitHub Actions runner.",
+              "areas": {
+                "input": "not_executed",
+                "history": "not_executed",
+                "media": "not_executed",
+                "realBackground": "not_executed"
+              }
+            },
+            "Android": {
+              "status": "not_executed",
+              "reason": "No physical Android device is attached to the isolated GitHub Actions runner.",
+              "areas": {
+                "input": "not_executed",
+                "history": "not_executed",
+                "media": "not_executed",
+                "realBackground": "not_executed"
+              }
+            },
+            "qualification": "Desktop/headless Chromium and mobile viewport emulation are not counted as physical-device acceptance."
+          }
+          JSON
+
+      - name: Upload item 18 acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next18-final-acceptance
+          path: next18-output
+          if-no-files-found: warn
