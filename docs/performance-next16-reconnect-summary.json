@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 16,
+  "status": "complete",
+  "build": "190.2",
+  "runtimeSha": "2bf734e918dfb7e31d14d574d52a7d3256076000",
+  "measurementHead": "8aef362c3cd93afcb88d0796a70a10848c326669",
+  "finalRun": {
+    "workflowRunId": 36447641140,
+    "artifactId": 10980919248,
+    "artifactDigest": "sha256:9b71b2982decfc0ecabdc279dbb9931977bc266bc748e06a3eab7606a1365532"
+  },
+  "historicalStep4": {
+    "normalMs": [
+      104,
+      103,
+      91,
+      111,
+      113
+    ],
+    "throttledMs": [
+      117,
+      145,
+      113,
+      123,
+      122
+    ],
+    "limitation": "observer called FPConnection170.ensureConnected via waitWs; requested profile was re-applied after measured recovery"
+  },
+  "naturalOutage": {
+    "normal": {
+      "samples": 5,
+      "breaks": 0,
+      "liveConnectionPreserved": 5,
+      "reconnectSamples": 0,
+      "reconnectMedianMs": null
+    },
+    "throttled": {
+      "samples": 5,
+      "breaks": 0,
+      "liveConnectionPreserved": 5,
+      "reconnectSamples": 0,
+      "reconnectMedianMs": null
+    }
+  },
+  "confirmedBreak": {
+    "mechanism": "raw WebSocket.close while offline; CDP Network.closeConnections unavailable",
+    "normal": {
+      "samples": 5,
+      "breaksConfirmed": 5,
+      "automaticRecoveries": 5,
+      "reconnectMedianMs": 15,
+      "reconnectRangeMs": [
+        13,
+        15
+      ]
+    },
+    "throttled": {
+      "samples": 5,
+      "breaksConfirmed": 5,
+      "automaticRecoveries": 5,
+      "reconnectMedianMs": 465,
+      "reconnectRangeMs": [
+        464,
+        465
+      ]
+    }
+  },
+  "observer": {
+    "callsEnsureConnected": false,
+    "sources": [
+      "FPConnection170.subscribe",
+      "old WebSocket close event",
+      "FPConnection170.current/snapshot",
+      "FPLifecycle170 events"
+    ]
+  },
+  "networkProfile": {
+    "implementation": "Linux tc/netem on loopback; CDP only toggles offline/online",
+    "target": {
+      "rttMs": 200,
+      "downloadBitsPerSecond": 1000000,
+      "uploadBitsPerSecond": 500000
+    },
+    "verification": {
+      "effective": true,
+      "normalProbeMedianMs": 3.6,
+      "throttledProbeMedianMs": 218.6,
+      "addedMedianMs": 215,
+      "downloadQueueBytes": 46551,
+      "downloadQueuePackets": 155,
+      "uploadQueueBytes": 68935,
+      "uploadQueuePackets": 234,
+      "droppedPackets": 0
+    }
+  },
+  "validation": {
+    "check170": true,
+    "singleOwnerAudit": true,
+    "runtimeChanged": false
+  },
+  "exploratoryFailure": {
+    "workflowRunId": 36446798035,
+    "reason": "CDP localhost throttling effect was not sufficiently verified; stand rejected the measurement"
+  },
+  "limits": [
+    "No physical iPhone/Android/PWA reconnect measurement.",
+    "Natural offline emulation preserved the old WebSocket in 10/10 samples, so natural reconnect is null.",
+    "Confirmed-break path uses explicit raw WebSocket.close because CDP Network.closeConnections is unavailable.",
+    "Five samples per profile; no p95."
+  ]
+}
