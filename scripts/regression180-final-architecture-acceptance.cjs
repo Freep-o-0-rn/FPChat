@@ -187,7 +187,7 @@ for(const name of [
 ]){
   assert.equal(count(server,new RegExp('\\b'+name+'\\s*\\(\\{','g')),1,'server installer count changed: '+name);
 }
-assert.equal(occurrences(server,"const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);"),1,'block authority instance duplicated');
+assert.equal(count(server,/\bconst\s+fpUserBlocks165\s*=\s*createUserBlocks165\s*\(/g),1,'block authority instance duplicated');
 assert.equal(occurrences(server,'const fpHistoryRead179 = createHistoryRead179({'),1,'history DB read owner duplicated');
 pass('Server composition/history/block authority are explicit and singular');
 
