@@ -21,7 +21,6 @@
     'build165-ui.js': { id: 'voice-block-feedback166', priority: 400 },
     'chat-request-cooldown160.js': { id: 'chat-request-cooldown160', priority: 500 },
     'chat-request-owner147.js': { id: 'chat-request-owner147', priority: 600 },
-    'room-lifecycle.js': { id: 'room-lifecycle98', priority: 700 },
     'typing.js': { id: 'typing-activity121', priority: 800 }
   });
 
