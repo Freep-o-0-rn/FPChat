@@ -2,7 +2,10 @@
 
 ## Current state
 
-- Series status: **Step 1 completed — architecture and working rules fixed**.
+- Series status: **Steps 1–4 completed; follow-up prompts documented, implementation pending**.
+- Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
+- Follow-up numbering is independent of the original step table. Start with the browser reproduction of the repeated-send lock (new plan item 1), then execute only the item the user supplies.
+- This follow-up order supersedes the historical "Step 5 next" instructions below; those entries remain the record of the Step 4 handoff. Original steps are not automatically completed by a follow-up subtask.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
 - Verified source build: **190.2**.
