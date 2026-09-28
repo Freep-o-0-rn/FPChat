@@ -180,7 +180,8 @@ run(async ({newClient, temp, root, errors}) => {
   await page.locator('#fpLoadingExport186').click();
   const download=await downloadPromise;
   const downloaded=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
-  assert.equal(downloaded.build,'186.5'); assert.equal(downloaded.records.length,240);
+  assert.equal(download.suggestedFilename(),'FPChat-190.2-loading.json');
+  assert.equal(downloaded.build,'190.2'); assert.equal(downloaded.records.length,240);
   await page.locator('#fpLoadingReset186').click();
   assert.equal((await report()).records.length,0); assert.ok((await report()).boot.points['boot-ready']>0);
   pass('bounded journal, phone-accessible JSON export and reset preserve startup evidence');
