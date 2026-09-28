@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–4 plus diagnostic 3.1 completed; startup duplicate version request removed**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–5 plus diagnostic 3.1 completed; item 5 retained no runtime change because no optional wait produced a confirmed startup win**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–4 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–5 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1461,3 +1461,133 @@ No database/data migration is involved.
 **No next item started automatically.**
 
 Follow-up item 5 remains pending and independent.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 5
+
+Status: **done — investigated optional startup waits; no runtime optimization retained**.
+
+### Plan mapping
+
+- Follow-up item: **5 — remove one optional startup wait only if measurement confirms it**.
+- This follows item 4 and uses the corrected startup evidence from item 3/3.1.
+- No later follow-up item was started.
+
+### replyVisualReady184 check
+
+The requested `replyVisualReady184` path was checked first.
+
+Corrected slow saved-data evidence before item 5:
+
+- `reply-swipe-visual184.js`: 432.2 → 643.3 ms;
+- `reply-swipe-visual184.css`: 432.2 → 655.0 ms;
+- `app.js` real script insertion/load: 1292.9 → 1307.5 ms.
+
+Therefore the reply visual completed roughly 638 ms before the existing dependency chain could execute app.js. It is syntactically awaited but was not the measured critical path.
+
+A corrected isolated preflight held only `reply-swipe-visual184.js` and observed the actual app script element rather than its preload network request.
+
+Run `36412277803` confirmed:
+
+- no real `<script src="/app.js">` existed while the visual file was held;
+- the enhanced visual was not installed;
+- after release, app.js insertion followed 42 ms later.
+
+So the dependency can block under an artificial delay, but item-3/3.1 does not show that it delayed the ordinary startup.
+
+A tentative runtime removal was reverted and is absent from the final tree.
+
+### system-ui148 check
+
+The next candidate was selected from the measured end of the slow `layersReady` chain.
+
+Before item 5:
+
+- `system-ui148.js` ended at ~4004.0 ms;
+- `layers-end` was ~4021.8 ms;
+- the file was explicitly required by `boot-ready152.js → layersReady()`.
+
+The file is an enhancement over the base system-chat implementation: edge-back swipe and preview stabilization. Base system ownership/view is in `FPSystem144` and `chat-request-system147`.
+
+A preflight delayed only `system-ui148.js`.
+
+Run `36412935331` confirmed:
+
+- `core-ready` was already reached;
+- after another 500 ms, `layers-end` remained null and `boot-ready` false;
+- after release, `layers-end` and `boot-ready` completed.
+
+Thus the old readiness contract can be held by a sufficiently late system-ui148.
+
+### Temporary safety experiment
+
+One line was temporarily removed from `layersReady()`:
+
+`window.__fpSystemUi148Installed`
+
+The loader/order for the file was not changed.
+
+Verification run `36413217197` passed:
+
+- isolated delay/error/late-load regression;
+- `test:186:startup`;
+- `test:189:system-push`;
+- `test:184:browser`;
+- `test:next:4`;
+- corrected startup waterfall.
+
+The isolated regression verified:
+
+- required owners and boot complete while system-ui148 is held;
+- base system chat opens before the enhancement loads;
+- late loading installs the enhancement;
+- a failed system-ui148 load does not break the base system chat.
+
+### Performance result
+
+Ordinary corrected before/after:
+
+| Scenario | Before | Temporary change |
+| --- | ---: | ---: |
+| saved normal wall | 314 ms | 348 ms |
+| saved slow wall | 4164 ms | 4166 ms |
+| saved slow layers | 222.7 ms | 224.3 ms |
+| update normal wall | 447 ms | 469 ms |
+| update slow wall | 6657 ms | 6647 ms |
+
+There is no confirmed startup improvement.
+
+The temporary system-ui readiness change was therefore reverted.
+
+### Final tree
+
+Compared with item-4 HEAD `84fc1e11261bb79c6868f402cfe5036dac37f57e`, item 5 leaves **no runtime/package behavior change**.
+
+The retained item-5 files are diagnostic/documentation only:
+
+- `scripts/benchmark-next5-reply-visual-preflight.cjs`;
+- `scripts/benchmark-next5-system-ui-preflight.cjs`;
+- `docs/performance-next5-optional-wait.md`;
+- this journal entry.
+
+Temporary CI workflow and temporary post-change regression were removed.
+
+### Artifact/evidence
+
+Temporary experiment verification:
+
+- workflow `36413217197`;
+- artifact `10966430478`;
+- digest `sha256:5750cb1497866e44f04142265c6aeeac5bb636000d676a74b3c4d3c638f2cb72`.
+
+### Rollback
+
+No runtime rollback is required because the runtime experiment was already reverted.
+
+To remove only item-5 evidence, delete the two diagnostic scripts and item-5 documentation/journal entry.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Follow-up item 6 is the next numbered plan item if explicitly requested.
