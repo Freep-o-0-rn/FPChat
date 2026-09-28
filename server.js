@@ -428,8 +428,8 @@ function getMessageInitialWindow(roomId, targetMessageId, viewerParticipantId) {
   const target = Number(targetMessageId);
   if (!Number.isSafeInteger(target) || target <= 0 || !q.findMessageInRoom.get(target, roomId)) return null;
 
-  // Reuse the established before/after history paths so access-filtered/deleted
-  // message semantics and cursor directions stay identical to client paging.
+  // Reuse the established before/after history paths so ordering, reaction
+  // hydration and cursor directions stay identical to client paging.
   const older = getMessageHistoryPage(roomId, target + 1, HISTORY_PAGE_SIZE, viewerParticipantId, true);
   if (!older.messages.some((message) => Number(message.id) === target)) return null;
   const newer = getMessageSyncPage(roomId, target, HISTORY_PAGE_SIZE, viewerParticipantId, true);
