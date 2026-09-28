@@ -3764,3 +3764,151 @@ No DB/cache migration, identity reset or production action is required.
 
 No production deployment was performed.
 
+## Build 190.2 — Telegram-like scroll position restore fix
+
+Status: **implemented; isolated Chromium/Linux acceptance green; physical iPhone/Android acceptance not executed**.
+
+Branch:
+
+`fix/190.2-scroll-restore-races`
+
+Base:
+
+`optimization/performance-series@1e06e79d95f1ed87a7b605b659929c39bfc36127`
+
+No merge to `main` and no production publication were performed.
+
+### Pre-fix reproduction
+
+Deterministic baseline workflow `36465313536`: **SUCCESS** against pre-fix runtime `3bd06fd942`.
+
+Confirmed:
+
+- A: delayed old view-state PUT overwrote a newer true-bottom save;
+- B: immediate reopen completed before the leave PUT and restored the stale server anchor;
+- C: direct A -> B did not save A; the old 900 ms timer later resolved current room B and wrote B.
+
+### Fix
+
+No new scroll manager/store/coordinator was added.
+
+`FPScroll173` remains the single programmatic message-scroll owner and now also owns:
+
+- stable anchor + viewport offset capture;
+- true-tail state;
+- user-vs-programmatic restore arbitration;
+- bounded durable local position snapshots;
+- bounded view-state network flush;
+- old-room snapshot freeze before direct transition.
+
+Local capture interval: **300 ms**.
+
+Network scheduled maximum lag while runnable: **900 ms**.
+
+`room-open170` captures A through FPScroll173 before A -> B and carries the durable candidate for the target room through the existing access-checked `initialWindow:true` join.
+
+Server/DB add a minimal ordered `client_seq` to `chat_view_state`. Stale/equal ordered writes return `409 VIEW_STATE_STALE`; legacy writes cannot overwrite an already ordered row.
+
+### Restore behavior
+
+Current arbitration preserves:
+
+1. explicit focus/bottom action during opening;
+2. real user scroll that interrupts restore;
+3. valid saved non-bottom anchor + pixel offset;
+4. first unread if no usable saved reading position exists;
+5. true tail.
+
+A saved true tail with newly unread messages opens first unread. A saved old-history position remains at that position even if new messages arrive. Deleted saved anchor falls through to unread/tail. `hasNewer` is not treated as true chat end.
+
+Restore does not itself mark messages read; visibility admission remains the read-state owner.
+
+### Final verification
+
+Expanded workflow `36464252383` at `7d1dabef62ae6b568f02f4e80901935ae2b0e6c7`: **SUCCESS**.
+
+Passed:
+
+- corrected three-race assertions;
+- scroll resilience;
+- offline leave/recovery;
+- initialWindow;
+- saved anchor;
+- user scroll during delayed history/restore;
+- reply/pin jumps;
+- unread/tail behavior;
+- same-session reuse;
+- RoomContext;
+- history page ownership;
+- gesture/scroll ownership;
+- back scroll;
+- scroll-writer ownership;
+- keyboard/orientation and header/keyboard;
+- bounded DOM;
+- read visibility;
+- late thumbnail/layout;
+- single-owner audit;
+- app revision contract.
+
+### Controlled before/after
+
+Workflow `36462365373`: **SUCCESS**.
+
+Same runner/fixture, 48 scroll events over 1.2 s.
+
+| Metric | Before | Current |
+| --- | ---: | ---: |
+| Scroll handler median | 0.3 ms | 0.3 ms |
+| Local durable writes | 0 | 8 |
+| Network view-state PUTs | 1 | 2 |
+| Durable local snapshot | no | yes |
+| Capture average | unavailable | 0.14 ms |
+| Leave wall | 6 ms | 6 ms |
+| Reopen wall | 161 ms | 163 ms |
+| Join POSTs | 1 | 1 |
+| Post-open message GETs | 4 | 4 |
+| Restored offset error | 0 px | 0 px |
+
+The 161 -> 163 ms single reopen sample is not presented as a regression/speedup conclusion. Median scroll-handler cost remained unchanged at 0.3 ms.
+
+### Cold start, lifecycle and offline
+
+Verified:
+
+- cold start restores the last durable local snapshot without depending on final pagehide/beforeunload network work;
+- bfcache-style return does not reapply restore over a live viewport;
+- a stale background tab does not overwrite the active tab's newer state;
+- offline leave keeps local position and the next guarded join reconciles it after network recovery.
+
+Hard process kill can restore only the last snapshot that actually reached durable local storage. The implementation does not promise an unsaved final pixel.
+
+### Physical devices
+
+iPhone: **NOT EXECUTED**.
+
+Android: **NOT EXECUTED**.
+
+Manual acceptance must include old-history restore, true-tail+new-unread, user scroll during opening, reply/pin/unread jumps, photos/keyboard/rotation, real background/return, system app-switcher/task-manager kill, cold launch and offline recovery.
+
+### Remaining limitations
+
+- physical mobile acceptance is still required;
+- last unsaved movement can be lost on immediate process kill;
+- on browsers without Web Locks, strict cross-tab sequence allocation is best-effort client-side, while server stale/equal rejection remains authoritative;
+- production/Cloudflare timing was not measured;
+- broader extra post-open message GET behavior is unchanged.
+
+### Documentation
+
+- `docs/scroll1902-restore-fix.md`;
+- `docs/scroll1902-restore-fix-summary.json`;
+- `docs/Build178_26_Geometry_Writer_Map.md`.
+
+### Rollback
+
+Runtime rollback target: `1e06e79d95f1ed87a7b605b659929c39bfc36127`.
+
+The additive `client_seq` DB column may remain; no destructive migration is required.
+
+No user identity, message data or media cache clear is required.
+
