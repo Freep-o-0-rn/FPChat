@@ -268,8 +268,9 @@ const q = {
   findMessageForRead: db.prepare('SELECT id, sender_id, client_message_id, status, read_at FROM messages WHERE id=? AND room_id=?'),
 
   findDraftByRoomDevice: db.prepare(`SELECT ciphertext, iv, reply_to_message_id, updated_at FROM drafts WHERE room_id=? AND device_id=?`),
-  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, at_bottom, updated_at FROM chat_view_state WHERE room_id=? AND device_id=?`),
-  upsertViewState: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, at_bottom, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, at_bottom=excluded.at_bottom, updated_at=datetime('now')`),
+  findViewStateByRoomDevice: db.prepare(`SELECT anchor_message_id, anchor_offset_px, at_bottom, client_seq, updated_at FROM chat_view_state WHERE room_id=? AND device_id=?`),
+  upsertViewStateOrdered: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, at_bottom, client_seq, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, at_bottom=excluded.at_bottom, client_seq=excluded.client_seq, updated_at=datetime('now') WHERE excluded.client_seq > chat_view_state.client_seq`),
+  upsertViewStateLegacy: db.prepare(`INSERT INTO chat_view_state (room_id, device_id, anchor_message_id, anchor_offset_px, at_bottom, client_seq, updated_at) VALUES (?, ?, ?, ?, ?, 0, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id, anchor_offset_px=excluded.anchor_offset_px, at_bottom=excluded.at_bottom, updated_at=datetime('now') WHERE chat_view_state.client_seq=0`),
   upsertDraft: db.prepare(`INSERT INTO drafts (room_id, device_id, ciphertext, iv, reply_to_message_id, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now')) ON CONFLICT(room_id, device_id) DO UPDATE SET ciphertext=excluded.ciphertext, iv=excluded.iv, reply_to_message_id=excluded.reply_to_message_id, updated_at=datetime('now')`),
   deleteDraftByRoomDevice: db.prepare(`DELETE FROM drafts WHERE room_id=? AND device_id=?`),
 
@@ -454,7 +455,30 @@ function normalizeViewState(row) {
     anchorMessageId: row.anchor_message_id ? Number(row.anchor_message_id) : null,
     anchorOffsetPx: Number(row.anchor_offset_px || 0),
     atBottom: Boolean(row.at_bottom),
+    clientSeq: Number(row.client_seq || 0),
     updatedAt: toIsoUtc(row.updated_at)
+  };
+}
+function normalizeViewStateClientSeq(value) {
+  const seq = Number(value);
+  return Number.isSafeInteger(seq) && seq > 0 ? seq : 0;
+}
+function normalizeViewStateInput(room, input = {}) {
+  let anchorMessageId = Number(input?.anchorMessageId ?? input?.anchor_message_id);
+  if (!Number.isInteger(anchorMessageId) || anchorMessageId <= 0 || !q.findMessageInRoom.get(anchorMessageId, room.id)) anchorMessageId = null;
+  const anchorOffsetPx = Math.max(-100000, Math.min(100000, Number.parseInt(input?.anchorOffsetPx ?? input?.anchor_offset_px ?? 0, 10) || 0));
+  const atBottom = input?.atBottom === true || input?.at_bottom === 1 ? 1 : 0;
+  return { anchorMessageId, anchorOffsetPx, atBottom };
+}
+function applyOrderedViewState(room, deviceId, input = {}) {
+  const clientSeq = normalizeViewStateClientSeq(input?.clientSeq ?? input?.client_seq);
+  if (!clientSeq) return { accepted: false, reason: 'invalid-sequence', viewState: normalizeViewState(q.findViewStateByRoomDevice.get(room.id, deviceId)) };
+  const normalized = normalizeViewStateInput(room, input);
+  const result = q.upsertViewStateOrdered.run(room.id, deviceId, normalized.anchorMessageId, normalized.anchorOffsetPx, normalized.atBottom, clientSeq);
+  return {
+    accepted: result.changes > 0,
+    reason: result.changes > 0 ? 'accepted' : 'stale-sequence',
+    viewState: normalizeViewState(q.findViewStateByRoomDevice.get(room.id, deviceId))
   };
 }
 function getUnreadState(roomId, participantId) {
@@ -864,23 +888,25 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   }
 
   const unread = getUnreadState(room.id, updated.id);
+  const candidate = req.body?.viewStateCandidate;
+  if (candidate && typeof candidate === 'object') applyOrderedViewState(room, safeDeviceId, candidate);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
   let targetMessageId = null;
   let targetSource = 'tail';
 
-  if (unread.unreadCount > 0 && Number.isSafeInteger(Number(unread.firstUnreadMessageId)) && Number(unread.firstUnreadMessageId) > 0) {
+  if (viewState && !viewState.atBottom) {
+    const savedTarget = Number(viewState.anchorMessageId);
+    if (Number.isSafeInteger(savedTarget) && savedTarget > 0 && q.findMessageInRoom.get(savedTarget, room.id)) {
+      targetMessageId = savedTarget;
+      targetSource = 'saved-anchor';
+    }
+  }
+
+  if (!targetMessageId && unread.unreadCount > 0 && Number.isSafeInteger(Number(unread.firstUnreadMessageId)) && Number(unread.firstUnreadMessageId) > 0) {
     const unreadTarget = Number(unread.firstUnreadMessageId);
     if (q.findMessageInRoom.get(unreadTarget, room.id)) {
       targetMessageId = unreadTarget;
       targetSource = 'first-unread';
-    }
-  }
-
-  if (!targetMessageId && !viewState?.atBottom) {
-    const savedTarget = Number(viewState?.anchorMessageId);
-    if (Number.isSafeInteger(savedTarget) && savedTarget > 0 && q.findMessageInRoom.get(savedTarget, room.id)) {
-      targetMessageId = savedTarget;
-      targetSource = 'saved-anchor';
     }
   }
 
@@ -954,12 +980,24 @@ app.put('/api/rooms/:publicId/view-state', (req, res) => {
   const safeDeviceId = String(req.body?.deviceId || '').slice(0, 64);
   if (!safeDeviceId) return res.status(400).json({ ok: false, error: 'deviceId required' });
   if (!q.findParticipant.get(room.id, safeDeviceId)) return res.status(403).json({ ok: false, error: 'forbidden' });
-  let anchorMessageId = Number(req.body?.anchorMessageId ?? req.body?.anchor_message_id);
-  if (!Number.isInteger(anchorMessageId) || anchorMessageId <= 0 || !q.findMessageInRoom.get(anchorMessageId, room.id)) anchorMessageId = null;
-  const anchorOffsetPx = Math.max(-100000, Math.min(100000, Number.parseInt(req.body?.anchorOffsetPx ?? req.body?.anchor_offset_px ?? 0, 10) || 0));
-  const atBottom = req.body?.atBottom === true || req.body?.at_bottom === 1 ? 1 : 0;
-  q.upsertViewState.run(room.id, safeDeviceId, anchorMessageId, anchorOffsetPx, atBottom);
-  return res.json({ ok: true, ...roomStatePayload(room) });
+
+  const clientSeq = normalizeViewStateClientSeq(req.body?.clientSeq ?? req.body?.client_seq);
+  if (clientSeq) {
+    const result = applyOrderedViewState(room, safeDeviceId, req.body || {});
+    if (!result.accepted) return res.status(409).json({ ok: false, code: 'VIEW_STATE_STALE', viewState: result.viewState, ...roomStatePayload(room) });
+    return res.json({ ok: true, viewState: result.viewState, ...roomStatePayload(room) });
+  }
+
+  // Backward compatibility for legacy clients/rows. Once an ordered write has
+  // claimed the row (client_seq > 0), an unversioned late write may no longer
+  // overwrite it.
+  const normalized = normalizeViewStateInput(room, req.body || {});
+  const result = q.upsertViewStateLegacy.run(room.id, safeDeviceId, normalized.anchorMessageId, normalized.anchorOffsetPx, normalized.atBottom);
+  const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
+  if (!result.changes && Number(viewState?.clientSeq || 0) > 0) {
+    return res.status(409).json({ ok: false, code: 'VIEW_STATE_STALE', viewState, ...roomStatePayload(room) });
+  }
+  return res.json({ ok: true, viewState, ...roomStatePayload(room) });
 });
 
 app.get('/api/rooms/:publicId/draft', (req, res) => {
