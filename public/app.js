@@ -1054,7 +1054,6 @@ const scrollCoordinator={
   },
   finishOpening(box){
     this.phase='ready';
-    this.unbindOpeningIntent();
     if(box)delete box.dataset.scrollPhase;
     initialMessagesScrollPending=false;
     resumeUnreadObservation(box);
@@ -1198,8 +1197,8 @@ const scrollCoordinator={
     if(!roomId||!box||this.phase!=='ready'||box!==this.box||!isCurrentMessagesBox(box))return;
     const now=performance.now(),last=this.lastCaptureAt.get(roomId)||0;
     const remaining=Math.max(0,VIEW_STATE_LOCAL_CAPTURE_INTERVAL_MS-(now-last));
-    if(remaining===0)void this.captureNow('scroll');
-    else if(!this.localTimers.has(roomId)){
+    if(remaining===0&&!this.pendingPersistence.has(roomId))void this.captureNow('scroll');
+    else if(remaining>0&&!this.localTimers.has(roomId)){
       const timer=setTimeout(()=>{
         this.localTimers.delete(roomId);
         void this.captureNow('scroll',{roomId,box});
@@ -1239,8 +1238,15 @@ const scrollCoordinator={
     const seq=Number(viewState?.clientSeq||0);
     if(Number.isSafeInteger(seq)&&seq>0)raiseViewStateSequenceFloor(deviceId,seq);
     const local=this.latestSnapshot(roomId,deviceId);
-    if(!Number.isSafeInteger(seq)||seq<=0||(local&&local.clientSeq>=seq))return local;
+    if(!Number.isSafeInteger(seq)||seq<=0)return local;
     const rawAnchor=Number(viewState?.anchorMessageId);
+    const serverHasPosition=viewState?.atBottom===true||(Number.isSafeInteger(rawAnchor)&&rawAnchor>0);
+    if(local&&local.clientSeq>seq)return local;
+    if(!serverHasPosition){
+      if(!local||local.clientSeq<=seq){clearLocalViewStateSnapshot(roomId);this.latestSnapshots.delete(roomId);}
+      return null;
+    }
+    if(local&&local.clientSeq===seq)return local;
     const snapshot=normalizeLocalViewStateSnapshot({
       version:VIEW_STATE_SNAPSHOT_VERSION,roomId,deviceId,
       anchorMessageId:Number.isSafeInteger(rawAnchor)&&rawAnchor>0?rawAnchor:null,
