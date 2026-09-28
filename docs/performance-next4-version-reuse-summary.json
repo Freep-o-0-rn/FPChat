@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 4,
+  "build": "190.2",
+  "beforeRuntimeSha": "63664e5c013cfb44bda7f179b383a6460fd595d2",
+  "measurementRunHead": "ea78ffb461e72c41a2a0a2cdbaeeb79d69226323",
+  "workflowRunId": 36411301150,
+  "artifactId": 10963774575,
+  "artifactDigest": "sha256:14e465b10dc73603b8839a3242c36576605c52c2a347e378862edcc3b1986c4b",
+  "behavior": {
+    "normalStartupVersionRequests": {
+      "before": 2,
+      "after": 1
+    },
+    "updateVersionRequestsAcrossTwoNavigations": {
+      "before": 4,
+      "after": 2
+    },
+    "startupReuseRequires": "valid loader result + build===resourceBuild + loaded app.js ?v equals resourceBuild",
+    "fallback": "fresh no-store fetch when startup result missing/invalid/mismatched",
+    "resume": "fresh no-arg checkAppVersionOnEntry; startup handoff not reused"
+  },
+  "before": {
+    "savedNormal": {
+      "wallMs": 346,
+      "loaderToBootReadyMs": 215.5,
+      "versionMs": 6.4,
+      "ownersWaitMs": 66.5,
+      "serviceWorkerMs": 1,
+      "secondVersionGateMs": 10.7,
+      "layersMs": 44.7,
+      "assetsMs": 16.7,
+      "versionCount": 2
+    },
+    "savedSlow": {
+      "wallMs": 4199,
+      "loaderToBootReadyMs": 3865.5,
+      "versionMs": 212.3,
+      "ownersWaitMs": 1278.9,
+      "serviceWorkerMs": 1.7,
+      "secondVersionGateMs": 218.9,
+      "layersMs": 224.1,
+      "assetsMs": 27.1,
+      "versionCount": 2,
+      "encodedKiB": 22.4
+    },
+    "updateNormal": {
+      "wallMs": 521,
+      "finalLoaderToBootReadyMs": 218.8,
+      "finalVersionMs": 5.1,
+      "finalOwnersWaitMs": 61.5,
+      "finalServiceWorkerMs": 1.5,
+      "finalSecondVersionGateMs": 11.9,
+      "finalLayersMs": 40.3,
+      "finalAssetsMs": 30.6,
+      "versionCount": 4,
+      "encodedKiB": 44.6
+    },
+    "updateSlow": {
+      "wallMs": 6441,
+      "finalLoaderToBootReadyMs": 4096.6,
+      "finalVersionMs": 209.2,
+      "finalOwnersWaitMs": 1283.4,
+      "finalServiceWorkerMs": 2,
+      "finalSecondVersionGateMs": 214.8,
+      "finalLayersMs": 224,
+      "finalAssetsMs": 28.4,
+      "versionCount": 4,
+      "encodedKiB": 67.9
+    }
+  },
+  "after": {
+    "savedNormal": {
+      "wallMs": 314,
+      "loaderToBootReadyMs": 184.7,
+      "versionMs": 7.1,
+      "ownersWaitMs": 51.8,
+      "serviceWorkerMs": 3.5,
+      "secondVersionGateMs": 0.1,
+      "layersMs": 44,
+      "assetsMs": 26.3,
+      "versionCount": 1
+    },
+    "savedSlow": {
+      "wallMs": 4164,
+      "loaderToBootReadyMs": 3828,
+      "versionMs": 210.1,
+      "ownersWaitMs": 1282.9,
+      "serviceWorkerMs": 1.4,
+      "secondVersionGateMs": 0.3,
+      "layersMs": 222.7,
+      "assetsMs": 24.3,
+      "versionCount": 1,
+      "encodedKiB": 22.4
+    },
+    "updateNormal": {
+      "wallMs": 447,
+      "finalLoaderToBootReadyMs": 188.4,
+      "finalVersionMs": 4.3,
+      "finalOwnersWaitMs": 48.8,
+      "finalServiceWorkerMs": 4.6,
+      "finalSecondVersionGateMs": 0.5,
+      "finalLayersMs": 44.9,
+      "finalAssetsMs": 24.8,
+      "versionCount": 2,
+      "encodedKiB": 43.2
+    },
+    "updateSlow": {
+      "wallMs": 6657,
+      "finalLoaderToBootReadyMs": 4515.4,
+      "finalVersionMs": 210.4,
+      "finalOwnersWaitMs": 1283.5,
+      "finalServiceWorkerMs": 1.3,
+      "finalSecondVersionGateMs": 0.1,
+      "finalLayersMs": 222.9,
+      "finalAssetsMs": 27.1,
+      "versionCount": 2,
+      "encodedKiB": 152.4
+    }
+  },
+  "interpretation": {
+    "confirmed": "duplicate app-side startup version request removed; slow saved second-version gate 218.9ms -> 0.3ms",
+    "savedSlowWall": "4199ms -> 4164ms in one matched diagnostic run; most removed request time overlapped with other startup resource work",
+    "updateSlowWall": "6441ms -> 6657ms is inconclusive for this change because encoded transfer changed 67.9KiB -> 152.4KiB in the single run",
+    "noClaim": "do not claim ~215ms wall improvement or percentage speedup from one run"
+  }
+}
