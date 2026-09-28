@@ -13,6 +13,7 @@ on:
       - 'src/db.js'
       - 'scripts/audit1902-scroll-save.cjs'
       - 'scripts/regression1902-scroll-resilience.cjs'
+      - 'scripts/regression1902-scroll-offline.cjs'
       - 'scripts/regression178-scroll-contract.cjs'
       - 'scripts/regression178-history-saved-anchor.cjs'
       - 'scripts/regression178-history-reply-pin-jump.cjs'
@@ -66,6 +67,8 @@ jobs:
         run: npm run audit:1902:scroll-save
       - name: Scroll resilience browser scenarios
         run: npm run test:190.2:scroll-resilience
+      - name: Offline leave and recovery
+        run: npm run test:190.2:scroll-offline
       - name: Initial window regression
         run: npm run test:next:12
       - name: Scroll owner contract
