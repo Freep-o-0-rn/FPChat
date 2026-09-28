@@ -1,0 +1,45 @@
+name: Next Plan Item 18 Startup Acceptance
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next18-startup.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: node --check scripts/benchmark-next3-startup-waterfall.cjs
+      - name: Startup/cache regression contract
+        run: |
+          npm run test:next:4
+          npm run test:next:7
+          npm run test:next:8
+          npm run test:next:9
+      - name: Repeat startup waterfall
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT3_OUTPUT: ${{ github.workspace }}/next18-startup-output
+        run: node ./scripts/benchmark-next3-startup-waterfall.cjs
+      - name: Upload startup acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next18-startup
+          path: next18-startup-output
+          if-no-files-found: warn
