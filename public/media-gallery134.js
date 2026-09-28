@@ -33,7 +33,7 @@
     if (window.__fpMediaGallery134Installed) return;
     window.__fpMediaGallery134Installed = true;
 
-    openMediaViewer = function openMediaViewer134(messageMedia, startIndex = 0) {
+    openMediaViewer = function openMediaViewer134(messageMedia, startIndex = 0, previewHint = null) {
       const source = Array.isArray(messageMedia) ? messageMedia : [];
       const sourceItem = source[Number(startIndex) || 0] || source[0] || null;
       const initialItems = source.filter(isGalleryMedia);
@@ -48,6 +48,21 @@
       const roomId = String(state?.roomId || '');
       const generation = ++galleryGeneration;
 
+      const previewById = new Map();
+      if (
+        sourceItem.media_kind === 'image'
+        && previewHint
+        && String(previewHint.publicId || '') === sourcePublicId
+        && typeof previewHint.url === 'string'
+        && previewHint.url
+      ) {
+        previewById.set(sourcePublicId, Object.freeze({
+          url: previewHint.url,
+          width: Number(previewHint.width) || Number(sourceItem.width) || null,
+          height: Number(previewHint.height) || Number(sourceItem.height) || null,
+        }));
+      }
+
       const nextViewer = {
         messageMedia: initialItems,
         index: initialIndex,
@@ -55,6 +70,7 @@
         fpGallery134: true,
         fpRoomId: roomId,
         fpGeneration: generation,
+        fpPreviewById: previewById,
       };
       const manager = window.FPMediaManager177;
       if (manager?.openViewer) manager.openViewer(nextViewer, openViewerWorker177);
@@ -294,6 +310,53 @@
     pruneAssetCache(keep);
   }
 
+  function viewerPhotoPreview(viewerState, item) {
+    if (item?.media_kind !== 'image') return null;
+    const preview = viewerState?.fpPreviewById?.get?.(String(item.public_id || '')) || null;
+    return preview?.url ? preview : null;
+  }
+
+  function applyPhotoGeometry(image, item, preview = null) {
+    const width = Number(item?.width) || Number(preview?.width) || 0;
+    const height = Number(item?.height) || Number(preview?.height) || 0;
+    if (width > 0 && height > 0) {
+      image.width = width;
+      image.height = height;
+    }
+  }
+
+  async function decodePhotoUrl(url) {
+    const probe = new Image();
+    probe.src = url;
+    if (typeof probe.decode === 'function') {
+      await probe.decode();
+      if (!probe.naturalWidth) throw new Error('photo decode failed');
+      return;
+    }
+    if (probe.complete) {
+      if (!probe.naturalWidth) throw new Error('photo decode failed');
+      return;
+    }
+    await new Promise((resolve, reject) => {
+      probe.addEventListener('load', resolve, { once: true });
+      probe.addEventListener('error', () => reject(new Error('photo decode failed')), { once: true });
+    });
+  }
+
+  function showOriginalError(container, item, active, viewerState) {
+    container.querySelector('.fp-gallery134-original-error')?.remove();
+    const error = document.createElement('div');
+    error.className = 'media-error-box fp-gallery134-original-error';
+    error.innerHTML = '<span>Не удалось загрузить оригинал</span><button type="button" class="btn btn-secondary">Повторить</button>';
+    error.querySelector('button')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dropAsset(viewerState.fpRoomId, item);
+      mountSlot(container, item, active, viewerState);
+    });
+    container.appendChild(error);
+  }
+
   function mountSlot(container, item, active, viewerState) {
     if (!container) return;
     if (!item) {
@@ -302,16 +365,49 @@
     }
     const publicId = String(item.public_id || '');
     container.dataset.publicId = publicId;
-    container.innerHTML = '<div class="media-progress-ring">Загрузка...</div>';
+    const preview = active ? viewerPhotoPreview(viewerState, item) : null;
+    let previewImage = null;
+    if (preview) {
+      previewImage = document.createElement('img');
+      applyPhotoGeometry(previewImage, item, preview);
+      previewImage.src = preview.url;
+      previewImage.alt = 'media';
+      previewImage.draggable = false;
+      previewImage.dataset.fpViewerSource = 'preview';
+      previewImage.classList.add('fp-gallery134-photo-preview');
+      container.replaceChildren(previewImage);
+      bindPhoto185(viewerInteraction, previewImage, viewerState, publicId);
+    } else {
+      container.innerHTML = '<div class="media-progress-ring">Загрузка...</div>';
+    }
+
     const diagnostic186=window.FPRuntime169?.loading;
     const consumer186=active?'gallery-current':'gallery-neighbor';
     const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob'});
     diagnostic186?.step(trace186,'asset-start');
-    void loadAsset(viewerState.fpRoomId, item, trace186, consumer186).then((asset) => {
+    void loadAsset(viewerState.fpRoomId, item, trace186, consumer186).then(async (asset) => {
       diagnostic186?.step(trace186,'asset-ready');
       if (!container.isConnected || container.dataset.publicId !== publicId) { diagnostic186?.finish(trace186,'cancelled'); return; }
       const live = currentGalleryState();
       if (!live || live.fpGeneration !== viewerState.fpGeneration) { diagnostic186?.finish(trace186,'cancelled'); return; }
+
+      if (item.media_kind === 'image' && previewImage && previewImage.isConnected && previewImage.parentElement === container) {
+        await decodePhotoUrl(asset.url);
+        if (!container.isConnected || container.dataset.publicId !== publicId) { diagnostic186?.finish(trace186,'cancelled'); return; }
+        const current = currentGalleryState();
+        if (!current || current.fpGeneration !== viewerState.fpGeneration || previewImage.parentElement !== container) {
+          diagnostic186?.finish(trace186,'cancelled');
+          return;
+        }
+        diagnostic186?.step(trace186,'url-ready');
+        diagnostic186?.watchElement(trace186,previewImage);
+        previewImage.dataset.fpViewerSource = 'original';
+        previewImage.classList.remove('fp-gallery134-photo-preview');
+        previewImage.src = asset.url;
+        container.querySelector('.fp-gallery134-original-error')?.remove();
+        return;
+      }
+
       diagnostic186?.step(trace186,'url-ready');
       if (item.media_kind === 'video') {
         const video = document.createElement('video');
@@ -349,16 +445,28 @@
         }
       } else {
         const image = document.createElement('img');
+        applyPhotoGeometry(image, item);
         diagnostic186?.watchElement(trace186,image);
         image.src = asset.url;
         image.alt = 'media';
         image.draggable = false;
+        image.dataset.fpViewerSource = 'original';
         container.replaceChildren(image);
         if (active) bindPhoto185(viewerInteraction, image, viewerState, publicId);
       }
     }).catch((error) => {
       diagnostic186?.fail(trace186,'fetch',error);
       if (!container.isConnected || container.dataset.publicId !== publicId) return;
+      if (
+        item.media_kind === 'image'
+        && previewImage
+        && previewImage.isConnected
+        && previewImage.parentElement === container
+        && previewImage.dataset.fpViewerSource === 'preview'
+      ) {
+        showOriginalError(container, item, active, viewerState);
+        return;
+      }
       container.innerHTML = '<div class="media-error-box"><span>Не удалось загрузить медиа</span><button type="button" class="btn btn-secondary">Повторить</button></div>';
       const retry = container.querySelector('button');
       retry?.addEventListener('click', (event) => {
