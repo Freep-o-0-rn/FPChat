@@ -177,7 +177,8 @@
     "bench:next:10": "node ./scripts/benchmark-next10-join-history.cjs",
     "test:next:11": "node ./scripts/regression-next11-initial-window.cjs",
     "test:next:12": "node ./scripts/regression-next12-client-initial-window.cjs",
-    "bench:next:12": "node ./scripts/benchmark-next12-initial-window.cjs"
+    "bench:next:12": "node ./scripts/benchmark-next12-initial-window.cjs",
+    "test:next:13": "node ./scripts/regression-next13-session-reuse.cjs"
   },
   "license": "MIT",
   "dependencies": {
