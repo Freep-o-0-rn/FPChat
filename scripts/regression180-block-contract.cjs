@@ -16,7 +16,7 @@ const client=read('public/user-blocks165.js');
 const systemClient=read('public/chat-request-system147.js');
 
 // Canonical server owner / storage.
-assert(server.includes("const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);"),'canonical fpUserBlocks165 instance changed');
+assert.equal((server.match(/\bconst\s+fpUserBlocks165\s*=\s*createUserBlocks165\s*\(/g)||[]).length,1,'canonical fpUserBlocks165 instance changed');
 assert(blocks.includes('CREATE TABLE IF NOT EXISTS chat_request_blocks'),'canonical block table changed');
 assert(blocks.includes('blockPair: db.prepare(`SELECT public_id, blocker_device_id, blocked_device_id, created_at FROM chat_request_blocks WHERE blocker_device_id=? AND blocked_device_id=? LIMIT 1`)'),'directed block lookup changed');
 assert(blocks.includes('addBlock: db.prepare(`INSERT OR IGNORE INTO chat_request_blocks(public_id, blocker_device_id, blocked_device_id) VALUES(?,?,?)`)'),'block insert semantics changed');
