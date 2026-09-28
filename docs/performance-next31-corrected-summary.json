@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": "3.1",
+  "build": "190.2",
+  "runtimeSha": "1eb7a97184a307562c51525aa358450f8346ea36",
+  "probeRunId": 36409730941,
+  "correctedRunId": 36409985895,
+  "correctedArtifactId": 10963583079,
+  "correctedArtifactDigest": "sha256:d84d31af228e54db7e35d4044d537a3f0a4930c8d7672a5229daf699ebe74100",
+  "coverageProbe": {
+    "pageOnlyThrottle": {
+      "pageWallMs": 3.7,
+      "workerDurationMs": 1.8,
+      "workerEncodedBytes": 409,
+      "workerStatus": 200,
+      "workerFromDiskCache": false
+    },
+    "pageAndWorkerThrottle": {
+      "pageWallMs": 204.9,
+      "workerDurationMs": 202.6,
+      "workerEncodedBytes": 409,
+      "workerStatus": 200,
+      "workerFromDiskCache": false
+    },
+    "noServiceWorkerControl": {
+      "pageWallMs": 226.7,
+      "controlled": false
+    },
+    "coverageGapConfirmed": true
+  },
+  "correctedScenarios": {
+    "savedNormal": {
+      "wallMs": 346,
+      "loaderToBootReadyMs": 215.5,
+      "firstVersionBootMs": 6.4,
+      "ownersWaitMs": 66.5,
+      "serviceWorkerMs": 1,
+      "secondVersionGateMs": 10.7,
+      "layersMs": 44.7,
+      "assetsMs": 16.7,
+      "pageVersionDurationsMs": [
+        4.1,
+        10.1
+      ],
+      "workerVersionDurationsMs": [
+        2.7,
+        4.5
+      ],
+      "secondVersionStartDelayMs": 74
+    },
+    "savedSlow": {
+      "wallMs": 4199,
+      "loaderToBootReadyMs": 3865.5,
+      "firstVersionBootMs": 212.3,
+      "ownersWaitMs": 1278.9,
+      "serviceWorkerMs": 1.7,
+      "secondVersionGateMs": 218.9,
+      "layersMs": 224.1,
+      "assetsMs": 27.1,
+      "pageVersionDurationsMs": [
+        211.4,
+        218
+      ],
+      "workerVersionDurationsMs": [
+        210.2,
+        217.2
+      ],
+      "secondVersionStartDelayMs": 1492.9
+    },
+    "updateNormal": {
+      "wallMs": 521,
+      "navigations": 2,
+      "workerVersionDurationsMs": [
+        2.2,
+        6.9,
+        2,
+        8.1
+      ]
+    },
+    "updateSlow": {
+      "wallMs": 6441,
+      "navigations": 2,
+      "finalLoaderToBootReadyMs": 4096.6,
+      "finalFirstVersionBootMs": 209.2,
+      "finalOwnersWaitMs": 1283.4,
+      "finalServiceWorkerMs": 2,
+      "finalSecondVersionGateMs": 214.8,
+      "finalLayersMs": 224,
+      "finalAssetsMs": 28.4,
+      "workerVersionDurationsMs": [
+        207.7,
+        213.1,
+        206.8,
+        212.1
+      ],
+      "duplicateRequestDurationsMs": [
+        213.1,
+        212.1
+      ]
+    }
+  },
+  "correctedInterpretation": {
+    "fromServiceWorker": "means the page response was supplied through the Service Worker interception path; it is not cache proof",
+    "zeroPageEncodedBytes": "page-target accounting omits the Service Worker's upstream body; worker-target observation recorded 409 encoded bytes per version response",
+    "nextChoice": "item 4",
+    "reason": "the duplicate request is now a confirmed sequential ~215 ms slow-network dependency per navigation; item 5 still has larger aggregate waits but no single optional dependency has yet been proven causal"
+  }
+}
