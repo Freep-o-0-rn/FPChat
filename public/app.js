@@ -1972,7 +1972,7 @@ pushAppHistoryState();
   await registerServiceWorker();
   window.FPBoot152?.mark186?.('service-worker-ready');
   window.FPBoot152?.mark186?.('update-start');
-  const updateStarted=await checkAppVersionOnEntry();
+  const updateStarted=await checkAppVersionOnEntry({startupVersionResult:window.FPStartup174?.versionResult||null});
   window.FPBoot152?.mark186?.('update-ready');
   if(updateStarted)return;
   // Build 181: NotificationManager181 loads immediately after app.js and is
@@ -2027,15 +2027,38 @@ async function applyAppUpdate(){
     location.reload();
   }
 }
-async function checkAppVersionOnEntry(){
+function validatedStartupVersionBuild(result){
+  if(!result||typeof result!=='object')return null;
+  const buildId=String(result.build??'').trim();
+  const resourceBuild=String(result.resourceBuild??'').trim();
+  if(!/^\d+(?:\.\d+)*$/.test(buildId)||resourceBuild!==buildId)return null;
+  const serverBuild=Number(buildId);
+  if(!Number.isFinite(serverBuild))return null;
+  const appScript=[...document.scripts].find((script)=>{
+    if(!script.src)return false;
+    try{return new URL(script.src,location.href).pathname==='/app.js';}catch{return false;}
+  });
+  if(!appScript)return null;
+  try{
+    const loadedBuild=new URL(appScript.src,location.href).searchParams.get('v');
+    if(loadedBuild!==resourceBuild)return null;
+  }catch{return null;}
+  return serverBuild;
+}
+async function fetchServerBuildFresh(){
+  const response=await fetch('/version.json',{cache:'no-store'});
+  if(!response.ok)return null;
+  const payload=await response.json();
+  const serverBuild=Number(payload?.build);
+  return Number.isFinite(serverBuild)?serverBuild:null;
+}
+async function checkAppVersionOnEntry({startupVersionResult=null}={}){
   if(appVersionCheckInFlight)return false;
   appVersionCheckInFlight=true;
   try{
-    const response=await fetch('/version.json',{cache:'no-store'});
-    if(!response.ok)return false;
-    const payload=await response.json();
-    const serverBuild=Number(payload?.build);
-    if(!Number.isFinite(serverBuild))return false;
+    let serverBuild=validatedStartupVersionBuild(startupVersionResult);
+    if(serverBuild===null)serverBuild=await fetchServerBuildFresh();
+    if(serverBuild===null)return false;
     const localBuildRaw=localStorage.getItem(APP_BUILD_KEY);
     const localBuild=localBuildRaw===null?null:Number(localBuildRaw);
     const isReloading=sessionStorage.getItem(APP_UPDATE_RELOADING_KEY)==='1';
