@@ -203,7 +203,9 @@ run(async({newClient,errors})=>{
   await page.locator('[data-message-id="15004"] .media-tile').first().click();
   await page.waitForSelector('[data-slot="current"] img[data-fp-viewer-source="preview"]');
   await page.waitForFunction(()=>next15.pending.has('nav-a')&&next15.pending.has('nav-b'));
-  await page.locator('.media-viewer-nav.next').click();
+  await pointer('pointerdown',4,300,430);
+  await pointer('pointermove',4,120,430);
+  await pointer('pointerup',4,120,430);
   await page.waitForFunction(()=>mediaViewerState?.messageMedia?.[mediaViewerState.index]?.public_id==='next15-nav-b');
   await page.evaluate(()=>next15Resolve('nav-a'));
   await page.waitForTimeout(220);
