@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–7 plus diagnostic 3.1 completed; app.js now has a content-derived URL revision**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–8 plus diagnostic 3.1 completed; revisioned app.js now uses safe long-lived immutable caching**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–7 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–8 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1800,3 +1800,167 @@ No data migration is involved.
 **No next item started automatically.**
 
 Follow-up item 8 is next only if explicitly requested.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 8
+
+Status: **done — long-lived immutable caching enabled only for exact revisioned app.js URLs**.
+
+### Scope
+
+Selected resource from items 6–7:
+
+`public/app.js`
+
+No project-wide cache policy was added.
+
+### Server safety contract
+
+`server.js` now verifies the app revision against the actual current app.js bytes at server startup.
+
+Long-lived immutable caching is served only when:
+
+- path is exactly `/app.js`;
+- request includes `r=<40-hex revision>`;
+- `version.json.appRevision` is valid;
+- that revision equals the Git blob SHA of the current app.js bytes;
+- request `r` equals that verified revision.
+
+Exact revisioned app.js response:
+
+`Cache-Control: public, max-age=31536000, immutable`
+
+A stale revision receives:
+
+- HTTP 410;
+- `Cache-Control: no-store`.
+
+Therefore current bytes are never served under an old immutable URL.
+
+If the request has no `r`, it falls through to the existing ordinary static policy. A build number alone is not treated as immutable.
+
+If server startup cannot verify appRevision against app.js bytes, revisioned app.js fails closed with HTTP 503/no-store.
+
+### Isolation
+
+Regression confirms immutable is not applied to:
+
+- HTML;
+- `version.json`;
+- `sw.js`;
+- `/api/*`;
+- unrevisioned app.js;
+- other JS/CSS files.
+
+### Repeat-launch result
+
+Item 6 app.js baseline:
+
+| Scenario | Before |
+| --- | ---: |
+| normal ordinary | 47.4 ms, 304, 267 B |
+| normal reload | 42.3 ms, 304, 267 B |
+| slow ordinary | 864.1 ms, 304, 267 B |
+| slow reload | 867.8 ms, 304, 267 B |
+
+Item 8:
+
+| Scenario | After |
+| --- | ---: |
+| normal ordinary | 7.8 ms, disk cache, 0 B |
+| normal reload | 0.2 ms, cache, 0 B |
+| slow ordinary | 7.8 ms, disk cache, 0 B |
+| slow reload | 0.1 ms, cache, 0 B |
+
+Removed selected-resource network wait:
+
+- normal ordinary: **-39.6 ms**;
+- normal reload: **-42.1 ms**;
+- slow ordinary: **-856.3 ms**;
+- slow reload: **-867.7 ms**.
+
+Dedicated repeat-launch evidence:
+
+- `fromDiskCache=true`;
+- no 304 network status;
+- encoded network bytes = 0;
+- Resource Timing transferSize = 0.
+
+### End-to-end wall
+
+Single-run startup wall did not mirror the full app.js saving because other resources still revalidate and overlap:
+
+| Scenario | Item 6 | Item 8 |
+| --- | ---: | ---: |
+| normal ordinary | 370 ms | 402 ms |
+| normal reload | 335 ms | 353 ms |
+| slow ordinary | 4141 ms | 4083 ms |
+| slow reload | 4135 ms | 4268 ms |
+
+These one-run wall differences are not attributed to app.js caching.
+
+The confirmed effect is the elimination of the app.js validator round trip itself.
+
+### Update / rollback
+
+Final item-8 CI re-ran `test:next:7`, which exercises immutable synthetic app responses in one browser context.
+
+Confirmed:
+
+- A → B changes URL and executes/returns B bytes;
+- B → A rollback changes URL back and executes/returns A bytes.
+
+Item 8 adds the server-side stale-revision fail-closed rule, so an old revision request can never receive current bytes.
+
+### Verification
+
+Workflow `36416821530` — SUCCESS.
+
+Passed:
+
+- `test:next:8`;
+- `test:next:7`;
+- `test:next:4`;
+- `test:186:startup`;
+- `test:180:rollback-contract`;
+- repeat static-cache benchmark.
+
+Artifact:
+
+- id `10968107003`;
+- digest `sha256:e82d81a0c3b2327a27c33cbbf2222e6f46091bce3182a3fd7657c79643e03dd2`.
+
+### Files
+
+Runtime/server:
+
+- `server.js`.
+
+Regression:
+
+- `scripts/regression-next8-app-immutable-cache.cjs`;
+- `package.json`.
+
+Results:
+
+- `docs/performance-next8-app-cache.md`;
+- `docs/performance-next8-app-cache-summary.json`;
+- this journal.
+
+No `sw.js`, HTML cache policy, version.json cache policy, API cache policy, DB/schema, owner/manager/arbiter or project-wide static caching change was made.
+
+### Production limit
+
+The server policy is verified on the isolated application server. This item does not claim that Cloudflare or another production proxy preserves these headers unchanged.
+
+### Rollback
+
+Revert the targeted revision-aware `/app.js` route and remove `test:next:8`.
+
+Item-7 URL revisioning can remain independently.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Follow-up item 9 is next only if explicitly requested.
