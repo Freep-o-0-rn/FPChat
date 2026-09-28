@@ -62,8 +62,8 @@ run(async({browser,origin,errors})=>{
   syntheticPage.on('pageerror',e=>errors.push(e.message));
   syntheticPage.on('dialog',d=>d.dismiss());
 
-  const bodyA=appText+"\\n;window.__fpNext7RevisionBytes='A';\\n";
-  const bodyB=appText+"\\n;window.__fpNext7RevisionBytes='B';\\n";
+  const bodyA=appText+"\n;window.__fpNext7RevisionBytes='A';\n";
+  const bodyB=appText+"\n;window.__fpNext7RevisionBytes='B';\n";
   const revA=gitBlobSha(Buffer.from(bodyA));
   const revB=gitBlobSha(Buffer.from(bodyB));
   assert.notEqual(revA,revB);
