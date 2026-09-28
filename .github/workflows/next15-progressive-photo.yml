@@ -1,4 +1,4 @@
-name: Next Plan Item 15 Progressive Photo v4
+name: Next Plan Item 15 Progressive Photo v5
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,6 +29,7 @@ jobs:
           node --check public/media-gallery134.js
           node --check scripts/regression-next15-progressive-photo.cjs
           node --check scripts/benchmark-next15-progressive-photo.cjs
+          node --check scripts/compare-next15-item14.cjs
       - name: App revision contract
         run: npm run test:next:7
       - name: Item 15 progressive photo
@@ -45,15 +46,39 @@ jobs:
         run: npm run test:186:media-cache
       - name: Build 190 media
         run: npm run test:190:browser
-      - name: Measure preview to original
+      - name: Measure item 14 baseline on this runner
+        env:
+          ITEM14_COMMIT: 205e07055781a31e9bc957f33d52afe8b805589c
+        run: |
+          git fetch --depth=1 origin "$ITEM14_COMMIT"
+          git worktree add --detach "$RUNNER_TEMP/fpchat-item14" "$ITEM14_COMMIT"
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/fpchat-item14/node_modules"
+          mkdir -p "$GITHUB_WORKSPACE/next15-output/item14-controlled"
+          (
+            cd "$RUNNER_TEMP/fpchat-item14"
+            FPCHAT_TEST_ROOT="$RUNNER_TEMP/fpchat-item14" \
+            CODEX_PRIMARY_RUNTIME_NODE_MODULES="$GITHUB_WORKSPACE/node_modules" \
+            FPCHAT_RUNTIME_BASE_SHA=43d05dbffe20f2bff779f9683aaf194b3f4e0cd2 \
+            FPCHAT_NEXT14_OUTPUT="$GITHUB_WORKSPACE/next15-output/item14-controlled" \
+            node ./scripts/benchmark-next14-photo-cache.cjs
+          )
+      - name: Measure item 15 on the same runner
         env:
           FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
-          FPCHAT_NEXT15_OUTPUT: ${{ github.workspace }}/next15-output
+          FPCHAT_NEXT15_OUTPUT: ${{ github.workspace }}/next15-output/item15-controlled
         run: npm run bench:next:15
+      - name: Compare item 14 and item 15
+        env:
+          FPCHAT_ITEM14_SUMMARY: ${{ github.workspace }}/next15-output/item14-controlled/next14-photo-cache-summary.json
+          FPCHAT_ITEM15_SUMMARY: ${{ github.workspace }}/next15-output/item15-controlled/next15-progressive-photo-summary.json
+          FPCHAT_ITEM15_COMPARE_OUTPUT: ${{ github.workspace }}/next15-output/next15-controlled-comparison.json
+          FPCHAT_ITEM14_COMMIT: 205e07055781a31e9bc957f33d52afe8b805589c
+          FPCHAT_ITEM15_COMMIT: 2bf734e918dfb7e31d14d574d52a7d3256076000
+        run: node ./scripts/compare-next15-item14.cjs
       - name: Upload item 15 measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: next15-progressive-photo
+          name: next15-progressive-photo-controlled
           path: next15-output
           if-no-files-found: warn
