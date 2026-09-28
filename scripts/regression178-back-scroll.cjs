@@ -47,7 +47,12 @@ assert(swipe.includes('if (touch.clientX > EDGE_PX) {')&&swipe.includes('if (!pi
   'navigation edge-only rule changed');
 
 // Existing executors remain unchanged.
-assert(swipe.includes('if (typeof window.showChatsList === "function") window.showChatsList();'),'chat back executor changed');
+assert(
+  swipe.includes("const runExistingChatListExit = () => {") &&
+  swipe.includes("typeof window.showChatsList === 'function'") &&
+  swipe.includes("if (!commitChatBackVisual()) runExistingChatListExit();"),
+  'chat back executor changed'
+);
 assert(swipe.includes('if (current.modernSettings && commitModernSettingsBack()) return;'),'modern settings back executor changed');
 assert(app.includes('setSelectedReply(state.roomId,getMessageReplyMeta(m.id))'),'reply executor missing');
 assert(context.includes('openContext(messageEl, session.target'),'context executor missing');
