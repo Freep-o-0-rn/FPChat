@@ -26,14 +26,10 @@ const initialStart = owner.indexOf('async applyInitial(viewState)');
 const initialEnd = owner.indexOf('stop(){', initialStart);
 assert(initialStart >= 0 && initialEnd > initialStart, 'initial scroll flow missing');
 const initial = owner.slice(initialStart, initialEnd);
-const unreadBranch = initial.indexOf('if(unreadTarget){');
-const noUnreadBranch = initial.indexOf("}else if(!activeChatHistory?.unreadCount&&!activeChatHistory?.unloadedUnreadCount){");
-const bottomBranch = initial.indexOf('if(viewState?.atBottom){');
-const restoreBranch = initial.indexOf('const target=getViewStateMessageElement(box,viewState);');
-assert(unreadBranch >= 0, 'initial unread branch missing');
-assert(noUnreadBranch > unreadBranch, 'unread no longer wins the initial decision');
-assert(bottomBranch > noUnreadBranch, 'saved bottom decision moved outside the no-unread branch');
-assert(restoreBranch > bottomBranch, 'saved anchor no longer follows the existing atBottom decision');
+const restoreBranch = initial.indexOf('if(savedTarget){');
+const unreadBranch = initial.indexOf('}else if(unreadTarget){');
+assert(restoreBranch >= 0, 'initial saved old-history branch missing');
+assert(unreadBranch > restoreBranch, 'new unread can yank a saved non-bottom reading position');
 assert(initial.includes("this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');"), 'first-unread target/offset changed');
 assert(initial.includes("this.write(box,box.scrollHeight,'auto');"), 'initial bottom fallback changed');
 assert(initial.includes("this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');"), 'saved-anchor offset formula changed');
@@ -42,15 +38,16 @@ const bottomStart = owner.indexOf('requestBottom(box=this.box)');
 const bottomEnd = owner.indexOf('focus(target', bottomStart);
 assert(bottomStart >= 0 && bottomEnd > bottomStart, 'requestBottom flow missing');
 const bottom = owner.slice(bottomStart, bottomEnd);
+const openingIndex = bottom.indexOf("if(this.phase==='opening'){this.pendingIntent={type:'bottom'};return;}");
 const jumpIndex = bottom.indexOf('void FPHistory174.jump();return;');
-const openingIndex = bottom.indexOf("if(this.phase==='opening'){this.pendingBottom=true;return;}");
 const writeIndex = bottom.indexOf("this.write(box,box.scrollHeight,'auto');");
-assert(jumpIndex >= 0 && openingIndex > jumpIndex && writeIndex > openingIndex, 'bottom conflict order changed');
+assert(openingIndex >= 0 && jumpIndex > openingIndex && writeIndex > jumpIndex, 'explicit bottom intent no longer wins opening restore while real-tail loading remains owned by FPHistory174');
 
 const focusStart = owner.indexOf('focus(target');
 const prependStart = owner.indexOf('preservePrepend(', focusStart);
 const focus = owner.slice(focusStart, prependStart);
-assert(focus.includes('this.isOpening())return false;'), 'focus can now override opening');
+assert(focus.includes("if(this.isOpening(box)){"), 'focus no longer arbitrates against opening restore');
+assert(focus.includes("this.pendingIntent={type:'focus'"), 'explicit focus is not preserved as the opening intent');
 const prepend = owner.slice(prependStart);
 assert(prepend.includes("if(!isCurrentMessagesBox(box)||this.phase==='opening')return;"), 'prepend can now override opening');
 
@@ -87,7 +84,7 @@ assert(viewport.includes("if (event.target?.closest?.('#messages')) stopBottomPi
 assert(viewport.includes('box.scrollTop = box.scrollHeight;'), 'known viewport compatibility fallback disappeared without its dedicated migration step');
 
 console.log('PASS 178.22 FPScroll173 remains the existing message-scroll owner');
-console.log('PASS 178.22 opening/unread/restore/bottom conflict order is unchanged');
+console.log('PASS 178.22 saved old-history, unread, explicit focus and bottom conflicts stay inside FPScroll173');
 console.log('PASS 178.22 history load/trim/jump preserve the existing anchor/focus/bottom rules');
 console.log('PASS 178.22 deletion compensation keeps the existing target/offset/auto behavior');
 console.log('PASS 178.22 user scroll stays native/observational and keyboard pin remains conditional');
