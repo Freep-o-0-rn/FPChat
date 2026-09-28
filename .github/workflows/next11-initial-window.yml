@@ -1,4 +1,4 @@
-name: Next Plan Item 11 Initial Window v3
+name: Next Plan Item 11 Initial Window v4
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
         run: npm run test:178:history-saved-anchor
       - name: Unread restore regression
         run: npm run test:178:unread-restore-bottom
-      - name: Reaction history regression
-        run: npm run test:188.2
+      - name: Reaction foundation
+        run: npm run test:188.1
       - name: Single-owner audit
         run: npm run test:180:single-owner-audit
