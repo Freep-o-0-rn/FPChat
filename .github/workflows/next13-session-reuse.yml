@@ -1,0 +1,63 @@
+name: Next Plan Item 13 Session Reuse
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next13-session-reuse.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: |
+          node --check public/message-store172.js
+          node --check public/app.js
+          node --check scripts/regression-next13-session-reuse.cjs
+          node --check scripts/benchmark-next13-session-reuse.cjs
+      - name: App revision contract
+        run: npm run test:next:7
+      - name: Item 13 session reuse
+        run: npm run test:next:13
+      - name: Item 12 room-open contract
+        run: npm run test:next:12
+      - name: RoomContext regression
+        run: npm run check:170
+      - name: MessageStore incoming
+        run: npm run test:178:message-store-incoming
+      - name: MessageStore ack
+        run: npm run test:178:message-store-ack
+      - name: Message actions explicit owner
+        run: npm run test:179:explicit-message-actions
+      - name: Saved anchor
+        run: npm run test:178:history-saved-anchor
+      - name: Unread restore
+        run: npm run test:178:unread-restore-bottom
+      - name: Single-owner audit
+        run: npm run test:180:single-owner-audit
+      - name: Measure same-session reopen
+        env:
+          FPCHAT_RUNTIME_SHA: 43d05dbffe20f2bff779f9683aaf194b3f4e0cd2
+          FPCHAT_NEXT13_OUTPUT: ${{ github.workspace }}/next13-output
+        run: npm run bench:next:13
+      - name: Upload item 13 measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next13-session-reuse
+          path: next13-output
+          if-no-files-found: warn
