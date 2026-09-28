@@ -1,0 +1,41 @@
+name: Next Plan Item 10 Join History
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next10-join-history.yml'
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Measure fixed-room join/history
+        env:
+          FPCHAT_RUNTIME_SHA: 1917f36ba2257611098a8dfc5bd26c54636143d9
+          FPCHAT_NEXT10_OUTPUT: ${{ github.workspace }}/next10-output
+        run: npm run bench:next:10
+      - name: Saved-anchor regression
+        run: npm run test:178:history-saved-anchor
+      - name: Unread opening regression
+        run: npm run test:178:unread-restore-bottom
+      - name: Upload item 10 measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next10-join-history
+          path: next10-output
+          if-no-files-found: warn
