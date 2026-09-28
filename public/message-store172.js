@@ -76,7 +76,8 @@
       clientToKey: new Map(),
       replyDependents: new Map(),
       touchedAt: Date.now(),
-      version: 0
+      version: 0,
+      renderedOnce: false
     };
   }
 
@@ -550,6 +551,69 @@
     return room ? recordByAny(room, idOrClient) : null;
   }
 
+  function sameMediaIdentity(left, right) {
+    const normalize = (value) => (Array.isArray(value) ? value : []).map((item) => ({
+      publicId: String(item?.public_id || ''),
+      kind: String(item?.media_kind || ''),
+      mime: String(item?.mime_type || ''),
+      width: Number(item?.width) || 0,
+      height: Number(item?.height) || 0,
+      duration: Number(item?.duration_seconds) || 0
+    }));
+    return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+  }
+
+  function sameServerContent(record, message) {
+    if (!record?.raw || !message) return false;
+    if (numericId(record.id) !== numericId(message.id)) return false;
+    const raw = record.raw;
+    return String(raw.iv || '') === String(message.iv || '')
+      && String(raw.ciphertext || '') === String(message.ciphertext || '')
+      && timeValue(raw.edited_at || record.editedAt) === timeValue(message.edited_at)
+      && numericId(raw.reply_to_message_id || record.replyToMessageId) === numericId(message.reply_to_message_id)
+      && String(raw.type || record.kind || 'text') === String(message.type || 'text')
+      && sameMediaIdentity(raw.media, message.media);
+  }
+
+  function reusableRecord(room, message) {
+    const id = numericId(message?.id);
+    const record = id ? recordByAny(room, id) : null;
+    if (!record) return null;
+
+    // Delete/edit owners have stronger precedence than history rendering. Keep
+    // their canonical state if it is at least as new as this server message.
+    if (record.deleted) return record;
+    const incomingClock = timeValue(message?.edited_at) || timeValue(message?.created_at);
+    if (
+      Number(record.contentPriority || 0) >= SOURCE_PRIORITY.edit
+      && Number(record.contentClock || 0) >= incomingClock
+      && typeof record.text === 'string'
+    ) return record;
+
+    return sameServerContent(record, message) && typeof record.text === 'string' ? record : null;
+  }
+
+  function reuseWindow(roomId, messages) {
+    const room = roomFor(roomId, false);
+    const input = Array.isArray(messages) ? messages : [];
+    if (!room?.renderedOnce || !input.length) return null;
+    const records = [];
+    for (const message of input) {
+      const record = reusableRecord(room, message);
+      if (!record) return null;
+      records.push(record);
+    }
+    return records;
+  }
+
+  function markRendered(roomId) {
+    const room = roomFor(roomId, false);
+    if (!room) return false;
+    room.renderedOnce = true;
+    room.touchedAt = Date.now();
+    return true;
+  }
+
   function roomSnapshot(roomId) {
     const room = roomFor(roomId, false);
     if (!room) return { messages: 0, deleted: 0, optimistic: 0, replySources: 0, version: 0 };
@@ -564,7 +628,8 @@
       deleted,
       optimistic,
       replySources: room.replyDependents.size,
-      version: room.version
+      version: room.version,
+      renderedOnce: room.renderedOnce
     };
   }
 
@@ -648,6 +713,8 @@
     updateStatus,
     promote,
     get,
+    reuseWindow,
+    markRendered,
     pending: (roomId) => [...(roomFor(roomId, false)?.messages.values() || [])]
       .filter(record => !record.id && record.clientMessageId && !record.deleted),
     resolveReply,
