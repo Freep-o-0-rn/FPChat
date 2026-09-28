@@ -101,8 +101,18 @@ run(async({newClient,errors,temp,root})=>{
   // B. Simulate a failed/incomplete leave PUT. The durable local snapshot is
   // still carried in the next access-check join and chooses the current tail.
   await page.evaluate(roomId=>openChat(roomId),REOPEN.roomId);
-  const openedOld=await visible();
-  assert.equal(Number(openedOld.anchor?.anchorMessageId),REOPEN.oldAnchor,JSON.stringify(openedOld));
+  const openedOld=await page.evaluate(anchorId=>{
+    const box=document.getElementById('messages'),node=findMessageElement(anchorId);
+    if(!box||!node)return null;
+    return{
+      anchorId,
+      offset:Math.round(node.getBoundingClientRect().top-box.getBoundingClientRect().top),
+      atBottom:isMessagesAtBottom(box)
+    };
+  },REOPEN.oldAnchor);
+  assert.notEqual(openedOld,null,'old saved anchor was not mounted');
+  assert.ok(Math.abs(openedOld.offset-17)<=3,JSON.stringify(openedOld));
+  assert.equal(openedOld.atBottom,false,JSON.stringify(openedOld));
   await page.evaluate(()=>{
     const box=document.getElementById('messages');
     if(activeChatHistory?.hasNewer)throw new Error('fixture unexpectedly has newer history before tail jump');
