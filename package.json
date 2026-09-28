@@ -168,7 +168,8 @@
     "test:189:system-push": "node ./scripts/regression18911-system-push-browser.cjs",
     "test:190:contract": "node ./scripts/regression190-media-contract.cjs",
     "test:190:browser": "node ./scripts/regression190-media-browser.cjs",
-    "test:190": "node ./scripts/regression182-build-label.cjs && npm run test:189:system-push && npm run test:190:contract && npm run test:177:media-viewer-lifecycle && npm run test:185:browser && npm run test:186:media-cache && npm run test:190:browser"
+    "test:190": "node ./scripts/regression182-build-label.cjs && npm run test:189:system-push && npm run test:190:contract && npm run test:177:media-viewer-lifecycle && npm run test:185:browser && npm run test:186:media-cache && npm run test:190:browser",
+    "test:next:1": "node ./scripts/regression-next1-send-draft-lock.cjs"
   },
   "license": "MIT",
   "dependencies": {
