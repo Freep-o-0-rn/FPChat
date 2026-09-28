@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "plan": "docs/performance-next-steps-prompts.md",
+  "item": 17,
+  "status": "complete",
+  "build": "190.2",
+  "runtimeSha": "2bf734e918dfb7e31d14d574d52a7d3256076000",
+  "measurementHead": "2a284059e3823ff0f8cdb26055bf37d39c2480cf",
+  "finalRun": {
+    "workflowRunId": 36449713023,
+    "artifactId": 10981923302,
+    "artifactDigest": "sha256:e518db1d9db13b68546839f01c5fc93e0d2574200b7abc35ea21ac6235f6cca6"
+  },
+  "historicalBaseline": {
+    "source": "docs/performance-step4-summary.json",
+    "send": {
+      "normal": {
+        "optimisticMedianMs": 12.5,
+        "ackMedianMs": 14.4,
+        "successes": 5,
+        "attempts": 5
+      },
+      "throttled": {
+        "optimisticMedianMs": 10.7,
+        "ackMedianMs": 31,
+        "successes": 3,
+        "attempts": 5,
+        "failures": {
+          "optimistic-timeout": 2
+        }
+      }
+    },
+    "reaction": {
+      "normal": {
+        "optimisticMedianMs": 2.3,
+        "mixedAckPlusTwoRafMedianMs": 38.5
+      },
+      "throttled": {
+        "optimisticMedianMs": 3.5,
+        "mixedAckPlusTwoRafMedianMs": 232.4
+      }
+    }
+  },
+  "semantics": {
+    "rafOpportunity": "first requestAnimationFrame callback after required DOM state is observed; not hardware presentation",
+    "failedSampleRule": "failed attempts remain counted; missing stages are null, never 0"
+  },
+  "results": {
+    "normal": {
+      "send": {
+        "attempts": 5,
+        "successes": 5,
+        "failures": {},
+        "actualVerified": 5,
+        "managerStateMedianMs": 0.8,
+        "domChangeMedianMs": 2.6,
+        "rafOpportunityMedianMs": 13,
+        "ackMedianMs": 5.1
+      },
+      "reaction": {
+        "attempts": 5,
+        "successes": 5,
+        "failures": {},
+        "actualVerified": 5,
+        "cleanupVerified": 5,
+        "managerStateMedianMs": 0.7,
+        "domChangeMedianMs": 0.7,
+        "rafOpportunityMedianMs": 10.9,
+        "ackMedianMs": 4.1
+      }
+    },
+    "throttled": {
+      "send": {
+        "attempts": 5,
+        "successes": 5,
+        "failures": {},
+        "actualVerified": 5,
+        "managerStateMedianMs": 0.6,
+        "domChangeMedianMs": 1.9,
+        "rafOpportunityMedianMs": 4,
+        "ackMedianMs": 33.2
+      },
+      "reaction": {
+        "attempts": 5,
+        "successes": 5,
+        "failures": {},
+        "actualVerified": 5,
+        "cleanupVerified": 5,
+        "managerStateMedianMs": 1,
+        "domChangeMedianMs": 1,
+        "rafOpportunityMedianMs": 1.7,
+        "ackMedianMs": 214.3
+      }
+    }
+  },
+  "owners": {
+    "sendDispatcher": "FPSendManager177",
+    "textSubmit": "FPTextSend170",
+    "messageState": "FPMessageStore172",
+    "reactionState": "FPReactionManager188",
+    "reactionDom": "FPReactionRenderer188",
+    "reactionArbiter": "FPReactionArbiter188",
+    "roomContext": "FPRoomContext170",
+    "runtimeObserver": "FPRuntime169 passive"
+  },
+  "validation": {
+    "runtimeChanged": false,
+    "pageErrors": 0,
+    "sendManagerRegression": true,
+    "messageRenderOwnerRegression": true,
+    "reactionInteractionRegression": true,
+    "benchmark": true
+  },
+  "limits": [
+    "No physical iPhone/Android/PWA display timing.",
+    "Five attempts per action/profile; no p95.",
+    "requestAnimationFrame is not hardware presentation.",
+    "Historical and new ACK fields have different boundaries and must not be used as direct speedup percentages."
+  ]
+}
