@@ -1,0 +1,37 @@
+name: Performance Baseline Step 2
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/performance-baseline-step2.yml'
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium regression dependency
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Startup baseline
+        run: npm run test:186:startup
+      - name: Room baseline
+        run: npm run check:170
+      - name: Send baseline
+        run: npm run test:177:send-entry-contract && npm run test:177:text-dispatch && npm run test:178:message-store-ack
+      - name: History baseline
+        run: npm run test:178:history-saved-anchor && npm run test:178:bounded-dom
+      - name: Ownership baseline
+        run: npm run test:180:single-owner-audit
+      - name: Media baseline
+        run: npm run test:190
