@@ -413,6 +413,41 @@ function getMessageSyncPage(roomId, afterCursor = 0, limit = HISTORY_PAGE_SIZE, 
     )
   };
 }
+function mergeHistoryReactionSummaries(...lists) {
+  const byMessage = new Map();
+  for (const list of lists) {
+    for (const summary of Array.isArray(list) ? list : []) {
+      const messageId = Number(summary?.messageId);
+      if (!Number.isSafeInteger(messageId) || messageId <= 0) continue;
+      byMessage.set(messageId, summary);
+    }
+  }
+  return [...byMessage.values()].sort((a, b) => Number(a.messageId) - Number(b.messageId));
+}
+function getMessageInitialWindow(roomId, targetMessageId, viewerParticipantId) {
+  const target = Number(targetMessageId);
+  if (!Number.isSafeInteger(target) || target <= 0 || !q.findMessageInRoom.get(target, roomId)) return null;
+
+  // Reuse the established before/after history paths so access-filtered/deleted
+  // message semantics and cursor directions stay identical to client paging.
+  const older = getMessageHistoryPage(roomId, target + 1, HISTORY_PAGE_SIZE, viewerParticipantId, true);
+  if (!older.messages.some((message) => Number(message.id) === target)) return null;
+  const newer = getMessageSyncPage(roomId, target, HISTORY_PAGE_SIZE, viewerParticipantId, true);
+  const messages = [...new Map(
+    [...older.messages, ...newer.messages].map((message) => [Number(message.id), message])
+  ).values()].sort((a, b) => Number(a.id) - Number(b.id));
+  const latest = getMessageHistoryPage(roomId, null, 1, viewerParticipantId, false).messages.at(-1) || null;
+
+  return {
+    messages,
+    hasMore: Boolean(older.hasMore),
+    nextCursor: older.nextCursor,
+    hasNewer: Boolean(newer.hasMore),
+    newerCursor: newer.nextCursor,
+    reactionSummaries: mergeHistoryReactionSummaries(older.reactionSummaries, newer.reactionSummaries),
+    latestMessage: latest
+  };
+}
 function normalizeViewState(row) {
   if (!row) return null;
   return {
@@ -811,16 +846,74 @@ app.post('/api/rooms/:publicId/join', (req, res) => {
   const participants = q.listParticipantsByRoom.all(room.id).map((item) =>
     fpUserBlocks165.participantPresenceDto(item, safeDeviceId, toIsoUtc)
   );
-  const history = getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id);
+
+  const initialWindowRequested = req.body?.initialWindow === true;
+  if (!initialWindowRequested) {
+    const history = getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id);
+    const unread = getUnreadState(room.id, updated.id);
+    const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
+    return res.json({
+      participant: { id: updated.id, displayName: updated.display_name, deviceId: updated.device_id },
+      participants,
+      ...history,
+      unreadCount: unread.unreadCount,
+      firstUnreadMessageId: unread.firstUnreadMessageId,
+      viewState,
+      ...roomStatePayload(room)
+    });
+  }
+
   const unread = getUnreadState(room.id, updated.id);
   const viewState = normalizeViewState(q.findViewStateByRoomDevice.get(room.id, safeDeviceId));
+  let targetMessageId = null;
+  let targetSource = 'tail';
+
+  if (unread.unreadCount > 0 && Number.isSafeInteger(Number(unread.firstUnreadMessageId)) && Number(unread.firstUnreadMessageId) > 0) {
+    const unreadTarget = Number(unread.firstUnreadMessageId);
+    if (q.findMessageInRoom.get(unreadTarget, room.id)) {
+      targetMessageId = unreadTarget;
+      targetSource = 'first-unread';
+    }
+  }
+
+  if (!targetMessageId && !viewState?.atBottom) {
+    const savedTarget = Number(viewState?.anchorMessageId);
+    if (Number.isSafeInteger(savedTarget) && savedTarget > 0 && q.findMessageInRoom.get(savedTarget, room.id)) {
+      targetMessageId = savedTarget;
+      targetSource = 'saved-anchor';
+    }
+  }
+
+  const initialHistory = targetMessageId
+    ? getMessageInitialWindow(room.id, targetMessageId, updated.id)
+    : null;
+  const history = initialHistory || getMessageHistoryPage(room.id, null, HISTORY_PAGE_SIZE, updated.id);
+  const latestMessage = initialHistory?.latestMessage || history.messages.at(-1) || null;
+  const historyPayload = initialHistory
+    ? {
+        messages: initialHistory.messages,
+        hasMore: initialHistory.hasMore,
+        nextCursor: initialHistory.nextCursor,
+        hasNewer: initialHistory.hasNewer,
+        newerCursor: initialHistory.newerCursor,
+        reactionSummaries: initialHistory.reactionSummaries
+      }
+    : history;
+
   return res.json({
     participant: { id: updated.id, displayName: updated.display_name, deviceId: updated.device_id },
     participants,
-    ...history,
+    ...historyPayload,
     unreadCount: unread.unreadCount,
     firstUnreadMessageId: unread.firstUnreadMessageId,
     viewState,
+    initialWindow: {
+      version: 1,
+      mode: initialHistory ? 'around' : 'tail',
+      source: initialHistory ? targetSource : 'tail',
+      targetMessageId: initialHistory ? targetMessageId : null,
+      latestMessage
+    },
     ...roomStatePayload(room)
   });
 });
