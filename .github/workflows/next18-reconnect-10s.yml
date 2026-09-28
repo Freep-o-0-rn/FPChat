@@ -1,0 +1,43 @@
+name: Next Plan Item 18 Reconnect 10s Acceptance
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next18-reconnect-10s.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: node --check scripts/benchmark-next16-reconnect.cjs
+      - name: Connection ownership
+        run: |
+          npm run check:170
+          npm run test:180:single-owner-audit
+      - name: Reconnect 10 second acceptance
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT16_OUTPUT: ${{ github.workspace }}/next18-reconnect-output
+        run: npm run bench:next:16
+      - name: Upload reconnect acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next18-reconnect-10s
+          path: next18-reconnect-output
+          if-no-files-found: warn
