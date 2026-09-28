@@ -1,4 +1,4 @@
-const STORAGE={roomState:(id)=>`fpchat:room:${id}`,activeChatsKey:'fpchat:active-chats',lastSelectedRoomId:'lastSelectedRoomId',nick:'fpchat:nick',theme:'fpchat:theme',roomNames:'fpchat:room-names',notif:'fpchat:notif',roomMute:'fpchat:room-mute',deviceId:'fpchat:device-id',set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),get:(k)=>{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}};
+const STORAGE={roomState:(id)=>`fpchat:room:${id}`,viewState:(id)=>`fpchat:view-state:${id}`,viewStateSeq:(deviceId)=>`fpchat:view-state-seq:${deviceId}`,activeChatsKey:'fpchat:active-chats',lastSelectedRoomId:'lastSelectedRoomId',nick:'fpchat:nick',theme:'fpchat:theme',roomNames:'fpchat:room-names',notif:'fpchat:notif',roomMute:'fpchat:room-mute',deviceId:'fpchat:device-id',set:(k,v)=>localStorage.setItem(k,JSON.stringify(v)),get:(k)=>{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}};
 const DEFAULT_NOTIFICATION_SETTINGS=Object.freeze({enabled:true,showText:true,hideSender:false,sound:true,notifySystemEvents:true});
 const NOTIFICATION_PROMPTED_KEY='fpchat:notification-prompted';
 function normalizeNotificationSettings(value){const raw=value&&typeof value==='object'?value:{};return {enabled:raw.enabled!==false,showText:raw.showText!==false,hideSender:raw.hideSender===true,sound:raw.sound!==false,notifySystemEvents:raw.notifySystemEvents!==false};}
@@ -16,6 +16,9 @@ const CHAT_BACK_DIRECTION_LOCK_PX=10;
 const CHAT_BACK_MAX_TRANSLATE=120;
 const DRAFT_SAVE_DEBOUNCE_MS=700;
 const VIEW_STATE_SAVE_DEBOUNCE_MS=900;
+const VIEW_STATE_LOCAL_CAPTURE_INTERVAL_MS=300;
+const VIEW_STATE_PROGRAMMATIC_GUARD_MS=120;
+const VIEW_STATE_SNAPSHOT_VERSION=2;
 const CHAT_HISTORY_PAGE_SIZE=100;
 const CHAT_HISTORY_LOAD_THRESHOLD_PX=220;
 const ROOM_SYNC_REQUEST_TIMEOUT_MS=8000;
@@ -389,7 +392,7 @@ function applyRemoteUnreadState(roomId,unreadValue,firstUnreadMessageId=null,met
 function setActiveNav(v){document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===v));}
 function showListPane(){els.appRoot?.setAttribute('data-pane','list'); els.appRoot?.classList.remove('mobile-chat');}
 function showContentPane(){els.content?.classList.remove('chat-content');els.appRoot?.setAttribute('data-pane','content');}
-function leaveActiveChat(){++chatOpenToken;if(!state.roomId)return;const wasOpening=scrollCoordinator.isOpening();if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}if(!wasOpening)void saveViewStateNow({keepalive:true});scrollCoordinator.stop();resetUnreadDividerSession();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}pendingIncomingReadIds=[];initialMessagesScrollPending=false;state.roomId=null;activeChatDeviceId=null;activeChatHistory=null;chatViewReadyRoomId=null;sendClientState();}
+function leaveActiveChat(){++chatOpenToken;if(!state.roomId)return;scrollCoordinator.captureBeforeLeave('leave-active-chat',{keepalive:true});scrollCoordinator.stop();resetUnreadDividerSession();if(unreadVisibleObserver){unreadVisibleObserver.disconnect();unreadVisibleObserver=null;}pendingIncomingReadIds=[];initialMessagesScrollPending=false;state.roomId=null;activeChatDeviceId=null;activeChatHistory=null;chatViewReadyRoomId=null;sendClientState();}
 function getSessionDeviceId(){const current=String(localStorage.getItem(STORAGE.deviceId)||'').trim();if(current)return current;return getLocalRoomDevicePairs()[0]?.deviceId||'';}
 function hasKnownSessionRooms(){return Boolean(state.roomId||getLocalRoomDevicePairs().length);}
 function startAppSessionSync(){if(document.visibilityState!=='visible'||!hasKnownSessionRooms())return;const deviceId=getSessionDeviceId();if(deviceId)return reconcileKnownChats(deviceId);}
@@ -476,6 +479,7 @@ function setupChatBackSwipe(chatView){
 }
 function showChatsList(){leaveActiveChat();closeMobileMenu();els.appRoot?.classList.remove('mobile-chat');renderChats();setView('chats');sendClientState();}
 function removeBrokenChat(roomId){
+  scrollCoordinator?.clearRoom?.(roomId);
   state.chats=state.chats.filter(c=>c.roomId!==roomId);
   if(state.roomId===roomId){
     state.roomId=null;
@@ -491,6 +495,7 @@ function removeBrokenChat(roomId){
   }
 }
 function removeStaleRoomFromSync(roomId){
+  scrollCoordinator?.clearRoom?.(roomId);
   const isActive=state.roomId===roomId;
   state.chats=state.chats.filter(c=>c.roomId!==roomId);
   try{
@@ -641,12 +646,14 @@ function getInitialScrollTargetId(data){
     const serverTargetId=Number(initialWindow?.targetMessageId);
     if(initialWindow?.mode==='around'&&Number.isSafeInteger(serverTargetId)&&serverTargetId>0)return serverTargetId;
   }
+  if(!data?.viewState?.atBottom){
+    const savedAnchorId=Number(data?.viewState?.anchorMessageId);
+    if(Number.isSafeInteger(savedAnchorId)&&savedAnchorId>0)return savedAnchorId;
+  }
   const unreadCount=Number(data?.unreadCount);
   const firstUnreadId=Number(data?.firstUnreadMessageId);
   if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;
-  if(data?.viewState?.atBottom)return null;
-  const savedAnchorId=Number(data?.viewState?.anchorMessageId);
-  return Number.isSafeInteger(savedAnchorId)&&savedAnchorId>0?savedAnchorId:null;
+  return null;
 }
 async function hydrateHistoryForInitialPosition(roomId,deviceId,data,view=captureRoomView170()){
   const latestInitial=data?.initialWindow?.latestMessage;
@@ -701,6 +708,7 @@ async function openChatWithJoinData(roomId,secret,deviceId,data,key=null){
   (data.participants||[]).forEach((item)=>{if(!item?.deviceId)return;state.presence[item.deviceId]={participantId:Number(item.participantId)||null,deviceId:item.deviceId,displayName:item.displayName,online:Boolean(item.online),lastSeenAt:item.lastSeenAt||null,presenceState:item.presenceState||null,statusUnavailable:item.statusUnavailable===true};});
   localStorage.setItem(STORAGE.lastSelectedRoomId,roomId);
   const view=captureRoomView170();
+  scrollCoordinator.acceptServerState(roomId,deviceId,data.viewState||null);
   const diagnostic186=window.FPRuntime169?.loading,roomTrace186=diagnostic186?.roomToken(view.context);
   diagnostic186?.step(roomTrace186,'history-start');
   await hydrateHistoryForInitialPosition(roomId,deviceId,data,view).catch((error)=>{diagnostic186?.fail(roomTrace186,'history',error);});
@@ -941,16 +949,147 @@ function syncUnreadDivider(box=document.getElementById('messages')){
   if(divider.nextElementSibling!==target)box.insertBefore(divider,target);
 }
 function getViewStateMessageElement(box,viewState){const anchorId=viewState?.anchorMessageId;if(!box||anchorId==null)return null;return [...box.querySelectorAll('.msg[data-message-id]')].find(node=>node.dataset.messageId===String(anchorId))||null;}
-const scrollCoordinator={phase:'idle',roomId:null,box:null,generation:0,pendingBottom:false,
+const viewStateTabId=crypto.randomUUID();
+function safeLocalViewStateGet(key){try{return STORAGE.get(key);}catch{return null;}}
+function safeLocalViewStateSet(key,value){try{STORAGE.set(key,value);return true;}catch{return false;}}
+function normalizeLocalViewStateSnapshot(value,roomId=null,deviceId=null){
+  if(!value||typeof value!=='object')return null;
+  if(Number(value.version)!==VIEW_STATE_SNAPSHOT_VERSION)return null;
+  const room=String(value.roomId||'').trim(),device=String(value.deviceId||'').trim();
+  const clientSeq=Number(value.clientSeq);
+  if(!room||!device||!Number.isSafeInteger(clientSeq)||clientSeq<=0)return null;
+  if(roomId&&room!==String(roomId))return null;
+  if(deviceId&&device!==String(deviceId))return null;
+  const rawAnchor=Number(value.anchorMessageId);
+  const anchorMessageId=Number.isSafeInteger(rawAnchor)&&rawAnchor>0?rawAnchor:null;
+  const atBottom=value.atBottom===true;
+  if(!atBottom&&!anchorMessageId)return null;
+  return{
+    version:VIEW_STATE_SNAPSHOT_VERSION,
+    roomId:room,
+    deviceId:device,
+    anchorMessageId,
+    anchorOffsetPx:Math.max(-100000,Math.min(100000,Number.parseInt(value.anchorOffsetPx,10)||0)),
+    atBottom,
+    clientSeq,
+    capturedAt:Number.isFinite(Number(value.capturedAt))?Number(value.capturedAt):0,
+    contextGeneration:Number.isSafeInteger(Number(value.contextGeneration))?Number(value.contextGeneration):null,
+    tabId:String(value.tabId||'').slice(0,80)
+  };
+}
+function readLocalViewStateSnapshot(roomId,deviceId=null){
+  return normalizeLocalViewStateSnapshot(safeLocalViewStateGet(STORAGE.viewState(roomId)),roomId,deviceId);
+}
+function clearLocalViewStateSnapshot(roomId){
+  if(!roomId)return;
+  try{localStorage.removeItem(STORAGE.viewState(roomId));}catch{}
+}
+function viewStateSequenceFloor(deviceId){
+  const value=Number(safeLocalViewStateGet(STORAGE.viewStateSeq(deviceId)));
+  return Number.isSafeInteger(value)&&value>0?value:0;
+}
+function raiseViewStateSequenceFloor(deviceId,value){
+  const seq=Number(value);
+  if(!deviceId||!Number.isSafeInteger(seq)||seq<=0)return;
+  const current=viewStateSequenceFloor(deviceId);
+  if(seq>current)safeLocalViewStateSet(STORAGE.viewStateSeq(deviceId),seq);
+}
+async function allocateViewStateSequence(deviceId){
+  const allocate=()=>{
+    const current=viewStateSequenceFloor(deviceId);
+    const wall=Math.floor(Date.now()*1000);
+    const next=Math.max(current+1,wall);
+    safeLocalViewStateSet(STORAGE.viewStateSeq(deviceId),next);
+    return next;
+  };
+  if(navigator?.locks?.request){
+    try{return await navigator.locks.request('fpchat-view-state-seq:'+deviceId,{mode:'exclusive'},allocate);}catch{}
+  }
+  return allocate();
+}
+function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[...box.querySelectorAll('.msg[data-message-id]')];if(!messages.length)return null;const boxTop=box.getBoundingClientRect().top;let fallback=null;for(const el of messages){const rect=el.getBoundingClientRect();const raw=el.dataset.messageId||el.dataset.id;const numeric=Number(raw);const id=Number.isInteger(numeric)&&numeric>0?numeric:raw;if(!id)continue;if(!fallback)fallback={anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};if(rect.bottom>=boxTop){return {anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};}}return fallback;}
+
+const scrollCoordinator={
+  phase:'idle',roomId:null,box:null,generation:0,pendingIntent:null,openingInterrupted:false,lastProgrammaticAt:0,lastUserIntentAt:0,
+  latestSnapshots:new Map(),pendingPersistence:new Map(),localTimers:new Map(),networkTimers:new Map(),lastCaptureAt:new Map(),
+  metrics:{captures:0,localWrites:0,networkWrites:0,staleRejects:0,scrollWrites:0,captureCostMs:0},
   isOpening(box=this.box){return this.phase==='opening'&&(!box||box===this.box);},
-  write(box,top,behavior='auto'){if(!isCurrentMessagesBox(box))return false;const max=Math.max(0,box.scrollHeight-box.clientHeight);const next=Math.max(0,Math.min(Number(top)||0,max));if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;return true;},
-  begin(box,roomId){this.stop();this.box=box;this.roomId=roomId;this.phase='opening';this.generation+=1;box.dataset.scrollPhase='opening';},
+  isProgrammaticWindow(){return performance.now()-this.lastProgrammaticAt<VIEW_STATE_PROGRAMMATIC_GUARD_MS;},
+  noteUserIntent(box=this.box){
+    if(!box||box!==this.box)return;
+    this.lastUserIntentAt=performance.now();
+    if(this.phase==='opening')this.openingInterrupted=true;
+  },
+  bindOpeningIntent(box){
+    this.unbindOpeningIntent();
+    const pointer=()=>this.noteUserIntent(box);
+    const key=(event)=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key))this.noteUserIntent(box);};
+    box.addEventListener('wheel',pointer,{passive:true});
+    box.addEventListener('touchstart',pointer,{passive:true});
+    box.addEventListener('pointerdown',pointer,{passive:true});
+    window.addEventListener('keydown',key,true);
+    this.intentCleanup=()=>{
+      box.removeEventListener('wheel',pointer);
+      box.removeEventListener('touchstart',pointer);
+      box.removeEventListener('pointerdown',pointer);
+      window.removeEventListener('keydown',key,true);
+    };
+  },
+  unbindOpeningIntent(){try{this.intentCleanup?.();}catch{}this.intentCleanup=null;},
+  write(box,top,behavior='auto'){
+    if(!isCurrentMessagesBox(box))return false;
+    const max=Math.max(0,box.scrollHeight-box.clientHeight);
+    const next=Math.max(0,Math.min(Number(top)||0,max));
+    this.lastProgrammaticAt=performance.now();
+    this.metrics.scrollWrites++;
+    if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;
+    return true;
+  },
+  begin(box,roomId){
+    this.stop();
+    this.box=box;this.roomId=roomId;this.phase='opening';this.generation+=1;
+    this.pendingIntent=null;this.openingInterrupted=false;
+    box.dataset.scrollPhase='opening';
+    this.bindOpeningIntent(box);
+  },
+  finishOpening(box){
+    this.phase='ready';
+    this.unbindOpeningIntent();
+    if(box)delete box.dataset.scrollPhase;
+    initialMessagesScrollPending=false;
+    resumeUnreadObservation(box);
+    updateUnreadIndicators();
+    updateReplyComposerBar();
+  },
   async applyInitial(viewState){
     const generation=this.generation;
     if(this.phase!=='opening')return 'cancelled';
     await waitForInitialMediaLayout(this.box);
     if(this.phase!=='opening'||generation!==this.generation||!isCurrentMessagesBox(this.box))return 'cancelled';
     const box=this.box;
+    if(this.openingInterrupted){
+      this.finishOpening(box);
+      return 'user-interrupted';
+    }
+    const intent=this.pendingIntent;
+    if(intent?.type==='focus'){
+      const target=getViewStateMessageElement(box,{anchorMessageId:intent.messageId});
+      if(target){
+        const boxRect=box.getBoundingClientRect(),rect=target.getBoundingClientRect();
+        this.write(box,box.scrollTop+rect.top-boxRect.top-intent.topGap,intent.behavior);
+      }
+      this.finishOpening(box);
+      return 'explicit-focus';
+    }
+    if(intent?.type==='bottom'){
+      this.finishOpening(box);
+      if(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174){
+        if(window.FPHistory174)void FPHistory174.jump();
+      }else this.write(box,box.scrollHeight,'auto');
+      return 'explicit-bottom';
+    }
+
+    const savedTarget=!viewState?.atBottom?getViewStateMessageElement(box,viewState):null;
     const anchoredUnread=getUnreadDividerAnchorElement(box);
     const firstUnread=getFirstUnreadMessageElement(box);
     const targetId=Number(activeChatHistory?.firstUnreadMessageId);
@@ -959,38 +1098,235 @@ const scrollCoordinator={phase:'idle',roomId:null,box:null,generation:0,pendingB
     const hasUnreadState=Number(activeChatHistory?.unreadCount)>0||Number(activeChatHistory?.unloadedUnreadCount)>0;
     const unreadTarget=anchoredUnread||firstUnread||serverUnreadTarget||(hasUnreadState?divider:null);
     let mode='bottom';
-    if(unreadTarget){
-      const rect=unreadTarget.getBoundingClientRect();
-      const boxRect=box.getBoundingClientRect();
+
+    // Telegram-like contract: a real saved reading position wins over unread.
+    // A saved true-tail position does not: new unread opens at first unread.
+    if(savedTarget){
+      const rect=savedTarget.getBoundingClientRect(),boxRect=box.getBoundingClientRect();
+      const offset=Number(viewState?.anchorOffsetPx)||0;
+      this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');
+      mode='restored';
+    }else if(unreadTarget){
+      const rect=unreadTarget.getBoundingClientRect(),boxRect=box.getBoundingClientRect();
       this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');
       mode='unread-first-bottom';
-    }else if(!activeChatHistory?.unreadCount&&!activeChatHistory?.unloadedUnreadCount){
-      if(viewState?.atBottom){
-        this.write(box,box.scrollHeight,'auto');
-        mode='bottom';
-      }else{
-        const target=getViewStateMessageElement(box,viewState);
-        if(target){
-          const rect=target.getBoundingClientRect();
-          const boxRect=box.getBoundingClientRect();
-          const offset=Number(viewState?.anchorOffsetPx)||0;
-          this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');
-          mode='restored';
-        }else this.write(box,box.scrollHeight,'auto');
-      }
-    }else this.write(box,box.scrollHeight,'auto');
-    this.phase='ready';
-    delete box.dataset.scrollPhase;
-    initialMessagesScrollPending=false;
-    resumeUnreadObservation(box);
-    updateUnreadIndicators();
-    updateReplyComposerBar();
+    }else{
+      this.write(box,box.scrollHeight,'auto');
+      mode='bottom';
+    }
+    this.finishOpening(box);
     return mode;
   },
-  stop(){this.generation+=1;if(this.box)delete this.box.dataset.scrollPhase;this.phase='idle';this.roomId=null;this.box=null;this.pendingBottom=false;},
-  requestBottom(box=this.box){if(!isCurrentMessagesBox(box))return;if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&this.phase!=='opening'&&window.FPHistory174){void FPHistory174.jump();return;}if(this.phase==='opening'){this.pendingBottom=true;return;}this.write(box,box.scrollHeight,'auto');},
-  focus(target,behavior='smooth',topGap=8){const box=this.box||target?.closest?.('#messages');if(!target||!box||this.isOpening())return false;const boxRect=box.getBoundingClientRect();const rect=target.getBoundingClientRect();return this.write(box,box.scrollTop+rect.top-boxRect.top-topGap,behavior);},
-  preservePrepend(box,beforeTop,beforeHeight,loaderHeight=0){if(!isCurrentMessagesBox(box)||this.phase==='opening')return;this.write(box,beforeTop+box.scrollHeight-beforeHeight+loaderHeight,'auto');}
+  stop(){
+    this.generation+=1;
+    this.unbindOpeningIntent();
+    if(this.box)delete this.box.dataset.scrollPhase;
+    this.phase='idle';this.roomId=null;this.box=null;this.pendingIntent=null;this.openingInterrupted=false;
+  },
+  requestBottom(box=this.box){
+    if(!isCurrentMessagesBox(box))return;
+    if(this.phase==='opening'){this.pendingIntent={type:'bottom'};return;}
+    if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&window.FPHistory174){void FPHistory174.jump();return;}
+    this.write(box,box.scrollHeight,'auto');
+  },
+  focus(target,behavior='smooth',topGap=8){
+    const box=this.box||target?.closest?.('#messages');
+    if(!target||!box)return false;
+    if(this.isOpening(box)){
+      const messageId=Number(target.dataset?.messageId||target.dataset?.id);
+      if(Number.isSafeInteger(messageId)&&messageId>0)this.pendingIntent={type:'focus',messageId,behavior,topGap};
+      return true;
+    }
+    const boxRect=box.getBoundingClientRect(),rect=target.getBoundingClientRect();
+    return this.write(box,box.scrollTop+rect.top-boxRect.top-topGap,behavior);
+  },
+  preservePrepend(box,beforeTop,beforeHeight,loaderHeight=0){
+    if(!isCurrentMessagesBox(box)||this.phase==='opening')return;
+    this.write(box,beforeTop+box.scrollHeight-beforeHeight+loaderHeight,'auto');
+  },
+  captureBase(roomId=this.roomId,box=this.box,reason='scroll',{force=false}={}){
+    const started=performance.now();
+    if(!roomId||!box||box!==document.getElementById('messages')||state.roomId!==roomId||activeChatHistory?.roomId!==roomId)return null;
+    if(this.isOpening(box)||!box.isConnected||box.clientHeight<=0)return null;
+    if(!force&&activeChatHistory?.loading)return null;
+    const persisted=safeLocalViewStateGet(STORAGE.roomState(roomId));
+    if(!persisted?.deviceId)return null;
+    const atBottom=isMessagesAtBottom(box);
+    const anchor=atBottom?null:getFirstVisibleMessageAnchor(box);
+    if(!atBottom&&!anchor?.anchorMessageId)return null;
+    const context=window.FPRoomContext170?.current?.();
+    const base={
+      version:VIEW_STATE_SNAPSHOT_VERSION,
+      roomId:String(roomId),
+      deviceId:String(persisted.deviceId),
+      anchorMessageId:atBottom?null:Number(anchor.anchorMessageId),
+      anchorOffsetPx:atBottom?0:Number(anchor.anchorOffsetPx)||0,
+      atBottom,
+      capturedAt:Date.now(),
+      contextGeneration:context?.roomId===roomId?Number(context.generation)||null:null,
+      tabId:viewStateTabId,
+      reason:String(reason||'scroll').slice(0,40)
+    };
+    this.metrics.captures++;
+    this.metrics.captureCostMs+=performance.now()-started;
+    return base;
+  },
+  persistBase(base){
+    if(!base)return Promise.resolve(null);
+    const roomId=base.roomId;
+    const work=(async()=>{
+      const clientSeq=await allocateViewStateSequence(base.deviceId);
+      const snapshot=normalizeLocalViewStateSnapshot({...base,clientSeq});
+      if(!snapshot)return null;
+      const existing=readLocalViewStateSnapshot(roomId,base.deviceId);
+      if(existing&&existing.clientSeq>snapshot.clientSeq)return existing;
+      if(!safeLocalViewStateSet(STORAGE.viewState(roomId),snapshot))return null;
+      this.latestSnapshots.set(roomId,snapshot);
+      this.lastCaptureAt.set(roomId,performance.now());
+      this.metrics.localWrites++;
+      return snapshot;
+    })();
+    this.pendingPersistence.set(roomId,work);
+    work.finally(()=>{if(this.pendingPersistence.get(roomId)===work)this.pendingPersistence.delete(roomId);});
+    return work;
+  },
+  captureNow(reason='explicit',{force=false,roomId=this.roomId,box=this.box}={}){
+    return this.persistBase(this.captureBase(roomId,box,reason,{force}));
+  },
+  scheduleSave(box=this.box){
+    const roomId=this.roomId;
+    if(!roomId||!box||this.phase!=='ready'||box!==this.box||!isCurrentMessagesBox(box))return;
+    const now=performance.now(),last=this.lastCaptureAt.get(roomId)||0;
+    const remaining=Math.max(0,VIEW_STATE_LOCAL_CAPTURE_INTERVAL_MS-(now-last));
+    if(remaining===0)void this.captureNow('scroll');
+    else if(!this.localTimers.has(roomId)){
+      const timer=setTimeout(()=>{
+        this.localTimers.delete(roomId);
+        void this.captureNow('scroll',{roomId,box});
+      },remaining);
+      this.localTimers.set(roomId,timer);
+    }
+    if(!this.networkTimers.has(roomId)){
+      const timer=setTimeout(()=>{
+        this.networkTimers.delete(roomId);
+        void this.flushRoom(roomId);
+      },VIEW_STATE_SAVE_DEBOUNCE_MS);
+      this.networkTimers.set(roomId,timer);
+    }
+  },
+  onScroll(box=this.box){
+    if(!box||box!==this.box)return;
+    if(this.phase==='opening'){
+      if(!this.isProgrammaticWindow())this.openingInterrupted=true;
+      return;
+    }
+    if(this.phase!=='ready')return;
+    if(this.isProgrammaticWindow()&&performance.now()-this.lastUserIntentAt>VIEW_STATE_PROGRAMMATIC_GUARD_MS)return;
+    this.scheduleSave(box);
+  },
+  latestSnapshot(roomId,deviceId=null){
+    const memory=normalizeLocalViewStateSnapshot(this.latestSnapshots.get(roomId),roomId,deviceId);
+    const durable=readLocalViewStateSnapshot(roomId,deviceId);
+    if(!memory)return durable;
+    if(!durable)return memory;
+    return durable.clientSeq>=memory.clientSeq?durable:memory;
+  },
+  async snapshotForJoin(roomId,deviceId){
+    try{await this.pendingPersistence.get(String(roomId));}catch{}
+    return this.latestSnapshot(String(roomId),String(deviceId));
+  },
+  acceptServerState(roomId,deviceId,viewState){
+    const seq=Number(viewState?.clientSeq||0);
+    if(Number.isSafeInteger(seq)&&seq>0)raiseViewStateSequenceFloor(deviceId,seq);
+    const local=this.latestSnapshot(roomId,deviceId);
+    if(!Number.isSafeInteger(seq)||seq<=0||(local&&local.clientSeq>=seq))return local;
+    const rawAnchor=Number(viewState?.anchorMessageId);
+    const snapshot=normalizeLocalViewStateSnapshot({
+      version:VIEW_STATE_SNAPSHOT_VERSION,roomId,deviceId,
+      anchorMessageId:Number.isSafeInteger(rawAnchor)&&rawAnchor>0?rawAnchor:null,
+      anchorOffsetPx:Number(viewState?.anchorOffsetPx)||0,
+      atBottom:viewState?.atBottom===true,clientSeq:seq,
+      capturedAt:Date.parse(viewState?.updatedAt||'')||Date.now(),contextGeneration:null,tabId:'server'
+    },roomId,deviceId);
+    if(snapshot&&safeLocalViewStateSet(STORAGE.viewState(roomId),snapshot)){
+      this.latestSnapshots.set(roomId,snapshot);this.metrics.localWrites++;
+    }
+    return snapshot||local;
+  },
+  async sendSnapshot(snapshot,{keepalive=false}={}){
+    const normalized=normalizeLocalViewStateSnapshot(snapshot,snapshot?.roomId,snapshot?.deviceId);
+    if(!normalized)return null;
+    this.metrics.networkWrites++;
+    let response;
+    try{
+      response=await fetch(`/api/rooms/${normalized.roomId}/view-state`,{
+        method:'PUT',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          deviceId:normalized.deviceId,
+          anchorMessageId:normalized.anchorMessageId,
+          anchorOffsetPx:normalized.anchorOffsetPx,
+          atBottom:normalized.atBottom,
+          clientSeq:normalized.clientSeq
+        }),
+        keepalive:Boolean(keepalive)
+      });
+    }catch{return null;}
+    const data=await response.json().catch(()=>null);
+    if(response.status===409){
+      this.metrics.staleRejects++;
+      if(data?.viewState)this.acceptServerState(normalized.roomId,normalized.deviceId,data.viewState);
+      return data?.viewState||null;
+    }
+    if(response.ok&&data?.viewState)this.acceptServerState(normalized.roomId,normalized.deviceId,data.viewState);
+    return response.ok?data:null;
+  },
+  async flushRoom(roomId,{keepalive=false}={}){
+    const key=String(roomId||'');
+    if(!key)return null;
+    const timer=this.networkTimers.get(key);
+    if(timer){clearTimeout(timer);this.networkTimers.delete(key);}
+    try{await this.pendingPersistence.get(key);}catch{}
+    const snapshot=this.latestSnapshot(key);
+    if(!snapshot)return null;
+    return this.sendSnapshot(snapshot,{keepalive});
+  },
+  captureBeforeLeave(reason='leave',{keepalive=true}={}){
+    const roomId=this.roomId||state.roomId,box=this.box||document.getElementById('messages');
+    if(!roomId)return Promise.resolve(null);
+    const localTimer=this.localTimers.get(roomId);
+    if(localTimer){clearTimeout(localTimer);this.localTimers.delete(roomId);}
+    const networkTimer=this.networkTimers.get(roomId);
+    if(networkTimer){clearTimeout(networkTimer);this.networkTimers.delete(roomId);}
+    const persist=this.phase==='ready'
+      ?this.captureNow(reason,{force:true,roomId,box})
+      :(this.pendingPersistence.get(roomId)||Promise.resolve(this.latestSnapshot(roomId)));
+    const work=Promise.resolve(persist).then(snapshot=>{
+      if(snapshot)void this.sendSnapshot(snapshot,{keepalive});
+      return snapshot;
+    });
+    return work;
+  },
+  captureLifecycle(){
+    if(this.phase!=='ready')return Promise.resolve(this.latestSnapshot(this.roomId));
+    return this.captureBeforeLeave('lifecycle',{keepalive:true});
+  },
+  clearRoom(roomId){
+    const key=String(roomId||'');
+    for(const map of [this.localTimers,this.networkTimers]){
+      const timer=map.get(key);if(timer)clearTimeout(timer);map.delete(key);
+    }
+    this.latestSnapshots.delete(key);this.pendingPersistence.delete(key);this.lastCaptureAt.delete(key);
+    clearLocalViewStateSnapshot(key);
+  },
+  snapshot(){
+    const captureAverageMs=this.metrics.captures?this.metrics.captureCostMs/this.metrics.captures:0;
+    return{
+      phase:this.phase,roomId:this.roomId,generation:this.generation,
+      localCaptureIntervalMs:VIEW_STATE_LOCAL_CAPTURE_INTERVAL_MS,
+      networkMaxLagMs:VIEW_STATE_SAVE_DEBOUNCE_MS,
+      metrics:{...this.metrics,captureAverageMs}
+    };
+  }
 };
 window.FPScroll173=scrollCoordinator;
 const registerScrollOwner173=()=>{
@@ -1001,12 +1337,18 @@ window.addEventListener?.('fpchat:boot-ready',registerScrollOwner173,{once:true,
 function scrollMessagesToBottom(box){scrollCoordinator.requestBottom(box);}
 function scrollToFirstUnread(box=document.getElementById('messages')){const firstUnread=getFirstUnreadMessageElement(box);return Boolean(firstUnread&&scrollCoordinator.focus(firstUnread,'auto',8));}
 
-let viewStateSaveTimer=null;
-function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[...box.querySelectorAll('.msg[data-message-id]')];if(!messages.length)return null;const boxTop=box.getBoundingClientRect().top;let fallback=null;for(const el of messages){const rect=el.getBoundingClientRect();const raw=el.dataset.messageId||el.dataset.id;const numeric=Number(raw);const id=Number.isInteger(numeric)&&numeric>0?numeric:raw;if(!id)continue;if(!fallback)fallback={anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};if(rect.bottom>=boxTop){return {anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};}}return fallback;}
-function scheduleViewStateSave(){if(!state.roomId||scrollCoordinator.isOpening())return;clearTimeout(viewStateSaveTimer);viewStateSaveTimer=setTimeout(()=>{void saveViewStateNow();},VIEW_STATE_SAVE_DEBOUNCE_MS);}
-async function saveViewStateNow({keepalive=false}={}){const roomId=state.roomId;const persisted=STORAGE.get(STORAGE.roomState(roomId));const box=document.getElementById('messages');if(!roomId||!persisted?.deviceId||!box)return;const atBottom=isMessagesAtBottom(box);const anchor=atBottom?null:getFirstVisibleMessageAnchor(box);if(!anchor?.anchorMessageId&&!atBottom)return;await fetch(`/api/rooms/${roomId}/view-state`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceId:persisted.deviceId,anchorMessageId:Number.isSafeInteger(Number(anchor?.anchorMessageId))?Number(anchor.anchorMessageId):null,anchorOffsetPx:anchor?.anchorOffsetPx||0,atBottom}),keepalive:Boolean(keepalive)}).catch(()=>{});}
+function scheduleViewStateSave(){scrollCoordinator.onScroll(document.getElementById('messages'));}
+async function saveViewStateNow({keepalive=false,snapshot=null}={}){
+  const current=snapshot||await scrollCoordinator.captureNow('explicit',{force:true});
+  if(!current)return null;
+  return scrollCoordinator.sendSnapshot(current,{keepalive});
+}
 let lastLifecycleViewStateSaveAt=0;
-function saveViewStateForLifecycle(){if(scrollCoordinator.isOpening())return;const now=Date.now();if(now-lastLifecycleViewStateSaveAt<500)return;lastLifecycleViewStateSaveAt=now;if(viewStateSaveTimer){clearTimeout(viewStateSaveTimer);viewStateSaveTimer=null;}void saveViewStateNow({keepalive:true});}
+function saveViewStateForLifecycle(){
+  const now=Date.now();if(now-lastLifecycleViewStateSaveAt<500)return;
+  lastLifecycleViewStateSaveAt=now;
+  void scrollCoordinator.captureLifecycle();
+}
 function restoreMessagesViewState(box,viewState){const target=getViewStateMessageElement(box,viewState);if(!target||!isCurrentMessagesBox(box)||scrollCoordinator.isOpening())return false;const offset=Number(viewState?.anchorOffsetPx)||0;const boxTop=box.getBoundingClientRect().top;const targetTop=target.getBoundingClientRect().top;return scrollCoordinator.write(box,box.scrollTop+targetTop-boxTop-offset,'auto');}
 async function applyInitialMessagesScroll(box,viewState){
   if(!isCurrentMessagesBox(box))return 'cancelled';
