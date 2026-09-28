@@ -198,9 +198,24 @@ run(async({newClient,errors,temp,root})=>{
 
   await resetDecrypt();
   opened=await open(REUSE);
-  assert.ok((await decryptCalls())>0,'changed membership should fall back to the existing decrypt path');
-  assert.equal(opened.mounted.includes(deleteId),false,'deleted-for-all message reappeared after fallback');
+  assert.equal(opened.mounted.includes(deleteId),false,'deleted-for-all message reappeared after reopen');
   assert.equal(await page.evaluate(id=>Boolean(findMessageElement(id)),deleteId),false);
+  assert.equal(await page.evaluate(({roomId,id})=>Boolean(FPMessageStore172.get(roomId,id)?.deleted),{roomId:REUSE.roomId,id:deleteId}),true);
+
+  // A full window is reusable only when every server-selected message has a
+  // safe canonical record. One unknown id must reject the whole reuse attempt.
+  const insufficient=await page.evaluate(roomId=>FPMessageStore172.reuseWindow(roomId,[{
+    id:999999999,
+    iv:'missing',
+    ciphertext:'missing',
+    status:'read',
+    created_at:'2026-09-28T00:00:00.000Z',
+    sender_name:'Nobody',
+    sender_device_id:'missing',
+    type:'text',
+    media:[]
+  }])===null,REUSE.roomId);
+  assert.equal(insufficient,true,'incomplete RAM data was accepted as a reusable window');
   await leave();
 
   // 4. Saved reading position remains server-authoritative. Warm the room,
@@ -270,7 +285,7 @@ run(async({newClient,errors,temp,root})=>{
   assert.deepEqual(errors,[]);
   console.log('PASS item 13 reuses a fully matching previously-rendered MessageStore window only after join access check');
   console.log('PASS item 13 existing WS/lifecycle sync updates edits while on the list and canonical edit renders without repeat decrypt');
-  console.log('PASS item 13 changed/deleted window membership rejects RAM reuse and preserves the existing decrypt/render fallback');
+  console.log('PASS item 13 delete tombstones survive reopen; incomplete RAM windows are rejected and first-open fallback remains intact');
   console.log('PASS item 13 saved reading position remains server/view-state + FPScroll authoritative');
   console.log('PASS item 13 unread target/count are refreshed by join rather than RAM metadata');
   console.log('PASS item 13 revoked access performs join, renders nothing from MessageStore, and removes local room access');
