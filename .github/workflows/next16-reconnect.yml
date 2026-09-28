@@ -1,0 +1,43 @@
+name: Next Plan Item 16 Reconnect Stand
+
+on:
+  push:
+    branches:
+      - optimization/performance-series
+    paths:
+      - '.github/workflows/next16-reconnect.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: node --check scripts/benchmark-next16-reconnect.cjs
+      - name: Connection owner regression
+        run: npm run check:170
+      - name: Single-owner audit
+        run: npm run test:180:single-owner-audit
+      - name: Measure reconnect semantics
+        env:
+          FPCHAT_RUNTIME_SHA: 2bf734e918dfb7e31d14d574d52a7d3256076000
+          FPCHAT_NEXT16_OUTPUT: ${{ github.workspace }}/next16-output
+        run: npm run bench:next:16
+      - name: Upload item 16 measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next16-reconnect
+          path: next16-output
+          if-no-files-found: warn
