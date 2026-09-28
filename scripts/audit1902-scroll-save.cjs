@@ -179,10 +179,16 @@ run(async({newClient,errors,temp,root})=>{
 
   const aWrites=writes.filter(row=>row.roomId===A.roomId);
   const bWrites=writes.filter(row=>row.roomId===B.roomId);
+  const postSwitchDiag=await page.evaluate(roomId=>({
+    stateRoomId:state.roomId,
+    scroll:FPScroll173.snapshot(),
+    localA:STORAGE.get(STORAGE.viewState(roomId))
+  }),A.roomId);
+  const aRow=db.prepare('SELECT anchor_message_id,anchor_offset_px,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(A.dbRoomId,A.deviceId);
+  console.log('SCROLL1902_A_POST_SWITCH '+JSON.stringify({postSwitchDiag,aRow}));
   assert.ok(aWrites.length>=1,'direct A->B did not flush A position');
   assert.equal(bWrites.length,0,'A delayed timer was rebound to room B: '+JSON.stringify(writes));
 
-  const aRow=db.prepare('SELECT anchor_message_id,anchor_offset_px,at_bottom,client_seq FROM chat_view_state WHERE room_id=? AND device_id=?').get(A.dbRoomId,A.deviceId);
   assert.equal(Number(aRow.at_bottom),0,JSON.stringify(aRow));
   assert.ok(Number(aRow.anchor_message_id)>0,JSON.stringify(aRow));
   assert.ok(Number(aRow.client_seq)>0,JSON.stringify(aRow));
