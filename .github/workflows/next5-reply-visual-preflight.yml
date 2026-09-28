@@ -1,4 +1,4 @@
-name: Next Plan Item 5 Optional Dependency Preflight
+name: Next Plan Item 5 Optional System UI
 
 on:
   push:
@@ -8,9 +8,9 @@ on:
       - '.github/workflows/next5-reply-visual-preflight.yml'
 
 jobs:
-  preflight:
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,5 +23,25 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Prove system UI startup gate
-        run: node ./scripts/benchmark-next5-system-ui-preflight.cjs
+      - name: Item 5 regression
+        run: npm run test:next:5
+      - name: Existing startup regression
+        run: npm run test:186:startup
+      - name: Existing system push regression
+        run: npm run test:189:system-push
+      - name: Existing reply swipe regression
+        run: npm run test:184:browser
+      - name: Existing item 4 version reuse regression
+        run: npm run test:next:4
+      - name: Corrected startup waterfall after item 5
+        env:
+          FPCHAT_RUNTIME_SHA: 84fc1e11261bb79c6868f402cfe5036dac37f57e
+          FPCHAT_NEXT3_OUTPUT: ${{ github.workspace }}/next5-output
+        run: node ./scripts/benchmark-next3-startup-waterfall.cjs
+      - name: Upload item 5 measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next5-optional-system-ui
+          path: next5-output
+          if-no-files-found: warn
