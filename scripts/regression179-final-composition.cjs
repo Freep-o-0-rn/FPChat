@@ -20,7 +20,7 @@ for(const name of installers){
 assert.equal((boot.match(/install[A-Za-z0-9_]+\(\{/g)||[]).length,0,'bootstrap contains installer calls');
 
 const dbAt=server.indexOf('const db = createDb(DATABASE_PATH);');
-const blockStoreAt=server.indexOf("const fpUserBlocks165 = require('./src/user-blocks165').createUserBlocks165(db);");
+const blockStoreAt=server.search(/\bconst\s+fpUserBlocks165\s*=\s*createUserBlocks165\s*\(/);
 const blockedEventAt=server.indexOf("const fpBlockedInviteEvents165 = require('./src/blocked-invite-events165').createBlockedInviteEventStore(db");
 assert(dbAt>=0&&blockStoreAt>dbAt&&blockedEventAt>blockStoreAt,'T1 explicit store order changed');
 assert.equal((server.match(/fpUserBlocks165\.participantPresenceDto\(item, safeDeviceId, toIsoUtc\)/g)||[]).length,2,'T2 site count changed');
