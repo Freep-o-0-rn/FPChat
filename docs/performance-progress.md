@@ -2,9 +2,9 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up plan items 1–3 plus diagnostic 3.1 completed; startup SW-network coverage corrected**.
+- Series status: **Steps 1–4 completed; follow-up plan items 1–4 plus diagnostic 3.1 completed; startup duplicate version request removed**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. New-plan items 1–3 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
+- Follow-up numbering is independent of the original step table. New-plan items 1–4 and diagnostic 3.1 are complete; execute only the next item explicitly supplied by the user.
 - The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
@@ -1283,3 +1283,181 @@ Revert only the measurement scripts and 3.1 documentation. No runtime/data rollb
 **No optimization started automatically.**
 
 Measurement evidence now supports follow-up item **4** as the next explicit prompt.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 4
+
+Status: **done — loader version result reused on startup; duplicate app-side startup request removed**.
+
+### Plan mapping
+
+- Follow-up item: **4 — eliminate repeated startup version request**.
+- Chosen after diagnostic 3.1 proved that the second Service Worker-backed `version.json` really costs about 215 ms under the requested slow-network model.
+- This is the selected small optimization for the original performance-series Step 5.
+- Follow-up item 5 was not started.
+
+### Runtime change
+
+`public/index.html` now stores a startup version handoff only after a successful, valid loader result and only for the same build used to generate startup resource URLs.
+
+The existing `FPStartup174` object gained one data field:
+
+`versionResult: loaderVersionResult174`
+
+No readiness owner, transition, fail path or execution chain was replaced.
+
+`public/app.js` initial startup now passes that result explicitly into `checkAppVersionOnEntry`.
+
+Reuse is accepted only if:
+
+- build syntax is valid;
+- numeric build is finite;
+- `resourceBuild === build`;
+- the actual loaded `app.js` URL has `?v=` matching the same resource build.
+
+Any missing, malformed or mismatched startup result uses the existing fresh `fetch('/version.json', {cache:'no-store'})` fallback.
+
+Resume remains fresh because `handleAppResume()` still calls `checkAppVersionOnEntry()` with no startup result.
+
+### No resource-version mixing
+
+The handoff is not accepted merely because its build number parses.
+
+It must match the version suffix of the actual executing `app.js`. Therefore an injected/stale/mismatched loader result cannot be reused for a differently versioned startup graph.
+
+When the loader version fetch fails, `versionResult` stays null and the app-side network fallback remains active.
+
+### Request count
+
+Saved-data startup:
+
+- corrected item 3.1 before: 2 logical version requests / 2 SW upstream requests;
+- item 4 after: **1 logical version request / 1 SW upstream request**.
+
+Real update consists of two navigations:
+
+- before: 4 total version requests;
+- after: **2 total version requests**, one loader request per navigation.
+
+### Performance comparison against corrected item 3.1
+
+Saved slow:
+
+- wall: 4199 → 4164 ms;
+- loader → boot-ready: 3865.5 → 3828.0 ms;
+- second version gate: **218.9 → 0.3 ms**;
+- version count: 2 → **1**;
+- encoded page transfer: 22.4 → 22.4 KiB.
+
+Saved normal:
+
+- wall: 346 → 314 ms;
+- second version gate: 10.7 → 0.1 ms.
+
+Update normal:
+
+- wall: 521 → 447 ms;
+- total version count: 4 → **2**;
+- final second version gate: 11.9 → 0.5 ms.
+
+Update slow:
+
+- wall: 6441 → 6657 ms;
+- total version count: 4 → **2**;
+- final second version gate: **214.8 → 0.1 ms**;
+- encoded page transfer changed materially: 67.9 → 152.4 KiB.
+
+The update-slow wall difference is therefore **not attributed to item 4**. There is one before and one after diagnostic run and the network/resource transfer conditions differed substantially despite the same requested throttle.
+
+The confirmed optimization effect is narrower:
+
+- duplicate request removed;
+- its sequential gate removed;
+- fresh-resume behavior preserved.
+
+Do not convert the ~215 ms removed request into a claimed ~215 ms end-to-end speedup. In saved slow startup most of that interval overlapped with other resource loading, so the observed wall delta was only 35 ms in this single comparison.
+
+### Functional verification
+
+New regression:
+
+- `scripts/regression-next4-version-reuse.cjs`;
+- `npm run test:next:4`.
+
+Final CI run `36411301150` passed:
+
+- `test:next:4`;
+- `test:186:startup`;
+- `test:189:system-push`;
+- corrected startup waterfall.
+
+Confirmed:
+
+- normal startup uses one version request;
+- real update uses one version request per navigation and still clears the update marker;
+- malformed loader version falls back to a fresh app-side request;
+- mismatched loader/resource version is rejected;
+- direct `/chat` starts through existing owners;
+- existing direct invite path remains green in `test:186:startup`;
+- required owner readiness/order remains green;
+- optional asset failure/late settle and existing boot readiness/safety behavior remain green;
+- system push behavior remains green;
+- lifecycle resume performs a new version request.
+
+### Regression guard maintenance
+
+`scripts/regression180-init-coordination.cjs` initially failed because it contained an exact literal for the old `FPStartup174` object.
+
+It was updated only to allow the intentional `versionResult:loaderVersionResult174` field. The existing coordination fields and owner chain remain exact requirements.
+
+This was a stale source guard caused by the intended item-4 surface extension, not a behavioral runtime failure.
+
+### Files
+
+Runtime:
+
+- `public/index.html`;
+- `public/app.js`.
+
+Regression:
+
+- `scripts/regression-next4-version-reuse.cjs`;
+- `scripts/regression180-init-coordination.cjs`;
+- `package.json`.
+
+Results:
+
+- `docs/performance-next4-version-reuse.md`;
+- `docs/performance-next4-version-reuse-summary.json`;
+- this journal.
+
+Artifact from the successful verification/measurement run:
+
+- workflow `36411301150`;
+- artifact `10963774575`;
+- digest `sha256:14e465b10dc73603b8839a3242c36576605c52c2a347e378862edcc3b1986c4b`.
+
+### Runtime areas not changed
+
+- `sw.js`;
+- server/API;
+- DB/schema;
+- RoomContext/generation/AbortSignal;
+- Connection170/WS ownership;
+- SendManager/pending send queue;
+- MessageStore/history;
+- cache writer/media policy;
+- layer/gesture/viewport owners;
+- updater behavior.
+
+### Rollback
+
+Revert the item-4 edits in `public/index.html` and `public/app.js`, restore the old Build 180 exact guard if the handoff field is removed, and remove `test:next:4` plus its regression/docs.
+
+No database/data migration is involved.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Follow-up item 5 remains pending and independent.
