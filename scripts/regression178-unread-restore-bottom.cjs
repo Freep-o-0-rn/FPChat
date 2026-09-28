@@ -27,22 +27,29 @@ const pill=functionSource(app,'renderNewMessagesPill');
 const goUnread=functionSource(history,'goToUnread');
 const jump=functionSource(history,'jump');
 
-// Hydration target keeps the established opening decision: unread -> saved anchor -> tail.
-const unreadPick=initialTarget.indexOf('if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;');
-const atBottomPick=initialTarget.indexOf('if(data?.viewState?.atBottom)return null;');
+// Current opening contract: an authoritative initialWindow target wins; for
+// legacy/no-initialWindow payloads, a real saved old-history anchor wins over
+// unread, while a saved true-tail state falls through to first unread.
+const initialWindowTail=initialTarget.indexOf("if(initialWindow?.mode==='tail')return null;");
+const initialWindowAround=initialTarget.indexOf("if(initialWindow?.mode==='around'&&Number.isSafeInteger(serverTargetId)&&serverTargetId>0)return serverTargetId;");
+const savedGate=initialTarget.indexOf("if(!data?.viewState?.atBottom){");
 const restorePick=initialTarget.indexOf('const savedAnchorId=Number(data?.viewState?.anchorMessageId);');
-assert(unreadPick>=0&&atBottomPick>unreadPick&&restorePick>atBottomPick,'initial hydrate target priority changed');
+const unreadPick=initialTarget.indexOf('if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;');
+assert(initialWindowTail>=0&&initialWindowAround>initialWindowTail&&savedGate>initialWindowAround&&restorePick>savedGate&&unreadPick>restorePick,
+  'initial hydrate target no longer preserves initialWindow -> saved old history -> unread/tail contract');
 
 const applyStart=app.indexOf('  async applyInitial(viewState){');
 const applyEnd=app.indexOf('\n  stop(){',applyStart);
 assert(applyStart>=0&&applyEnd>applyStart,'scrollCoordinator.applyInitial missing');
 const apply=app.slice(applyStart,applyEnd);
-const unreadBranch=apply.indexOf('if(unreadTarget){');
-const noUnreadBranch=apply.indexOf("}else if(!activeChatHistory?.unreadCount&&!activeChatHistory?.unloadedUnreadCount){");
-const bottomBranch=apply.indexOf('if(viewState?.atBottom){');
-const restoreBranch=apply.indexOf('const target=getViewStateMessageElement(box,viewState);');
-assert(unreadBranch>=0&&noUnreadBranch>unreadBranch&&bottomBranch>noUnreadBranch&&restoreBranch>bottomBranch,
-  'opening unread/restore/bottom branch order changed');
+const explicitFocus=apply.indexOf("if(intent?.type==='focus'){");
+const explicitBottom=apply.indexOf("if(intent?.type==='bottom'){");
+const savedTarget=apply.indexOf("const savedTarget=!viewState?.atBottom?getViewStateMessageElement(box,viewState):null;");
+const savedBranch=apply.indexOf('if(savedTarget){');
+const unreadBranch=apply.indexOf('}else if(unreadTarget){');
+const finalBottom=apply.indexOf('}else{',unreadBranch);
+assert(explicitFocus>=0&&explicitBottom>explicitFocus&&savedTarget>explicitBottom&&savedBranch>savedTarget&&unreadBranch>savedBranch&&finalBottom>unreadBranch,
+  'opening explicit/saved/unread/bottom priority changed');
 assert(apply.includes("this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');"),
   'first-unread positioning formula changed');
 assert(apply.includes("this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');"),
@@ -54,9 +61,10 @@ assert(apply.includes("this.write(box,box.scrollHeight,'auto');"),
 assert(atBottom.includes('if(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)return false;'),
   'bounded history can now report bottom while newer messages are outside DOM');
 
-// The down/new-messages control keeps its old route: History174 first, then unread or real tail.
-assert(app.includes("document.getElementById('newMessagesPill').onclick=()=>{if(window.FPHistory174){void FPHistory174.goToUnread();return;}"),
-  'new-messages pill no longer delegates to FPHistory174 when present');
+// The down/new-messages control remains an explicit user intent and routes
+// through History174 before local unread/tail fallbacks.
+assert(app.includes("document.getElementById('newMessagesPill').onclick=()=>{scrollCoordinator.noteUserIntent(document.getElementById('messages'));if(window.FPHistory174){void FPHistory174.goToUnread();return;}"),
+  'new-messages pill no longer records explicit intent and delegates to FPHistory174');
 assert(pill.includes("pill.textContent=unreadCount>0?formatUnreadLabel(unreadCount):'Вниз ↓';"),
   'down/new-message pill label rule changed');
 assert(goUnread.includes('if(history.unloadedUnreadCount>0){'),'unloaded unread path missing');
@@ -72,12 +80,14 @@ const bottomStart=app.indexOf('requestBottom(box=this.box)');
 const bottomEnd=app.indexOf('focus(target',bottomStart);
 assert(bottomStart>=0&&bottomEnd>bottomStart,'requestBottom missing');
 const requestBottom=app.slice(bottomStart,bottomEnd);
-assert(requestBottom.includes("if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&this.phase!=='opening'&&window.FPHistory174){void FPHistory174.jump();return;}"),
+assert(requestBottom.includes("if(this.phase==='opening'){this.pendingIntent={type:'bottom'};return;}"),
+  'opening explicit-bottom intent is no longer deferred through FPScroll173');
+assert(requestBottom.includes("if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&window.FPHistory174){void FPHistory174.jump();return;}"),
   'bottom request no longer jumps to the actual history tail');
 assert(jump.includes('if(history.tailJump174)return history.tailJump174;'),
   'tail jump deduplication changed');
 
-console.log('PASS 178.25 opening keeps first-unread before saved restore and bottom');
-console.log('PASS 178.25 saved anchor and explicit atBottom keep their existing formulas');
+console.log('PASS 178.25 opening keeps initialWindow and saved old-history ahead of unread, while true-tail falls through to unread');
+console.log('PASS 178.25 explicit focus/bottom intents outrank background restore and keep existing formulas');
 console.log('PASS 178.25 bounded history is not mistaken for the real bottom');
 console.log('PASS 178.25 down/new-message transition uses unread focus or FPHistory174 tail jump under the old conditions');
