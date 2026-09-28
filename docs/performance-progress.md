@@ -84,7 +84,7 @@ Known diagnostic drift recorded for **Step 3**, not changed in Step 1: the curre
 | Step | Status | Scope |
 | ---: | --- | --- |
 | 1 | **done** | Working branch, architecture map and rules |
-| 2 | **partial — continue as 2.2** | Baseline regressions; one stale ownership guard fixed, second stale fingerprint localized |
+| 2 | **done** | Baseline regressions green after stale source-guard maintenance; no runtime behavior change |
 | 3 | **done** | Observer coverage; existing stage hooks sufficient; export build identity corrected |
 | 4 | pending | Baseline performance measurements |
 | 5 | pending | One confirmed startup wait |
@@ -146,14 +146,14 @@ Delete `optimization/performance-series` or reset it to `7fa7a4b0d64c22d4aa80969
 
 ## Continuation point
 
-**Current continuation: 2.2 — finish the baseline ownership audit before Step 4.**
+**Current continuation: Step 4 — collect the performance baseline.**
 
-Step 3 was explicitly requested and is complete, but Step 2.2 remains an open baseline gate. Do not begin performance measurements/optimization until that stale Build 180 block-owner fingerprint is corrected and the ownership audit is re-run.
+Steps 2 and 3 are complete. The baseline behavior/ownership suites are green, so the next permitted stage is measurement only; do not optimize before Step 4 identifies measured bottlenecks.
 
 
 ## Step 2 — baseline regressions
 
-Status: **partial; continue as 2.2**.
+Status: **done**.
 
 ### Baseline execution environment
 
@@ -295,7 +295,7 @@ Commit carrying the test-only correction: `eca642e033d12d031c573726eea063070b152
 
 After restoring the runtime compatibility spec, `npm run check:171` passes again.
 
-#### 2.2 — second independent stale fingerprint, not fixed yet
+#### 2.2 — stale canonical block-owner fingerprint maintenance — completed
 
 After 2.1 the same old Build 180 audit progressed further and failed at:
 
@@ -310,7 +310,7 @@ This is currently localized as another stale **exact source fingerprint**, not e
 - the current server has one `const fpUserBlocks165 = createUserBlocks165(...)` declaration;
 - the extra argument comes from the later presence-privacy integration.
 
-Per the one-small-change rule, Step 2 stops here. Do not fix 2.2 in the same pass as 2.1.
+Per the one-small-change rule, this fingerprint was deferred to 2.2 and later fixed there without changing server/runtime behavior.
 
 ### Classification of findings
 
@@ -322,7 +322,7 @@ Per the one-small-change rule, Step 2 stops here. Do not fix 2.2 in the same pas
 | History/anchor/bounded DOM | behavior + invariants | PASS |
 | Build 190 media suite | behavior + owner contracts | PASS |
 | Build 180 fetch assignment equality | stale source guard | 2.1 fixed in test only |
-| Build 180 exact `createUserBlocks165(db)` match | stale source fingerprint | localized; **2.2 open** |
+| Build 180 exact `createUserBlocks165(db)` matches | stale source fingerprints | **2.2 fixed; relevant owner/block suites green** |
 | Assistant container cannot resolve GitHub | environment | bypassed with temporary GitHub Actions harness |
 | Missing VAPID keys in isolated CI | environment/config warning | push tests still passed with their isolated fixture; not production verification |
 | npm dependency deprecation warnings | environment/dependency warning | not treated as a behavior regression in Step 2 |
@@ -360,9 +360,9 @@ Revert the test-only change in `scripts/regression180-single-owner-audit.cjs` to
 
 ### Continuation point
 
-**2.2 — update only the stale canonical block-owner fingerprint in `regression180-single-owner-audit.cjs`, then rerun the owner audit and its relevant block-owner checks.**
+**Step 2 complete. Next: Step 4, after the already completed Step 3 observer check.**
 
-Do not start Step 3 until Step 2 ownership baseline is green or another independent stale assertion is localized and recorded according to the same small-step rule.
+The ownership baseline is green. Do not introduce optimization before the Step 4 measured baseline is collected.
 
 
 ## Step 3 — observer coverage
@@ -466,6 +466,51 @@ Revert the `runtime169.js` build-identity patch and the paired regression assert
 
 ### Continuation point
 
-**Return to 2.2 before Step 4.**
+**Next: Step 4 — collect the performance baseline.**
 
-Step 3 is complete, but the legacy `regression180-single-owner-audit.cjs` still has the separately localized stale `createUserBlocks165(db)` fingerprint from Step 2. Fix and re-run that ownership baseline before collecting the Step 4 performance baseline.
+Step 3 is complete and Step 2.2 has now also been closed with green ownership/block checks.
+
+
+### Step 2.2 completion
+
+The open baseline blocker was stale source matching around the single canonical `fpUserBlocks165` construction after Build 187 added the `presenceProjector` option:
+
+`const fpUserBlocks165 = createUserBlocks165(db, { presenceProjector: fpPresencePrivacy187.project });`
+
+No duplicate block owner exists in current `server.js`. The regression guards were updated to verify the semantic invariant instead of the historical one-argument source string:
+
+- exactly one `const fpUserBlocks165 = createUserBlocks165(` declaration;
+- the canonical owner is created before dependent blocked-invite storage;
+- existing block permission/presence/invite/send semantics remain checked by their dedicated suites.
+
+The same stale fingerprint existed in several regression consumers of the same invariant, so they were updated consistently as one logical Step 2.2 maintenance change:
+
+- `scripts/regression180-single-owner-audit.cjs`;
+- `scripts/regression180-block-contract.cjs`;
+- `scripts/regression180-block-owner-bypass.cjs`;
+- `scripts/regression179-explicit-block-stores.cjs`;
+- `scripts/regression179-final-composition.cjs`;
+- `scripts/regression180-final-architecture-acceptance.cjs`.
+
+No `server.js`, block-store implementation, privacy logic, network owner, cache owner, room owner or client runtime behavior was changed by Step 2.2.
+
+Final Step 2.2 verification on Node 22 / GitHub Actions:
+
+- `npm run test:180:single-owner-audit` — PASS;
+- `npm run test:180:block-contract` — PASS;
+- `npm run test:180:block-owner-bypass` — PASS;
+- `npm run test:179:explicit-block-stores` — PASS;
+- `npm run test:179:final-composition` — PASS;
+- `node ./scripts/regression180-final-architecture-acceptance.cjs` — PASS;
+- `npm run test:187:presence-privacy` — PASS;
+- `npm run check:171` — PASS.
+
+The temporary Step 2.2 CI workflow was removed after verification.
+
+Rollback: revert only the regression-source-guard commits listed above. There is no runtime/server/data rollback because application behavior was not modified.
+
+### Active continuation after Step 2.2
+
+**Step 4 — collect the performance baseline.**
+
+Steps 2 and 3 are now both complete. The next stage must collect repeated measurements before choosing any optimization target.
