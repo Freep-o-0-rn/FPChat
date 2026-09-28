@@ -66,26 +66,33 @@ run(async({newClient,errors,temp,root})=>{
   },Object.fromEntries([LATE,REOPEN,A,B].map(item=>[item.roomId,{deviceId:item.deviceId,secret:item.secret}])));
 
   const installHold=async roomId=>page.evaluate(roomId=>{
-    const original=window.fetch.bind(window);
-    let released=false,releaseResolve=null,seenResolve=null;
+    let releaseResolve=null,seenResolve=null;
     const gate=new Promise(resolve=>{releaseResolve=resolve;});
     const seen=new Promise(resolve=>{seenResolve=resolve;});
-    window.__baselineHold={roomId,body:null,seen,release:()=>{released=true;releaseResolve();}};
-    window.fetch=(input,init={})=>{
-      const raw=typeof input==='string'?input:input?.url;
-      const url=new URL(raw,location.href);
-      const method=String(init?.method||input?.method||'GET').toUpperCase();
-      if(!window.__baselineHold.body&&method==='PUT'&&url.pathname===('/api/rooms/'+roomId+'/view-state')){
-        try{window.__baselineHold.body=JSON.parse(String(init?.body||'{}'));}catch{window.__baselineHold.body={};}
-        seenResolve();
-        return gate.then(()=>original(input,init));
+    window.__baselineHold={roomId,body:null,seen,release:()=>releaseResolve()};
+    window.__baselineDisposeNetwork=FPNetwork171.use({
+      id:'scroll1902-baseline-hold',
+      priority:50,
+      source:'test',
+      handler:({input,init,next})=>{
+        const raw=typeof input==='string'?input:input?.url;
+        const url=new URL(raw,location.href);
+        const method=String(init?.method||input?.method||'GET').toUpperCase();
+        if(!window.__baselineHold.body&&method==='PUT'&&url.pathname===('/api/rooms/'+roomId+'/view-state')){
+          try{window.__baselineHold.body=JSON.parse(String(init?.body||'{}'));}catch{window.__baselineHold.body={};}
+          seenResolve();
+          return gate.then(()=>next(input,init));
+        }
+        return next(input,init);
       }
-      return original(input,init);
-    };
-    window.__baselineRestoreFetch=()=>{window.fetch=original;delete window.__baselineHold;delete window.__baselineRestoreFetch;};
+    });
   },roomId);
 
-  const restoreFetch=()=>page.evaluate(()=>window.__baselineRestoreFetch?.());
+  const restoreFetch=()=>page.evaluate(()=>{
+    try{window.__baselineDisposeNetwork?.();}catch{}
+    delete window.__baselineDisposeNetwork;
+    delete window.__baselineHold;
+  });
 
   // A: first (old anchor) PUT is held in the page fetch layer. A newer bottom
   // save reaches the pre-fix server first. Releasing the old request afterward
@@ -153,19 +160,22 @@ run(async({newClient,errors,temp,root})=>{
   // state.roomId at fire time, so it emits B and never A.
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
   await page.evaluate(()=>{
-    const original=window.fetch.bind(window);
     window.__baselineWrites=[];
-    window.__baselineRestoreFetch=()=>{window.fetch=original;delete window.__baselineRestoreFetch;};
-    window.fetch=(input,init={})=>{
-      const raw=typeof input==='string'?input:input?.url;
-      const url=new URL(raw,location.href);
-      const method=String(init?.method||input?.method||'GET').toUpperCase();
-      if(method==='PUT'&&/\/api\/rooms\/[^/]+\/view-state$/.test(url.pathname)){
-        let body={};try{body=JSON.parse(String(init?.body||'{}'));}catch{}
-        window.__baselineWrites.push({roomId:url.pathname.split('/')[3],body});
+    window.__baselineDisposeNetwork=FPNetwork171.use({
+      id:'scroll1902-baseline-log',
+      priority:50,
+      source:'test',
+      handler:({input,init,next})=>{
+        const raw=typeof input==='string'?input:input?.url;
+        const url=new URL(raw,location.href);
+        const method=String(init?.method||input?.method||'GET').toUpperCase();
+        if(method==='PUT'&&/\/api\/rooms\/[^/]+\/view-state$/.test(url.pathname)){
+          let body={};try{body=JSON.parse(String(init?.body||'{}'));}catch{}
+          window.__baselineWrites.push({roomId:url.pathname.split('/')[3],body});
+        }
+        return next(input,init);
       }
-      return original(input,init);
-    };
+    });
   });
   await page.evaluate(()=>{
     const box=document.getElementById('messages');
