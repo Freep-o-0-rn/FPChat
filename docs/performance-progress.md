@@ -2,10 +2,10 @@
 
 ## Current state
 
-- Series status: **Steps 1–4 completed; follow-up prompts documented, implementation pending**.
+- Series status: **Steps 1–4 completed; follow-up plan item 1 completed as a reproduction-only test; runtime fix not started**.
 - Active follow-up plan: [Small development prompts after Step 4](performance-next-steps-prompts.md), recorded 2026-09-28 at the user's request.
-- Follow-up numbering is independent of the original step table. Start with the browser reproduction of the repeated-send lock (new plan item 1), then execute only the item the user supplies.
-- This follow-up order supersedes the historical "Step 5 next" instructions below; those entries remain the record of the Step 4 handoff. Original steps are not automatically completed by a follow-up subtask.
+- Follow-up numbering is independent of the original step table. New-plan item 1 is complete; execute only the next item explicitly supplied by the user.
+- The follow-up plan refines near-term work after original Step 4. New-plan item 1 concerns text-send behavior and does **not** complete original Step 5 (startup). Original and follow-up numbering remain independent.
 - Repository: `Freep-o-0-rn/FPChat`.
 - Verified source branch: `build/190-media-swipe-preview`.
 - Verified source build: **190.2**.
@@ -739,3 +739,103 @@ Step 4 introduced **no runtime optimization**. The committed additions are measu
 **Step 5 — inspect and change only one confirmed startup wait.**
 
 Use the Step 4 startup baseline as the before-state. Do not combine startup work with room join/history, media, send or other independent findings.
+
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 1
+
+Status: **done — defect reproduced; runtime unchanged**.
+
+### Plan mapping
+
+- Follow-up plan item: **1 — reproduce repeated-send blocking**.
+- Original performance-series step: **not equivalent to original Step 5**. Original Step 5 remains pending startup work.
+- This item was executed because the user explicitly selected it from the new follow-up plan.
+- No later follow-up item was started.
+
+### Confirmed cause in current FPTextSend170
+
+The current `public/text-send170.js` ordering is:
+
+1. reject a submit when `sendingForms.has(form)`;
+2. add the form to `sendingForms`;
+3. connect/encrypt/create `clientMessageId`;
+4. optimistically render and call the existing `queuePendingTextSend(outbound)`;
+5. clear the visible composer;
+6. when the draft is unchanged, `await clearDraftOnServer(roomId)`;
+7. only in `finally`, call `sendingForms.delete(form)`.
+
+Therefore the form-level double-submit guard remains held while the server-side draft DELETE is in flight, even though the first text has already entered the existing pending queue and may already have received its ACK.
+
+### Narrow browser reproduction
+
+Added:
+
+- `scripts/regression-next1-send-draft-lock.cjs`;
+- npm script `test:next:1`.
+
+The regression:
+
+- creates one isolated room;
+- keeps the real existing `FPTextSend170`, `FPSendManager177`, `FPConnection170` and `pendingTextSends` path;
+- delays only `DELETE /api/rooms/:roomId/draft` with a Playwright route;
+- wraps the existing global `queuePendingTextSend` in the test page only to count queue handoffs, then restores it;
+- sends text A;
+- waits until text A has a numeric server message id (ACK promotion observed);
+- confirms the draft DELETE is still held and the WebSocket remains open;
+- immediately fills and submits different text B;
+- confirms B stays in the composer, creates no optimistic bubble and does **not** call `queuePendingTextSend`;
+- releases the DELETE;
+- submits B again and confirms B then enters the existing pending queue with its own `clientMessageId`.
+
+The test also statically pins the private `sendingForms` ordering because the WeakSet itself is intentionally not exposed:
+
+- guard exists;
+- `sendingForms.add(form)` occurs before draft cleanup;
+- `await clearDraftOnServer(roomId)` occurs while the guard is held;
+- `sendingForms.delete(form)` occurs only afterwards in `finally`.
+
+### Verification
+
+GitHub Actions run `36406377137` passed:
+
+- `npm run test:next:1` — PASS;
+- `npm run test:177:text-dispatch` — PASS.
+
+Observed regression output:
+
+- first text receives ACK while draft DELETE is deliberately held;
+- delayed draft DELETE keeps the FPTextSend170 form guard active after ACK;
+- second distinct submit does not enter the queue while the guard is held;
+- the same second text enters the existing queue immediately after DELETE releases;
+- existing double-submit, reconnect, clientMessageId, A→B and ACK/echo behavior remains green.
+
+The temporary CI workflow was removed after verification.
+
+### Relation to the two Step 4 send timeouts
+
+The **blocking mechanism is reproduced** and matches the Step 4 symptom class: a later send can fail to produce an optimistic row while the socket is still open because the previous submit has not left `sendingForms`.
+
+However, the exact historical Step 4 outcome of **2 failures out of 5 throttled sends is not causally proven** by this item. The Step 4 benchmark did not record whether a draft DELETE was still in flight for those exact two samples. Therefore the correct conclusion is:
+
+- repeated-send lock due to delayed draft DELETE: **confirmed**;
+- exact attribution of both historical `optimistic-timeout` samples to this lock: **not yet proven**.
+
+### Files changed
+
+Test/infrastructure only:
+
+- `scripts/regression-next1-send-draft-lock.cjs`;
+- `package.json`;
+- `docs/performance-progress.md`.
+
+No `public/*`, `server.js`, database schema, owners/managers/arbiters or production configuration were changed.
+
+### Rollback
+
+Remove `test:next:1` from `package.json`, remove `scripts/regression-next1-send-draft-lock.cjs`, and revert this journal entry. There is no runtime/data rollback.
+
+### Continuation point
+
+**No next item started automatically.**
+
+If explicitly requested, new-plan item 2 may use this reproduction to change the release point safely while preserving double-submit protection, existing queue ownership, draft ordering and A→B behavior. Original Step 5 remains independently pending.
