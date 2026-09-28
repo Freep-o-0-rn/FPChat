@@ -121,6 +121,12 @@
     closeMobileMenu();
 
     const normalizedRoomId = normalizeRoomId(roomId);
+    const previousRoomId = normalizeRoomId(state?.roomId);
+    if (previousRoomId) {
+      // Capture the concrete old room before beginTransition can replace its
+      // RoomContext or rendering can replace the messages DOM. No network wait.
+      window.FPScroll173?.captureBeforeLeave?.('direct-room-switch', { keepalive: true });
+    }
     const persisted = STORAGE.get(STORAGE.roomState(roomId));
     if (!persisted?.secret || !persisted?.deviceId) {
       alert('Нет доступа к этому чату. Восстановите доступ по recovery-коду или invite-ссылке.');
@@ -148,11 +154,21 @@
       }
 
       phase186='join';diagnostic186?.step(trace186,'join-start');
+      let viewStateCandidate = null;
+      try {
+        // Await only the local durable snapshot/sequence allocation. Never wait
+        // for the previous standalone PUT before the access-check join.
+        viewStateCandidate = await window.FPScroll173?.snapshotForJoin?.(normalizedRoomId, deviceId) || null;
+      } catch {}
+      if (!isLatest(context)) {
+        dispatch('stale-before-join', context);
+        return;
+      }
       response = await fetch(`/api/rooms/${roomId}/join`, {
         method: 'POST',
         signal: context.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: state.nick, deviceId, initialWindow: true })
+        body: JSON.stringify({ displayName: state.nick, deviceId, initialWindow: true, viewStateCandidate })
       });
       diagnostic186?.step(trace186,'join-headers');
       if(!response.ok)diagnostic186?.fail(trace186,'join',null,response.status);
