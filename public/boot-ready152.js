@@ -27,7 +27,6 @@
       && window.FPSystem144
       && window.__fpChatRequestSystem147Installed
       && window.FPGesture135
-      && window.__fpSystemUi148Installed
       && window.__fpViewport136Installed
       && window.__fpMediaGallery134Installed
       && window.__fpVoicePolish124Installed
