@@ -1,4 +1,4 @@
-name: Next Plan Item 9 Static Compression Preflight
+name: Next Plan Item 9 Static Compression Preflight v2
 
 on:
   push:
@@ -23,12 +23,13 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Measure compression before change
+      - name: Measure compression slow baseline
         env:
-          FPCHAT_NEXT9_OUTPUT: ${{ github.workspace }}/next9-output
+          FPCHAT_NEXT9_SLOW: '1'
+          FPCHAT_NEXT9_OUTPUT: ${{ github.workspace }}/next9-output-slow
         run: node ./scripts/benchmark-next9-static-compression.cjs
       - name: Upload preflight
         uses: actions/upload-artifact@v4
         with:
-          name: next9-static-compression-preflight
-          path: next9-output
+          name: next9-static-compression-preflight-slow
+          path: next9-output-slow
