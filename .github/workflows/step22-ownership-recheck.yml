@@ -1,4 +1,4 @@
-name: Step 2.2 Ownership Recheck v2
+name: Step 2.2 Ownership Recheck Final
 
 on:
   push:
@@ -25,6 +25,12 @@ jobs:
         run: npm run test:180:block-contract
       - name: Block owner bypass
         run: npm run test:180:block-owner-bypass
+      - name: Explicit block stores
+        run: npm run test:179:explicit-block-stores
+      - name: Final composition
+        run: npm run test:179:final-composition
+      - name: Final architecture owner acceptance
+        run: node ./scripts/regression180-final-architecture-acceptance.cjs
       - name: Presence privacy compatibility
         run: npm run test:187:presence-privacy
       - name: Network compatibility owner
