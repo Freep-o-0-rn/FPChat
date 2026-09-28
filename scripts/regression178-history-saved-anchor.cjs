@@ -30,13 +30,15 @@ const saveView = functionSource(app, 'saveViewStateNow');
 const waitLayout = functionSource(app, 'waitForInitialMediaLayout');
 const normalizeViewState = functionSource(server, 'normalizeViewState');
 
-// Existing open priority is preserved: unread first, then saved view state, then bottom.
+// Telegram-like priority: a real saved reading anchor wins over new unread;
+ // a saved true-tail position does not block first unread.
+assert(initialTarget.indexOf('const savedAnchorId=Number(data?.viewState?.anchorMessageId);')<
+  initialTarget.indexOf('if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;'),
+  'saved old-history anchor must be considered before unread fallback');
+assert(initialTarget.includes("if(!data?.viewState?.atBottom){"),
+  'saved atBottom distinction is missing');
 assert(initialTarget.includes('if(unreadCount>0&&Number.isSafeInteger(firstUnreadId)&&firstUnreadId>0)return firstUnreadId;'),
-  'first unread no longer has priority over saved anchor');
-assert(initialTarget.includes('if(data?.viewState?.atBottom)return null;'),
-  'saved atBottom contract changed');
-assert(initialTarget.includes('const savedAnchorId=Number(data?.viewState?.anchorMessageId);'),
-  'saved anchor id is no longer the restore target');
+  'first unread fallback is missing for tail/no usable saved position');
 
 // Missing saved anchor is loaded around through the existing History174 path.
 assert(hydrate.includes('const anchor=getInitialScrollTargetId(data);'),
@@ -79,8 +81,8 @@ const applyInitial = app.slice(applyStart, applyEnd);
 
 assert(applyInitial.includes('await waitForInitialMediaLayout(this.box);'),
   'pixel restore occurs before initial media/layout stabilization');
-assert(applyInitial.includes('const target=getViewStateMessageElement(box,viewState);'),
-  'initial scroll no longer resolves the saved anchor node');
+assert(applyInitial.includes('const savedTarget=!viewState?.atBottom?getViewStateMessageElement(box,viewState):null;'),
+  'initial scroll no longer resolves a non-bottom saved anchor before unread');
 assert(applyInitial.includes('const offset=Number(viewState?.anchorOffsetPx)||0;'),
   'initial scroll no longer consumes saved anchorOffsetPx');
 assert(applyInitial.includes("this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');"),
