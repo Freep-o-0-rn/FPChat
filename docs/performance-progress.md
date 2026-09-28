@@ -2763,3 +2763,166 @@ No server API, DB/schema, persistent message cache, Service Worker, updater, new
 **No next item started automatically.**
 
 Item 14 is next only if explicitly requested.
+
+## Follow-up plan: docs/performance-next-steps-prompts.md — item 14
+
+Status: **done — representative photo/cache baseline added; runtime unchanged**.
+
+### Plan mapping
+
+- Follow-up item: **14 — representative photo test**.
+- This is a measurement-only prerequisite for item 15.
+- It does not change or automatically close an original performance-series step with the same number.
+- Item 15 was not started.
+
+### Representative fixture
+
+The old Step 4 media baseline used `public/icons/icon-512x512.png`.
+
+Item 14 instead generates one deterministic synthetic non-personal JPEG and uploads it through the existing media path:
+
+- 4032×3024 px;
+- 12.2 MP;
+- JPEG quality 0.92;
+- 2,186,611 B / 2.1 MiB plaintext;
+- 2,186,639 B encrypted server payload;
+- SHA-256 `d462b12f3e5618e6a59d1a6deff8ef147aa3d381c80f0038a323650ccaec3f54`.
+
+Server-recorded dimensions, MIME and plaintext size matched the fixture.
+
+### Cache-state contract
+
+Three states are measured for the same media and identity:
+
+1. **managed warm** — FPStorage167 image cache is primed; root navigation clears gallery RAM state; measured media reads are managed-cache hits and emit no media HTTP requests;
+2. **managed miss / HTTP retained** — only FPStorage167 image cache is cleared; HTTP cache remains and requests revalidate with 304;
+3. **managed miss / HTTP cold** — FPStorage167 is cleared and CDP `Network.clearBrowserCache` clears browser HTTP cache; requests return 200/full bytes.
+
+Managed cache clear uses the existing `FPStorage167.clearCache(['image'])` path after `FPNetwork171.waitForMediaCacheIdle()`.
+
+No site data or localStorage clear is used.
+
+Identity was unchanged in **32/32** checks.
+
+### Measurement events
+
+Preview:
+
+- start: immediately before `openChat(roomId)`;
+- finish: target `img.media-thumb` is complete with `naturalWidth > 0`.
+
+Original:
+
+- start: immediately before clicking the target media tile;
+- finish: viewer `.media-viewer-content img` is complete with `naturalWidth > 0`.
+
+These are DOM image readiness/decode events, not hardware-presentation timestamps.
+
+Current viewer does not yet use the ready chat thumbnail as an immediate viewer preview. That remains item 15.
+
+### Normal results
+
+| Cache state | Preview median | Original median |
+| --- | ---: | ---: |
+| Managed warm | 134.8 ms | 41.0 ms |
+| Managed miss / HTTP retained | 131.2 ms | 61.9 ms |
+| Managed miss / HTTP cold | 131.7 ms | 74.0 ms |
+
+HTTP retained used 304 for preview and original.
+
+HTTP cold used 200/full transfer.
+
+### Throttled results
+
+Profile: 200 ms latency, ~1 Mbit/s down, ~0.5 Mbit/s up.
+
+| Cache state | Preview median | Original median |
+| --- | ---: | ---: |
+| Managed warm | 665.1 ms | 48.8 ms |
+| Managed miss / HTTP retained | 697.2 ms | 296.6 ms |
+| Managed miss / HTTP cold | 794.8 ms | 44,293.9 ms |
+
+Managed warm emitted zero measured media HTTP requests.
+
+HTTP-retained requests returned 304 with only 1,325 B preview + 1,340 B original encoded wire data across five samples.
+
+HTTP-cold requests returned 200; across five samples:
+
+- preview: 15,645 B total / 3,129 B each;
+- original: 10,934,810 B total / 2,186,962 B each.
+
+### Confirmed variability
+
+Throttled HTTP-cold original raw values:
+
+`18,329.3, 44,293.9, 44,345.6, 18,329.6, 44,326.5 ms`.
+
+The two timing clusters are real in this run, but their cause was not established.
+
+Do not attribute them to AES, resource admission, SQL, cache writer or CDP without a separate measurement.
+
+### Verification
+
+Workflow `36438896836`: **SUCCESS**.
+
+Measured runtime:
+
+`43d05dbffe20f2bff779f9683aaf194b3f4e0cd2`.
+
+Measurement head:
+
+`c0ed25f8162abc6d7cbdb6d4bb58780d9420bea8`.
+
+Artifact:
+
+- id `10977112464`;
+- digest `sha256:f4d2ac974c7f89852bdf7c88434107e14016828c108b39ed00ffd4442bd9fc0a`.
+
+Passed:
+
+- benchmark syntax;
+- `test:186:media-cache`;
+- `test:177:media-viewer-lifecycle`;
+- `test:185:browser`;
+- `test:190:browser`;
+- `bench:next:14`.
+
+No browser page errors were reported.
+
+### Files
+
+Measurement:
+
+- `scripts/benchmark-next14-photo-cache.cjs`;
+- `package.json`.
+
+Documentation:
+
+- `docs/performance-next14-representative-photo.md`;
+- `docs/performance-next14-representative-photo-summary.json`;
+- this journal.
+
+No runtime/application source file was changed.
+
+The temporary item-14 workflow is removed after preserving the result.
+
+### Limits
+
+- only five samples per scenario, so no p95;
+- no physical iPhone/Android measurement;
+- preview timing begins before room open and includes join/open work;
+- throttled HTTP-cold two-cluster original timing remains unexplained;
+- the result is a laboratory baseline, not a production/mobile latency prediction.
+
+### Rollback
+
+Remove the item-14 benchmark, npm script and item-14 docs.
+
+No cache migration, identity reset or runtime rollback is required.
+
+### Continuation point
+
+**No next item started automatically.**
+
+Item 15 is next only if explicitly requested.
+
