@@ -6,6 +6,7 @@ on:
       - fix/190.2-scroll-restore-races
     paths:
       - '.github/workflows/scroll1902-baseline-repro.yml'
+      - 'scripts/reproduce1902-scroll-baseline.cjs'
 
 jobs:
   reproduce:
@@ -30,5 +31,6 @@ jobs:
           git worktree add /tmp/fpchat-scroll-repro 3bd06fd942
           ln -s "${GITHUB_WORKSPACE}/node_modules" /tmp/fpchat-scroll-repro/node_modules
       - name: Reproduce three pre-fix races
-        working-directory: /tmp/fpchat-scroll-repro
-        run: node ./scripts/audit1902-scroll-save.cjs
+        env:
+          FPCHAT_TEST_ROOT: /tmp/fpchat-scroll-repro
+        run: node ./scripts/reproduce1902-scroll-baseline.cjs
