@@ -1,7 +1,24 @@
 'use strict';
 
 const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
 const {run}=require('./browser-harness174.cjs');
+
+const root=process.env.FPCHAT_TEST_ROOT||path.resolve(__dirname,'..');
+const textSend=fs.readFileSync(path.join(root,'public/text-send170.js'),'utf8');
+const submitStart=textSend.indexOf('  async function submit(event) {');
+const submitEnd=textSend.indexOf('\n  function dispatchSubmit(event)',submitStart);
+assert(submitStart>=0&&submitEnd>submitStart,'FPTextSend170 submit executor missing');
+const submitBlock=textSend.slice(submitStart,submitEnd);
+const guardAt=submitBlock.indexOf('if (sendingForms.has(form)) return;');
+const addAt=submitBlock.indexOf('sendingForms.add(form);');
+const draftDeleteAt=submitBlock.indexOf('await clearDraftOnServer(roomId)');
+const releaseAt=submitBlock.indexOf('sendingForms.delete(form);');
+assert(guardAt>=0,'sendingForms double-submit guard missing');
+assert(addAt>guardAt,'sendingForms must be acquired after guard');
+assert(draftDeleteAt>addAt,'draft DELETE must currently occur while sendingForms is acquired');
+assert(releaseAt>draftDeleteAt,'sendingForms must currently be released only after draft DELETE await');
 
 run(async({browser,origin,errors})=>{
   const page=await browser.newPage({viewport:{width:390,height:844}});
