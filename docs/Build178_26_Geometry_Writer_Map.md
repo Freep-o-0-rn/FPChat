@@ -59,3 +59,51 @@ This audit does **not** prove a competing active writer for either viewport nume
 Therefore 178.27 must not migrate code merely because `viewport-fix.js` and `viewport-layout136.js` both observe resize/visualViewport/keyboard-related events. A migration in 178.27 is justified only if a second active writer of the same concrete viewport property is demonstrated.
 
 178.26 itself makes no runtime changes.
+
+## Build 190.2 scroll restore addendum
+
+The Telegram-like scroll restore fix does **not** introduce a second scroll owner.
+
+### Ownership after the fix
+
+- `FPScroll173` remains the single active owner of programmatic `#messages.scrollTop` writes.
+- `FPScroll173` also owns capture/restore arbitration for the same message viewport: stable anchor + pixel offset, true-tail detection, user-intent cancellation, bounded durable local capture and network flush scheduling.
+- `room-open170` remains the room transition/access owner. On A -> B it asks `FPScroll173` to freeze A's concrete snapshot before replacing RoomContext/DOM, then carries B's durable candidate through the existing guarded join. It does not write message scroll itself.
+- `FPHistory174` remains the bounded history-window loader. It supplies/mounts the required window and requests established scroll operations; it does not become a persistence or scroll owner.
+- `FPLifecycle170` remains the lifecycle signal owner. Lifecycle paths may request a final `FPScroll173` capture; lifecycle does not perform a second restore.
+- `STORAGE` is only the persistence medium for compact position metadata. It is not a manager/arbiter.
+- the server `chat_view_state.client_seq` check is an ordering guard against stale writes, not a scroll controller.
+- `FPRuntime169` remains passive diagnostics only.
+
+### Persistence/ordering contract
+
+The scroll owner stores only position metadata:
+
+- room/device identity;
+- anchor message id;
+- viewport-relative anchor offset;
+- true-tail flag;
+- local capture time/context generation;
+- tab identity/interaction version;
+- monotonically ordered `clientSeq`.
+
+No message plaintext, room secret or cryptographic key is added to the position snapshot.
+
+Local capture is bounded to a declared 300 ms interval while the user is actively changing position. Network flush is bounded to a declared 900 ms maximum lag while the page remains runnable. A process kill can therefore restore only the last snapshot that actually reached durable local storage; the contract does not promise an unsaved final pixel.
+
+For shared-device/multi-tab ordering, the client keeps a durable per-device sequence floor and uses Web Locks when available; the server independently rejects stale/equal ordered writes. A stale/background tab that has no new position intent may flush its existing snapshot but may not manufacture a newer sequence from old geometry.
+
+### Restore priority
+
+The active restore contract is:
+
+1. explicit focus/bottom action already queued by the user;
+2. user scroll that interrupts an unfinished opening;
+3. valid saved non-bottom anchor + pixel offset;
+4. first unread when there is no usable saved reading anchor (including a previously saved true tail with newly unread messages);
+5. true tail.
+
+A loaded-window bottom with `hasNewer` / local newer history is not treated as the true end of chat.
+
+Read state remains separate: restoring geometry does not itself mark messages read; the existing visibility admission/read owner remains responsible.
+
