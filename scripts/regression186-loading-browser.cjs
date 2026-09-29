@@ -11,7 +11,13 @@ run(async ({newClient, temp, root, errors}) => {
   const page = await newClient();
   await page.waitForFunction(() => window.FPRuntime169?.loading && window.__fpStorage167CacheFixInstalled && window.__fpMediaGallery134Installed);
   const report = () => page.evaluate(() => FPRuntime169.loading.report());
-  const boot = (await report()).boot;
+  const initialReport = await report();
+  assert.equal(initialReport.schema,2);
+  assert.equal(initialReport.limit,240);
+  assert.ok(Array.isArray(initialReport.limitations) && initialReport.limitations.some(value=>String(value).includes('requestAnimationFrame')));
+  assert.equal(initialReport.buildIdentity?.build,'190.2');
+  assert.ok(initialReport.buildIdentity?.appRevision===null || /^[a-f0-9]{40}$/i.test(initialReport.buildIdentity.appRevision));
+  const boot = initialReport.boot;
   assert.ok(boot.points['loader-start'] < boot.points['core-ready']);
   assert.ok(boot.points['core-ready'] <= boot.points['boot-ready']);
   assert.equal(boot.completed['core-wait-end'], true);
@@ -40,7 +46,10 @@ run(async ({newClient, temp, root, errors}) => {
   assert.ok(room.points['text-ready'] <= room.points['messages-revealed']);
   assert.ok(room.points['layout-wait-end']>=room.points['layout-thumbs-wait-end']);
   assert.equal(room.counts.pendingThumbnailsAtLayoutWaitEnd,0);
-  pass('real room entry measures key, join, history, text, draft, composer and reveal');
+  assert.ok(['ordinary','repeat'].includes(room.openMode));
+  assert.ok(['joined-window','ram'].includes(room.dataSource));
+  assert.equal(typeof room.restoreMode,'string');
+  pass('real room entry measures key, join, history, text, draft, composer, scroll source and reveal');
 
   const bytes = await page.evaluate(async () => {
     const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=96;
@@ -159,6 +168,44 @@ run(async ({newClient, temp, root, errors}) => {
   assert.equal((await report()).activeElementWatches,0);
   pass('existing DOM lifecycle cancels unmounted element observations and releases listeners');
 
+  await page.evaluate(()=>FPRuntime169.loading.reset());
+  await page.locator('#msgInput').fill('item19-send-fixture');
+  await page.locator('#sendForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.status!=='pending'),null,{timeout:10000});
+  let actionReport=await report();
+  const sendAttempt=actionReport.records.find(r=>r.kind==='send');
+  assert.equal(sendAttempt.status,'ok',JSON.stringify(sendAttempt));
+  for(const phase of ['optimistic-state','dom-change','frame-opportunity','server-ack','final-state'])assert.equal(typeof sendAttempt.points[phase],'number',phase);
+  assert.equal(sendAttempt.actualResultVerified,true);
+  assert.equal(sendAttempt.missing['server-ack'],undefined);
+  pass('real text send keeps optimistic, DOM, frame-opportunity, ACK and final outcome separate');
+
+  await page.waitForFunction(()=>Boolean(window.FPReactionManager188&&window.FPReactionRenderer188),null,{timeout:10000});
+  const reactionResult=await page.evaluate(async()=>{
+    const row=[...document.querySelectorAll('#messages > .bubble-wrap.msg')].find(node=>Number(node.dataset.messageId||node.dataset.id)>0);
+    const messageId=Number(row?.dataset.messageId||row?.dataset.id);
+    const quick=await FPReactionManager188.getQuickReactions();
+    const reaction=quick[0];
+    if(!messageId||!reaction)throw Error('reaction fixture unavailable');
+    await FPReactionManager188.toggleReaction({roomId:state.roomId,messageId,reactionId:String(reaction.id),reaction:{reactionId:String(reaction.id),type:reaction.type,value:reaction.value,enabled:true}});
+    return {messageId};
+  });
+  assert.ok(reactionResult.messageId>0);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.status!=='pending'),null,{timeout:10000});
+  actionReport=await report();
+  const reactionAttempt=actionReport.records.find(r=>r.kind==='reaction');
+  assert.equal(reactionAttempt.status,'ok',JSON.stringify(reactionAttempt));
+  assert.equal(typeof reactionAttempt.points['optimistic-state'],'number');
+  assert.equal(typeof reactionAttempt.points['dom-change'],'number');
+  assert.equal(typeof reactionAttempt.points['server-ack'],'number');
+  assert.equal(typeof reactionAttempt.points['final-state'],'number');
+  assert.equal(reactionAttempt.actualResultVerified,true);
+  await page.waitForTimeout(30);
+  assert.equal((await report()).records.find(r=>r.id===reactionAttempt.id).points['frame-opportunity']!==undefined,true);
+  assert.equal(FPRuntime169?.loading?.report?true:false,true);
+  assert.equal(await page.evaluate(()=>FPReactionManager188.snapshot().pendingMutations),0);
+  pass('real reaction keeps manager, target DOM, frame opportunity, server confirmation and final outcome separate');
+
   const privateReport=JSON.stringify(await report());
   for(const value of [fixture.roomId,fixture.deviceId,fixture.secret,'private-test-message-186','audit186-gallery','/api/','blob:http','private-test-body-error'])assert.equal(privateReport.includes(value),false,'report leaked '+value);
   const beforeDisabled=await page.evaluate(()=>({fetch:window.fetch===FPNetwork171.fetch,scroll:document.getElementById('messages').scrollTop}));
@@ -174,6 +221,7 @@ run(async ({newClient, temp, root, errors}) => {
   });
   let bounded=await report(); assert.equal(bounded.records.length,240); assert.equal(bounded.dropped,60);
   assert.equal(JSON.stringify(bounded).includes('private-room'),false);
+  const roomStateBeforeReset=await page.evaluate(roomId=>STORAGE.get(STORAGE.roomState(roomId)),fixture.roomId);
   await page.evaluate(()=>{showChatsList();setView('settings');});
   await page.locator('[data-open="about"]').click();
   const downloadPromise=page.waitForEvent('download');
@@ -181,10 +229,17 @@ run(async ({newClient, temp, root, errors}) => {
   const download=await downloadPromise;
   const downloaded=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
   assert.equal(download.suggestedFilename(),'FPChat-190.2-loading.json');
+  assert.equal(downloaded.schema,2);
   assert.equal(downloaded.build,'190.2'); assert.equal(downloaded.records.length,240);
+  assert.equal(downloaded.dropped,60);
+  assert.ok(downloaded.records.every(record=>record.attemptId===record.id&&record.relativeStartMs!==null));
+  assert.ok(downloaded.records.every(record=>Object.values(record.stagesMs||{}).every(value=>value===null||typeof value==='number')));
+  assert.equal((await report()).records.length,240,'download must not clear measurements');
   await page.locator('#fpLoadingReset186').click();
   assert.equal((await report()).records.length,0); assert.ok((await report()).boot.points['boot-ready']>0);
-  pass('bounded journal, phone-accessible JSON export and reset preserve startup evidence');
+  const roomStateAfterReset=await page.evaluate(roomId=>STORAGE.get(STORAGE.roomState(roomId)),fixture.roomId);
+  assert.deepEqual(roomStateAfterReset,roomStateBeforeReset);
+  pass('bounded journal, existing JSON button, non-clearing download and diagnostics-only reset are preserved');
 
   const timeoutPage=await newClient(async p=>{
     await p.addInitScript(()=>Object.defineProperty(window,'__fpSystemUi148Installed',{configurable:true,get:()=>false,set:()=>{}}));
