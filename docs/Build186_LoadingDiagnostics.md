@@ -188,3 +188,78 @@ FPRuntime169.loading.setEnabled(true)
 
 Отключение относится к новым операциям комнат/медиа. Фиксированные boot marks
 и прежняя диагностика Build 169 продолжают существовать.
+
+## Item 19 — ручные замеры на реальных устройствах
+
+Build **190.3** расширяет тот же `FPRuntime169.loading` и ту же кнопку
+«Настройки → О приложении → Скачать отчёт загрузки». Новый диагностический
+менеджер, отдельный экран сеансов и постоянное хранилище не добавлялись.
+
+Верхний `schema` остаётся равным `1`; для расширенного формата добавлен
+`schemaRevision: 19`.
+
+### Что теперь доступно в одном JSON
+
+- room: ordinary/repeat, полный RAM reuse против load/fallback, text/composer/
+  position readiness;
+- history: отдельные older/newer попытки, RAM/network, response/render/
+  position restore;
+- viewer: отдельные preview/original records; прежние media child records
+  продолжают содержать queue/cache/network/body/decrypt;
+- send: optimistic state, соответствующий DOM, ближайший rAF opportunity,
+  server ACK и финальный promoted DOM;
+- reaction: optimistic state, target DOM, rAF opportunity, server response,
+  финальный authoritative DOM; WebSocket reconciliation не подменяет ACK;
+- connection: offline attempt, фактический close старого socket, открытие
+  нового socket и завершение существующего sync. Если socket сохранился,
+  reconnect остаётся `null` с причиной `socket-preserved`;
+- resume: visible, UI readiness и окончание существующего resume-sync.
+
+`requestAnimationFrame` во всём отчёте означает только возможность browser
+frame callback. Это не аппаратная отметка появления пикселей.
+
+### Попытки, пропуски и ограничения
+
+Каждая операция имеет локальный числовой `attempt`. Это не ID пользователя,
+комнаты, сообщения или файла.
+
+Отсутствующая длительность равна `null`, а `metrics.missing` хранит безопасную
+причину, когда она известна. Перекрывающиеся этапы нельзя суммировать.
+
+Журнал по-прежнему ограничен 240 operations. `dropped` показывает, сколько
+новых записей не поместилось. `pendingRecords` показывает ещё незавершённые
+наблюдения.
+
+Отчёт RAM-only: reload/закрытие процесса теряет текущий журнал. Если нужен файл
+«до reload/process kill», скачать его нужно **до** такого действия.
+
+Скачивание не очищает журнал. Повторное скачивание проверено. Reset очищает
+только diagnostic records/watches/counters и не очищает чаты, identity,
+черновики, media cache или scroll persistence.
+
+### Build identity
+
+`buildIdentity.appRevision` берётся из уже загруженного revisioned
+`app.js` URL и не требует сетевого запроса.
+
+Для Build 190.3 в проверенной ветке:
+
+`5bb585b52b190bf9d80a779a4ffc68842f13214b`
+
+Это Git blob SHA фактически загруженного `public/app.js`, проверяемый
+существующим серверным app-revision contract.
+
+### Проверка
+
+Финальный GitHub Actions run:
+
+`36522042691` — **SUCCESS**.
+
+Проверены существующая кнопка скачивания, один накопленный JSON с room/history/
+preview/original/send/reaction/connection/resume, повторное скачивание без
+очистки, bounded buffer, privacy, cancelled A→B, scroll/history после Build
+190.2 fix, media, send/reaction и single-owner contracts.
+
+CI visibility simulation проверяет wiring resume-hooks, но не считается
+физической iOS/Android background acceptance.
+
