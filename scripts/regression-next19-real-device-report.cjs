@@ -7,6 +7,7 @@ const {execFileSync}=require('node:child_process');
 const {run}=require('./browser-harness174.cjs');
 
 run(async({newClient,errors,temp,root})=>{
+  const expectedBuild=String(JSON.parse(fs.readFileSync(path.join(root,'public/version.json'),'utf8')).build);
   const page=await newClient();
   await page.waitForFunction(()=>window.FPRuntime169?.loading&&window.FPNetwork171&&window.FPConnection170&&window.FPHistory174&&window.__fpSettings131Installed,null,{timeout:30000});
 
@@ -151,7 +152,7 @@ run(async({newClient,errors,temp,root})=>{
   const beforeExport=await page.evaluate(()=>window.FPRuntime169.loading.report());
   assert.equal(beforeExport.activeElementWatches,0,'diagnostic element subscriptions leaked');
   assert.equal(beforeExport.schema,2);
-  assert.equal(beforeExport.build,'190.2');
+  assert.equal(beforeExport.build,expectedBuild,'downloaded report build must match public/version.json');
   assert.match(String(beforeExport.appRevision||''),/^[a-f0-9]{40}$/i);
   assert.equal(beforeExport.limit,240);
   assert.ok(Number.isInteger(beforeExport.dropped)&&beforeExport.dropped>=0);
