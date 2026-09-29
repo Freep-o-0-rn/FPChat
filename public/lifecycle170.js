@@ -5,6 +5,56 @@
   if (window.FPLifecycle170) return;
 
   const subscribers = new Set();
+  let resumeDiagnostic = null;
+
+  function diagnostic() { return window.FPRuntime169?.loading || null; }
+  function finishResumeDiagnostic(status = 'ok', outcome = 'ready', reason = '') {
+    const current = resumeDiagnostic;
+    if (!current) return;
+    if (current.raf) cancelAnimationFrame(current.raf);
+    diagnostic()?.annotate(current.token,{outcome,reason,actualResultVerified:status==='ok'});
+    diagnostic()?.finish(current.token,status);
+    resumeDiagnostic = null;
+  }
+  function maybeFinishResumeDiagnostic() {
+    const current = resumeDiagnostic;
+    if (!current || !current.uiReady || !current.syncDone) return;
+    finishResumeDiagnostic(current.syncOk === false ? 'error' : 'ok', current.syncOk === false ? 'sync-failed' : 'ready', current.syncReason || '');
+  }
+  function beginResumeDiagnostic(source = 'foreground') {
+    if (resumeDiagnostic) return resumeDiagnostic.token;
+    const token = diagnostic()?.begin('resume',{syncRequired:true,ui:source});
+    if (!token) return null;
+    resumeDiagnostic = {token,raf:0,uiReady:false,syncDone:false,syncOk:null,syncReason:''};
+    diagnostic()?.step(token,'visible');
+    if (document.visibilityState === 'visible') {
+      resumeDiagnostic.raf=requestAnimationFrame(()=>{
+        const current=resumeDiagnostic;
+        if(!current||current.token?.id!==token.id)return;
+        current.raf=0;current.uiReady=true;
+        diagnostic()?.step(token,'ui-ready');
+        maybeFinishResumeDiagnostic();
+      });
+    } else {
+      diagnostic()?.annotate(token,{reason:'visibility-not-visible'});
+    }
+    return token;
+  }
+  function noteDiagnosticSyncStart() {
+    const token=resumeDiagnostic?.token||null;
+    diagnostic()?.step(token,'sync-start');
+    return token;
+  }
+  function noteDiagnosticSyncReady(ok = true, reason = '') {
+    const current=resumeDiagnostic;
+    if(!current)return false;
+    current.syncDone=true;current.syncOk=ok!==false;current.syncReason=String(reason||'').slice(0,64);
+    diagnostic()?.step(current.token,'sync-ready');
+    diagnostic()?.annotate(current.token,{sync:current.syncOk?'complete':'failed',reason:current.syncReason});
+    maybeFinishResumeDiagnostic();
+    return true;
+  }
+
   const state = {
     visibility: document.visibilityState,
     online: navigator.onLine !== false,
@@ -38,6 +88,8 @@
     const next = document.visibilityState;
     if (state.visibility === next) return;
     state.visibility = next;
+    if (next === 'visible') beginResumeDiagnostic('foreground');
+    else if (resumeDiagnostic) finishResumeDiagnostic('cancelled','cancelled','background-before-ready');
     emit(next === 'visible' ? 'foreground' : 'background');
   }
 
@@ -69,11 +121,13 @@
     state.pageActive = true;
     state.visibility = document.visibilityState;
     state.online = navigator.onLine !== false;
+    if (state.visibility === 'visible') beginResumeDiagnostic(event?.persisted ? 'pageshow-bfcache' : 'pageshow');
     emit('pageshow', { persisted: Boolean(event?.persisted) });
   }
 
   function onPageHide(event) {
     state.pageActive = false;
+    if (resumeDiagnostic) finishResumeDiagnostic('cancelled','cancelled','pagehide-before-ready');
     emit('pagehide', { persisted: Boolean(event?.persisted) });
   }
 
@@ -103,11 +157,15 @@
     window.removeEventListener('pageshow', onPageShow);
     window.removeEventListener('pagehide', onPageHide);
     subscribers.clear();
+    if (resumeDiagnostic) finishResumeDiagnostic('cancelled','cancelled','lifecycle-destroyed');
   }
 
   window.FPLifecycle170 = Object.freeze({
     snapshot,
     subscribe,
+    diagnosticResumeToken: () => resumeDiagnostic?.token || null,
+    noteDiagnosticSyncStart,
+    noteDiagnosticSyncReady,
     destroy
   });
 
