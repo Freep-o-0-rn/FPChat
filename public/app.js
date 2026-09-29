@@ -2357,6 +2357,7 @@ const handleAppResume=()=>{
 };
 window.FPLifecycle170?.subscribe(event=>{
   const loading19=window.FPRuntime169?.loading;
+  if(event.lastType==='online')window.FPConnection170?.reportPreservedIfOpen?.();
   if((event.lastType==='foreground'||event.lastType==='pageshow')&&event.pageActive&&event.visibility==='visible'&&!appResumeTrace19){
     appResumeTrace19=loading19?.begin?.('resume')||null;
     loading19?.tag?.(appResumeTrace19,'source','owner-event');
