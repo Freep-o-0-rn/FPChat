@@ -433,8 +433,8 @@
       direction:new Set(['older','newer']),
       operation:new Set(['add','remove']),
       variant:new Set(['preview','original']),
-      outcome:new Set(['accepted','rejected','local-noop','socket-preserved','reconnected','sync-complete','ok','cancelled','error']),
-      reason:new Set(['none','pending','not-observed','not-applicable','ram-source','socket-preserved','no-connection','room-changed','aborted','network','rejected','superseded','context-stale','unknown'])
+      outcome:new Set(['accepted','rejected','local-noop','reconciled-ws','socket-preserved','reconnected','sync-complete','ok','cancelled','error']),
+      reason:new Set(['none','pending','not-observed','not-applicable','ram-source','ack-not-observed','socket-preserved','no-connection','room-changed','aborted','network','rejected','superseded','context-stale','unknown'])
     });
     const latePhases = new Set(['messages-revealed','visible-frame','frame-opportunity','final-dom']);
     let sequence = 0, dropped = 0, enabled = true, sweepQueued = false;
