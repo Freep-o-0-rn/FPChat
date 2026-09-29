@@ -172,6 +172,7 @@ run(async ({newClient, temp, root, errors}) => {
   await page.locator('#msgInput').fill('item19-send-fixture');
   await page.locator('#sendForm').evaluate(form=>form.requestSubmit());
   await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.status!=='pending'),null,{timeout:10000});
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.points['frame-opportunity']!==undefined),null,{timeout:5000});
   let actionReport=await report();
   const sendAttempt=actionReport.records.find(r=>r.kind==='send');
   assert.equal(sendAttempt.status,'ok',JSON.stringify(sendAttempt));
@@ -202,7 +203,6 @@ run(async ({newClient, temp, root, errors}) => {
   assert.equal(reactionAttempt.actualResultVerified,true);
   await page.waitForTimeout(30);
   assert.equal((await report()).records.find(r=>r.id===reactionAttempt.id).points['frame-opportunity']!==undefined,true);
-  assert.equal(FPRuntime169?.loading?.report?true:false,true);
   assert.equal(await page.evaluate(()=>FPReactionManager188.snapshot().pendingMutations),0);
   pass('real reaction keeps manager, target DOM, frame opportunity, server confirmation and final outcome separate');
 
