@@ -365,7 +365,11 @@
     }
     const publicId = String(item.public_id || '');
     container.dataset.publicId = publicId;
+    const diagnostic186=window.FPRuntime169?.loading;
+    const consumer186=active?'gallery-current':'gallery-neighbor';
+    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob',mediaType:item?.media_kind});
     const preview = active ? viewerPhotoPreview(viewerState, item) : null;
+    diagnostic186?.annotate(trace186,{previewAvailable:Boolean(preview)});
     let previewImage = null;
     if (preview) {
       previewImage = document.createElement('img');
@@ -376,14 +380,13 @@
       previewImage.dataset.fpViewerSource = 'preview';
       previewImage.classList.add('fp-gallery134-photo-preview');
       container.replaceChildren(previewImage);
+      diagnostic186?.step(trace186,'preview-ready');
       bindPhoto185(viewerInteraction, previewImage, viewerState, publicId);
     } else {
+      diagnostic186?.annotate(trace186,{preview:'not-available'});
       container.innerHTML = '<div class="media-progress-ring">Загрузка...</div>';
     }
 
-    const diagnostic186=window.FPRuntime169?.loading;
-    const consumer186=active?'gallery-current':'gallery-neighbor';
-    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob'});
     diagnostic186?.step(trace186,'asset-start');
     void loadAsset(viewerState.fpRoomId, item, trace186, consumer186).then(async (asset) => {
       diagnostic186?.step(trace186,'asset-ready');
