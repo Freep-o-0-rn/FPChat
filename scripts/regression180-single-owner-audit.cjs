@@ -180,14 +180,23 @@ for(const token of [
 ]) assert.equal(occurrences(gesture,token),1,'gesture root listener missing/duplicated: '+token);
 assert.equal(count(gesture,/setInterval\s*\(/g),0,'gesture arbiter gained polling timer');
 
-// Message scroll: normal writer + explicit failed-owner fallback only.
+// Message scroll: FPScroll173 is the sole geometry writer. FPScrollArbiter1907
+// may resolve/authorize intent but must never mutate #messages geometry itself.
 assert.equal(occurrences(app,'window.FPScroll173=scrollCoordinator;'),1,'FPScroll173 export duplicated');
+assert.equal(occurrences(app,'window.FPScrollArbiter1907=Object.freeze'),1,'FPScrollArbiter1907 facade missing/duplicated');
 assert(app.includes("if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;"),'FPScroll173 central executor changed');
+const arbiterStart=app.indexOf('const scrollIntentArbiter1907=');
+const arbiterEnd=app.indexOf('const scrollCoordinator=',arbiterStart);
+assert(arbiterStart>=0&&arbiterEnd>arbiterStart,'scroll arbiter block missing');
+const scrollArbiter=app.slice(arbiterStart,arbiterEnd);
+assert(!/\.scrollTop\s*=/.test(scrollArbiter),'scroll arbiter became a geometry writer');
+assert(!/\.scrollTo\s*\(/.test(scrollArbiter),'scroll arbiter gained scrollTo authority');
+assert(!scrollArbiter.includes('requestBottom('),'scroll arbiter gained executor behavior');
 const removal=exactFn(actions,'keepViewportWhileRemoving');
 assert(!/box\.scrollTop\s*=/.test(removal),'message removal reintroduced direct message scroll writer');
-assert(viewport.includes('if (window.FPScroll173?.requestBottom) {\n          window.FPScroll173.requestBottom(box);\n          return;'),'viewport does not prefer FPScroll173 before fallback');
-assert(viewport.includes("if (typeof scrollCoordinator !== 'undefined' && scrollCoordinator?.requestBottom) {\n          scrollCoordinator.requestBottom(box);\n          return;"),'legacy scroll coordinator fallback guard changed');
-assert.equal(occurrences(viewport,'box.scrollTop = box.scrollHeight;'),1,'known failed-owner message-scroll fallback count changed');
+assert(viewport.includes('if (window.FPScroll173?.requestBottom) {\n          window.FPScroll173.requestBottom(box);\n          return;'),'viewport no longer delegates bottom pin to FPScroll173');
+assert(!viewport.includes("typeof scrollCoordinator !== 'undefined'"),'viewport still reaches lexical scroll owner directly');
+assert.equal(occurrences(viewport,'box.scrollTop = box.scrollHeight;'),0,'viewport reintroduced direct #messages scroll writer');
 
 // Viewport numeric property writers.
 for(const variable of ['--fpchat-visible-height','--fpchat-viewport-correction-y']){
@@ -243,7 +252,7 @@ for(const forbidden of ['AppCoordinator180','FPAppCoordinator180','app-coordinat
 console.log('PASS 180.11 RoomContext/lifecycle/WS/sync owners have one writer/listener/timer boundary');
 console.log('PASS 180.11 fetch/XHR/cache/media-budget physical mutation ownership is singular');
 console.log('PASS 180.11 MessageStore/render/read/composer/send ownership is singular');
-console.log('PASS 180.11 media UI, layer, gesture, scroll and viewport ownership is singular with documented guarded fallbacks');
+console.log('PASS 190.7 message scroll has one writer: FPScroll173; arbitration remains write-free');
 console.log('PASS 180.11 history/server composition/block authority have one canonical writer path');
 console.log('PASS 180.11 accepted safety/compatibility timers remain visible and separated from authority');
 console.log('PASS 180.11 startup readiness still has one coordination boundary and no second coordinator');
