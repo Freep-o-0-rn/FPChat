@@ -62,6 +62,9 @@
     }
 
     const operation = contexts.beginOperation(roomId, 'text-send');
+    const diagnostic19=window.FPRuntime169?.loading;
+    const trace19=diagnostic19?.begin?.('send');
+    diagnostic19?.tag?.(trace19,'source','owner-event');
     sendingForms.add(form);
     const senderName = String(state?.nick || '');
 
@@ -69,6 +72,7 @@
       const connected = await ensureWsConnected(deviceId);
       if (!connected || !state.ws || state.ws.readyState !== WebSocket.OPEN || state.ws.deviceId !== deviceId) {
         if (contexts.isCurrent(context)) alert('Нет соединения. Попробуйте обновить чат.');
+        diagnostic19?.result?.(trace19,'error','network-error'); diagnostic19?.finish?.(trace19,'error');
         finish(operation, 'connection-failed');
         return;
       }
@@ -105,14 +109,21 @@
       const stillVisible = contexts.isCurrent(context) && String(state?.roomId || '') === roomId;
       const box = stillVisible ? document.getElementById('messages') : null;
       try {
+        let optimisticEl=null;
         if (box) {
           appendDateSeparatorIfNeeded(box, createdAt);
-          appendMessage(box, tempMessage, text, true, true);
+          optimisticEl=appendMessage(box, tempMessage, text, true, true);
         }
         upsertRoomMessage(roomId, tempMessage, { text, unread: 0 });
-        if (!queuePendingTextSend(outbound)) throw new Error('queue');
+        diagnostic19?.step?.(trace19,'optimistic-ready');
+        if(optimisticEl?.isConnected){
+          diagnostic19?.step?.(trace19,'dom-ready');
+          if(document.visibilityState==='visible')requestAnimationFrame(()=>{if(optimisticEl?.isConnected)diagnostic19?.step?.(trace19,'frame-opportunity');});
+        }
+        if (!queuePendingTextSend(outbound,trace19)) throw new Error('queue');
       } catch {
         if (stillVisible) alert('Не удалось отправить сообщение. Проверьте соединение.');
+        diagnostic19?.result?.(trace19,'error','owner-error'); diagnostic19?.finish?.(trace19,'error');
         finish(operation, 'queue-failed');
         return;
       }
@@ -143,6 +154,7 @@
       }
       finish(operation, 'queued');
     } catch (error) {
+      diagnostic19?.result?.(trace19,error?.name==='AbortError'?'cancelled':'error',error?.name==='AbortError'?'aborted':'owner-error'); diagnostic19?.finish?.(trace19,error?.name==='AbortError'?'cancelled':'error');
       finish(operation, error?.name === 'AbortError' ? 'cancelled' : 'failed');
       if (contexts.isCurrent(context)) alert('Не удалось отправить сообщение. Проверьте соединение.');
     } finally {
