@@ -95,6 +95,8 @@ run(async({newClient,errors,temp,root})=>{
     });
   },messageId);
   await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),null,{timeout:15000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.points['frame-opportunity']!==undefined),null,{timeout:5000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['frame-opportunity']!==undefined),null,{timeout:5000});
 
   // Preserved old socket: real browser offline -> online transition. This
   // must not be manufactured by the diagnostics layer.
@@ -135,17 +137,20 @@ run(async({newClient,errors,temp,root})=>{
   assert.match(String(beforeExport.appRevision||''),/^[a-f0-9]{40}$/i);
   assert.equal(beforeExport.limit,240);
   assert.ok(Number.isInteger(beforeExport.dropped)&&beforeExport.dropped>=0);
+  const cancelledRoom=beforeExport.records.find(r=>r.kind==='room'&&r.status==='cancelled');
+  assert.ok(cancelledRoom,'interrupted A->B room attempt missing');
+  for(const point of ['text-ready','composer-ready','scroll-ready'])assert.equal(cancelledRoom.missing[point],'cancelled','cancelled room '+point+' missing reason');
   assert.ok(beforeExport.records.some(r=>r.kind==='room'&&r.repeated===true),'repeat room open missing');
   assert.ok(beforeExport.records.some(r=>r.kind==='room'&&r.source==='ram-reuse'),'RAM reuse tag missing');
   assert.ok(beforeExport.records.some(r=>r.kind==='room'&&r.restore),'scroll restore outcome missing');
   assert.ok(beforeExport.records.some(r=>r.kind==='history'&&['network-history','ram-reuse'].includes(r.source)),'history attempt missing');
   const send=beforeExport.records.find(r=>r.kind==='send'&&r.points['ack-ready']!==undefined);
   assert.ok(send,'send attempt missing');
-  for(const stage of ['optimistic-ready','dom-ready','ack-ready','outcome-ready'])assert.notEqual(send.points[stage],undefined,'send '+stage+' missing');
+  for(const stage of ['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'])assert.notEqual(send.points[stage],undefined,'send '+stage+' missing');
   assert.equal(send.result,'ok');
   const reaction=beforeExport.records.find(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined);
   assert.ok(reaction,'reaction attempt missing');
-  for(const stage of ['optimistic-ready','dom-ready','ack-ready','outcome-ready'])assert.notEqual(reaction.points[stage],undefined,'reaction '+stage+' missing');
+  for(const stage of ['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'])assert.notEqual(reaction.points[stage],undefined,'reaction '+stage+' missing');
   assert.equal(reaction.result,'ok');
   const preserved=beforeExport.records.find(r=>r.kind==='connection'&&r.result==='preserved-live-socket');
   assert.ok(preserved,'preserved live socket attempt missing');
