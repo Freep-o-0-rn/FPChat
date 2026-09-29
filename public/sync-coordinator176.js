@@ -3,12 +3,28 @@
 (() => {
   if (window.FPSyncCoordinator176) return;
 
-  function syncAfterReconnect(deviceId) {
-    return syncAllRoomsAfterReconnect(deviceId);
+  async function syncAfterReconnect(deviceId) {
+    window.FPConnection170?.noteDiagnosticSyncStart?.();
+    try {
+      const result=await syncAllRoomsAfterReconnect(deviceId);
+      window.FPConnection170?.noteDiagnosticSyncReady?.(result!==false,result===undefined?'sync-complete-no-explicit-result':'');
+      return result;
+    } catch (error) {
+      window.FPConnection170?.noteDiagnosticSyncReady?.(false,'sync-after-reconnect-failed');
+      throw error;
+    }
   }
 
-  function syncAfterResume() {
-    return startAppSessionSync();
+  async function syncAfterResume() {
+    window.FPLifecycle170?.noteDiagnosticSyncStart?.();
+    try {
+      const result=await startAppSessionSync();
+      window.FPLifecycle170?.noteDiagnosticSyncReady?.(result!==false,result===undefined?'sync-not-required-or-no-explicit-result':'');
+      return result;
+    } catch (error) {
+      window.FPLifecycle170?.noteDiagnosticSyncReady?.(false,'sync-after-resume-failed');
+      throw error;
+    }
   }
 
   window.FPSyncCoordinator176 = Object.freeze({
