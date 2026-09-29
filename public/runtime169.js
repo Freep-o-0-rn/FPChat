@@ -422,10 +422,21 @@
   const loading186 = (() => {
     const LIMIT = 240;
     const records = new Map(), contexts = new WeakMap(), watches = new Map();
-    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair']);
+    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair', 'history', 'send', 'reaction', 'connection', 'resume']);
     const consumers = new Set(['chat-thumbnail', 'gallery-current', 'gallery-neighbor', 'other']);
-    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page').split(' '));
+    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page request-start render-ready position-restored optimistic-state dom-change frame-opportunity server-ack final-dom break-confirmed socket-open sync-ready visible ui-ready online').split(' '));
     const cacheStates = new Set(['unknown', 'hit', 'miss', 'expired', 'unavailable', 'error', 'ram-hit', 'ram-pending']);
+    const tagValues = Object.freeze({
+      openType:new Set(['ordinary','repeat']),
+      messageSource:new Set(['ram','load','mixed','unknown']),
+      historySource:new Set(['ram','network']),
+      direction:new Set(['older','newer']),
+      operation:new Set(['add','remove']),
+      variant:new Set(['preview','original']),
+      outcome:new Set(['accepted','rejected','local-noop','socket-preserved','reconnected','sync-complete','ok','cancelled','error']),
+      reason:new Set(['none','pending','not-observed','not-applicable','ram-source','socket-preserved','no-connection','room-changed','aborted','network','rejected','superseded','context-stale','unknown'])
+    });
+    const latePhases = new Set(['messages-revealed','visible-frame','frame-opportunity','final-dom']);
     let sequence = 0, dropped = 0, enabled = true, sweepQueued = false;
     const round = value => Math.round(Math.max(0, value) * 10) / 10;
     const get = token => token && records.get(token.id);
@@ -438,6 +449,9 @@
       if (metadata.endpoint === 'thumb' || metadata.endpoint === 'blob') item.endpoint = metadata.endpoint;
       if (['image','video','audio','file'].includes(metadata.mediaType)) item.mediaType = metadata.mediaType;
       if (Number.isSafeInteger(metadata.parent)) item.parent = metadata.parent;
+      for (const name of ['openType','messageSource','historySource','direction','operation','variant']) {
+        if (tagValues[name]?.has(metadata[name])) item[name] = metadata[name];
+      }
       records.set(id, item);
       while (records.size > LIMIT) { const oldest = records.keys().next().value; cleanup(oldest); records.delete(oldest); dropped++; }
       return Object.freeze({id});
@@ -445,7 +459,7 @@
     function step(token, name, value) {
       const item = get(token);
       if (!enabled || !item || !phases.has(name) || item.status === 'cancelled' || item.status === 'error') return;
-      if (item.status !== 'pending' && !['messages-revealed','visible-frame'].includes(name)) return;
+      if (item.status !== 'pending' && !latePhases.has(name)) return;
       if (item.points[name] === undefined) item.points[name] = round(performance.now() - item.startMs);
       if (name === 'history-page') item.counts.pages = (item.counts.pages || 0) + 1;
       if (['history-ready', 'text-ready'].includes(name) && Number.isFinite(value)) item.counts.messages = Math.max(0, Math.trunc(value));
@@ -456,6 +470,20 @@
       if (name === 'response-ready' && Number.isInteger(value)) item.httpStatus = value;
     }
     function cache(token, state) { const item = get(token); if (item && cacheStates.has(state)) item.cache = state; }
+    function tag(token, name, value) {
+      const item = get(token);
+      const allowed = tagValues[String(name || '')];
+      if (!item || !allowed || !allowed.has(value)) return false;
+      item[name] = value;
+      return true;
+    }
+    function finishWith(token, status = 'ok', outcome = null, reason = null) {
+      const item = get(token);
+      if (!item) return;
+      if (outcome && tagValues.outcome.has(outcome)) item.outcome = outcome;
+      if (reason && tagValues.reason.has(reason)) item.reason = reason;
+      finish(token, status);
+    }
     function finish(token, status = 'ok') {
       const item = get(token);
       if (!item || item.status !== 'pending') return;
@@ -472,6 +500,8 @@
         category: cancelled ? 'abort' : Number.isInteger(httpStatus) ? 'http' : error?.name === 'RangeError' ? 'resource-limit' : stage === 'decrypt' ? 'crypto' : stage === 'element' ? 'decode-or-element' : stage === 'body' || stage === 'buffer' ? 'body-read' : error?.name === 'TypeError' ? 'network-or-type' : 'other'
       };
       if (Number.isInteger(httpStatus)) item.httpStatus = httpStatus;
+      item.outcome = cancelled ? 'cancelled' : 'error';
+      item.reason = cancelled ? 'aborted' : (Number.isInteger(httpStatus) ? 'rejected' : error?.name === 'TypeError' ? 'network' : 'unknown');
       finish(token, cancelled ? 'cancelled' : 'error');
     }
     function roomToken(context) { return context && contexts.get(context); }
@@ -532,6 +562,53 @@
     }, {passive:true});
     function report() {
       const duration = (item, from, to) => item.points[from] === undefined || item.points[to] === undefined ? null : round(item.points[to] - item.points[from]);
+      const point = (item, name) => item.points[name] === undefined ? null : item.points[name];
+      const missingReason = (item, name) => {
+        if (item.points[name] !== undefined) return null;
+        if (item.kind === 'connection' && item.outcome === 'socket-preserved' && ['break-confirmed','socket-open'].includes(name)) return 'socket-preserved';
+        if (item.kind === 'history' && item.historySource === 'ram' && ['request-start','response-ready'].includes(name)) return 'ram-source';
+        if (item.kind === 'viewer' && item.variant === 'preview' && name === 'server-ack') return 'not-applicable';
+        if (item.status === 'pending') return 'pending';
+        return item.reason || 'not-observed';
+      };
+      const derived = item => {
+        if (item.kind === 'room') return {
+          textReadyMs:point(item,'text-ready'), composerReadyMs:point(item,'composer-ready'), positionReadyMs:point(item,'scroll-ready'),
+          missing:{textReadyMs:missingReason(item,'text-ready'),composerReadyMs:missingReason(item,'composer-ready'),positionReadyMs:missingReason(item,'scroll-ready')}
+        };
+        if (item.kind === 'viewer') {
+          const key=item.variant === 'preview' ? 'previewReadyMs' : 'originalReadyMs';
+          return {[key]:point(item,'element-ready'),frameOpportunityMs:point(item,'paint-opportunity'),
+            missing:{[key]:missingReason(item,'element-ready'),frameOpportunityMs:missingReason(item,'paint-opportunity')}};
+        }
+        if (item.kind === 'history') return {
+          responseMs:duration(item,'request-start','response-ready'), renderMs:duration(item,'response-ready','render-ready'),
+          positionRestoreMs:duration(item,'render-ready','position-restored'),
+          missing:{responseMs:missingReason(item,'response-ready'),renderMs:missingReason(item,'render-ready'),positionRestoreMs:missingReason(item,'position-restored')}
+        };
+        if (item.kind === 'send' || item.kind === 'reaction') return {
+          optimisticMs:point(item,'optimistic-state'), domChangeMs:point(item,'dom-change'), frameOpportunityMs:point(item,'frame-opportunity'),
+          ackMs:point(item,'server-ack'), finalDomMs:point(item,'final-dom'),
+          missing:{optimisticMs:missingReason(item,'optimistic-state'),domChangeMs:missingReason(item,'dom-change'),frameOpportunityMs:missingReason(item,'frame-opportunity'),ackMs:missingReason(item,'server-ack'),finalDomMs:missingReason(item,'final-dom')}
+        };
+        if (item.kind === 'connection') return {
+          breakMs:point(item,'break-confirmed'), reconnectMs:duration(item,'break-confirmed','socket-open'), syncReadyMs:duration(item,'socket-open','sync-ready'),
+          missing:{breakMs:missingReason(item,'break-confirmed'),reconnectMs:item.points['break-confirmed']===undefined||item.points['socket-open']===undefined?missingReason(item,'socket-open'):null,syncReadyMs:missingReason(item,'sync-ready')}
+        };
+        if (item.kind === 'resume') return {
+          uiReadyMs:duration(item,'visible','ui-ready'), syncReadyMs:duration(item,'visible','sync-ready'),
+          missing:{uiReadyMs:missingReason(item,'ui-ready'),syncReadyMs:missingReason(item,'sync-ready')}
+        };
+        return null;
+      };
+      const appIdentity = (() => {
+        try {
+          const script=[...document.scripts].find(node=>{try{return new URL(node.src,location.href).pathname==='/app.js';}catch{return false;}});
+          if(!script)return {build:loadingBuild,appRevision:null,source:'runtime-query-only'};
+          const url=new URL(script.src,location.href), revision=String(url.searchParams.get('r')||'');
+          return {build:String(url.searchParams.get('v')||loadingBuild||'')||null,appRevision:/^[a-f0-9]{40}$/i.test(revision)?revision:null,source:'loaded-app-script-query'};
+        } catch { return {build:loadingBuild,appRevision:null,source:'unavailable'}; }
+      })();
       const boot = window.FPBoot152?.timings186?.() || null;
       const bootEnd = boot?.points['boot-ready'] ?? boot?.points['safety-release'] ?? performance.now();
       const startupResources = {};
@@ -541,12 +618,12 @@
         group.count++; group.transferBytes += resource.transferSize; group.encodedBodyBytes += resource.encodedBodySize;
       }
       return {
-        schema:1, build:loadingBuild, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
-        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'hooks from runtime installation; ordinary-entry; direct-entry-starts-after-join', media:'common readEncryptedMedia174 path including voice/save reads; no independent I/O or voice/save playback readiness', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image load, active video loadeddata, neighbor video loadedmetadata and frame opportunity; not native decode duration or actual paint', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
+        schema:1, schemaRevision:19, build:loadingBuild, buildIdentity:appIdentity, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size, pendingRecords:[...records.values()].filter(item=>item.status==='pending').length,
+        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'room-open/render owner hooks; repeat classification is page-session-local and exports no room identity; source distinguishes full MessageStore RAM reuse from load/fallback', history:'actual FPHistory174 older/newer attempts only; RAM pending and network page loads separated', media:'common readEncryptedMedia174 path keeps network/cache/body/decrypt stages; viewer preview/original are separate bounded records', send:'text send owner facts: optimistic state, matching DOM, next rAF opportunity, message ack and promoted final DOM when observed', reaction:'reaction state owner + renderer facts: optimistic state, target DOM, next rAF opportunity, HTTP/WS-confirmed outcome and final DOM when observed', connection:'offline attempts only; confirmed close is required for reconnect duration; preserved socket exports reconnectMs null', resume:'only real background/pagehide followed by visible resume; UI readiness and existing sync completion are separate', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'load/loadeddata plus requestAnimationFrame opportunity; never hardware pixel presentation', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
         boot, startupResources,
         viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio},
         runtime:{visibility:document.visibilityState, online:navigator.onLine, longTasks:longTasks.length, longTaskMs:round(longTasks.reduce((sum, x) => sum + x.durationMs, 0))},
-        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}}))
+        records:[...records.values()].map(item => ({...item, attempt:item.id, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}, metrics:derived(item)}))
       };
     }
     function reset() { for (const id of watches.keys()) cleanup(id); records.clear(); dropped = 0; }
@@ -555,7 +632,7 @@
       const link = document.createElement('a'); link.href = url; link.download = `FPChat-${loadingBuild || 'unknown'}-loading.json`;
       document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
-    return Object.freeze({begin, step, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
+    return Object.freeze({begin, step, cache, tag, finish, finishWith, fail, roomToken, roomEvent, watchElement, report, reset, download,
       setEnabled(value) { enabled = Boolean(value); if (!enabled) reset(); }});
   })();
 
