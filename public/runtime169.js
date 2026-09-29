@@ -514,6 +514,7 @@
       const ready = () => {
         if (!element.isConnected || signal?.aborted) { cancelled(); return; }
         step(token, 'element-ready');
+        if (item.kind === 'viewer' && item.mediaType === 'image' && item.endpoint === 'blob') step(token, 'original-ready');
         // A frame opportunity, not a claim that pixels were painted or that
         // native image decode time can be isolated from the load event.
         if (document.visibilityState !== 'visible') { finish(token); return; }
