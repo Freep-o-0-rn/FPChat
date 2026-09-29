@@ -13,6 +13,7 @@ run(async({browser,newClient,origin,errors,temp,root})=>{
     const specs=[
       {name:'interrupt',count:450,incoming:false},
       {name:'explicit',count:450,incoming:false},
+      {name:'bottom',count:450,incoming:false},
       {name:'cold',count:450,incoming:false},
       {name:'tabs',count:450,incoming:false},
       {name:'deleted',count:650,incoming:true}
@@ -45,19 +46,20 @@ run(async({browser,newClient,origin,errors,temp,root})=>{
     const ids=db.prepare('SELECT id FROM messages WHERE room_id=? ORDER BY id ASC').all(room.id).map(row=>Number(row.id));
     return{...fixture,...seeded[index],dbRoomId:Number(room.id),ids};
   }
-  const INTERRUPT=info('interrupt'),EXPLICIT=info('explicit'),COLD=info('cold'),TABS=info('tabs'),DELETED=info('deleted');
+  const INTERRUPT=info('interrupt'),EXPLICIT=info('explicit'),BOTTOM=info('bottom'),COLD=info('cold'),TABS=info('tabs'),DELETED=info('deleted');
   const legacy=db.prepare(
     "INSERT INTO chat_view_state(room_id,device_id,anchor_message_id,anchor_offset_px,at_bottom,client_seq,updated_at) VALUES(?,?,?,?,?,0,datetime('now')) "+
     "ON CONFLICT(room_id,device_id) DO UPDATE SET anchor_message_id=excluded.anchor_message_id,anchor_offset_px=excluded.anchor_offset_px,at_bottom=excluded.at_bottom,client_seq=0,updated_at=datetime('now')"
   );
   INTERRUPT.saved=INTERRUPT.ids[250];legacy.run(INTERRUPT.dbRoomId,INTERRUPT.deviceId,INTERRUPT.saved,17,0);
   EXPLICIT.saved=EXPLICIT.ids[250];legacy.run(EXPLICIT.dbRoomId,EXPLICIT.deviceId,EXPLICIT.saved,17,0);
+  BOTTOM.saved=BOTTOM.ids[250];legacy.run(BOTTOM.dbRoomId,BOTTOM.deviceId,BOTTOM.saved,17,0);
   legacy.run(COLD.dbRoomId,COLD.deviceId,null,0,1);
   legacy.run(TABS.dbRoomId,TABS.deviceId,null,0,1);
   DELETED.saved=DELETED.ids[100];legacy.run(DELETED.dbRoomId,DELETED.deviceId,DELETED.saved,13,0);
   db.prepare("UPDATE messages SET deleted_for_all=1,deleted_at=datetime('now') WHERE id=? AND room_id=?").run(DELETED.saved,DELETED.dbRoomId);
 
-  const states=Object.fromEntries([INTERRUPT,EXPLICIT,COLD,TABS,DELETED].map(item=>[item.roomId,{deviceId:item.deviceId,secret:item.secret}]));
+  const states=Object.fromEntries([INTERRUPT,EXPLICIT,BOTTOM,COLD,TABS,DELETED].map(item=>[item.roomId,{deviceId:item.deviceId,secret:item.secret}]));
   const page=await newClient(async p=>{
     await p.addInitScript(({deviceId})=>{
       localStorage.setItem('fpchat:device-id',deviceId);
@@ -124,6 +126,41 @@ run(async({browser,newClient,origin,errors,temp,root})=>{
   },explicitTarget);
   assert.notEqual(explicitOffset,null);
   assert.ok(Math.abs(explicitOffset-15)<=3,JSON.stringify({explicitOffset}));
+  await restoreLayoutWait();
+
+  // 2b. Reproduce the physical 190.5 failure: the down-pill click is first
+  // observed as generic user input, then queues explicit bottom. Explicit
+  // navigation must win arbitration instead of leaving the opening viewport at 0.
+  await page.evaluate(()=>setView('chats'));
+  await installLayoutGate();
+  await page.evaluate(roomId=>{window.__scrollOpenPromise=openChat(roomId);return true;},BOTTOM.roomId);
+  await page.waitForFunction(()=>FPScroll173.isOpening()&&document.querySelectorAll('#messages .bubble-wrap.msg').length>20);
+  const beforeBottomClicks=await page.evaluate(()=>({
+    top:document.getElementById('messages').scrollTop,
+    arbiter:FPScrollArbiter1907.snapshot()
+  }));
+  await page.evaluate(()=>{
+    const pill=document.getElementById('newMessagesPill');
+    if(!pill)throw new Error('new messages pill missing');
+    pill.click();pill.click();pill.click();
+  });
+  const queuedBottom=await page.evaluate(()=>FPScrollArbiter1907.snapshot());
+  assert.equal(queuedBottom.explicitType,'bottom',JSON.stringify({beforeBottomClicks,queuedBottom}));
+  assert.equal(queuedBottom.userInterrupted,true,'physical click/input side must coexist with explicit bottom during opening');
+  await releaseLayoutGate();
+  await page.evaluate(()=>window.__scrollOpenPromise);
+  const afterBottom=await page.evaluate(()=>{
+    const box=document.getElementById('messages');
+    return{
+      top:box.scrollTop,
+      max:Math.max(0,box.scrollHeight-box.clientHeight),
+      phase:FPScroll173.snapshot().phase,
+      arbiter:FPScrollArbiter1907.snapshot()
+    };
+  });
+  assert.ok(Math.abs(afterBottom.max-afterBottom.top)<=2,JSON.stringify({beforeBottomClicks,queuedBottom,afterBottom}));
+  assert.equal(afterBottom.phase,'ready');
+  assert.equal(afterBottom.arbiter.lastDecision,'explicit-bottom');
   await restoreLayoutWait();
 
   // 3. Cold-start restoration uses a durable local snapshot even when the
@@ -251,6 +288,7 @@ run(async({browser,newClient,origin,errors,temp,root})=>{
   assert.deepEqual(errors,[]);
   console.log('PASS delayed initial restore yields to user scroll');
   console.log('PASS explicit focus during opening overrides background restore');
+  console.log('PASS 190.7 repeated down-pill during opening overrides generic interruption and reaches true tail');
   console.log('PASS cold start restores last durable local snapshot without relying on lifecycle network save');
   console.log('PASS stale background tab cannot overwrite a newer shared-device position');
   console.log('PASS bfcache-style pageshow does not re-run initial restore on the live viewport');
