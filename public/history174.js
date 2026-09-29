@@ -203,25 +203,45 @@
   async function load(direction){
     const history=activeChatHistory,box=document.getElementById('messages');
     if(!history||!isCurrentMessagesBox(box)||history.loading||scrollCoordinator.isOpening())return false;
+    const diagnostic19=window.FPRuntime169?.loading;
+    const trace19=diagnostic19?.begin('history',{operation:String(direction||'unknown')});
+    diagnostic19?.step(trace19,'history-start');
     const local=pending(history.roomId);
     const index=new Map(local.map((r,i)=>[r.clientMessageId,i]));
     const mountedLocal=nodes(box).map(n=>index.get(n.dataset.clientMessageId||n.dataset.messageId)).filter(i=>i!==undefined);
     const first=mountedLocal.length?Math.min(...mountedLocal):local.length;
     const last=mountedLocal.length?Math.max(...mountedLocal):-1;
-    if(direction==='older'&&mountedLocal.length&&first>0)return loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction);
-    if(direction==='newer'&&!history.hasNewer&&last<local.length-1)return loadPending(history,box,local.slice(last+1,last+1+PAGE),direction);
-    if(direction==='older'?!history.hasMore:!history.hasNewer)return false;
+    if(direction==='older'&&mountedLocal.length&&first>0){
+      diagnostic19?.annotate(trace19,{dataSource:'ram'});
+      return loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction,trace19);
+    }
+    if(direction==='newer'&&!history.hasNewer&&last<local.length-1){
+      diagnostic19?.annotate(trace19,{dataSource:'ram'});
+      return loadPending(history,box,local.slice(last+1,last+1+PAGE),direction,trace19);
+    }
+    if(direction==='older'?!history.hasMore:!history.hasNewer){
+      diagnostic19?.annotate(trace19,{dataSource:'none',outcome:'no-more-history',reason:'range-exhausted'});
+      diagnostic19?.finish(trace19);
+      return false;
+    }
     const cursor=direction==='older'?history.nextCursor:history.newerCursor;
-    if(!Number.isSafeInteger(cursor)||cursor<=0)return false;
+    if(!Number.isSafeInteger(cursor)||cursor<=0){
+      diagnostic19?.annotate(trace19,{dataSource:'none',outcome:'no-more-history',reason:'invalid-cursor'});
+      diagnostic19?.finish(trace19);
+      return false;
+    }
     const view=captureRoomView170(),task=transaction(history,view);
+    diagnostic19?.annotate(trace19,{dataSource:'network'});
     try{
       const data=await page(view,{[direction==='older'?'before':'after']:String(cursor)},task.signal);
-      if(!task.current())return false;
+      diagnostic19?.step(trace19,'history-ready',Array.isArray(data?.messages)?data.messages.length:0);
+      if(!task.current()){diagnostic19?.annotate(trace19,{outcome:'cancelled',reason:'stale-room'});diagnostic19?.finish(trace19,'cancelled');return false;}
       const existing=new Set(nodes(box).map(n=>String(n.dataset.messageId)));
       const unique=data.messages.filter(m=>!existing.has(String(m.id)));
       ingestReactionPage188(view,data,unique);
+      diagnostic19?.step(trace19,'render-start');
       const scratch=await render(view,unique,history.deviceId,task.current);
-      if(!task.current()){nodes(scratch).forEach(dispose);return false;}
+      if(!task.current()){nodes(scratch).forEach(dispose);diagnostic19?.annotate(trace19,{outcome:'cancelled',reason:'stale-after-render'});diagnostic19?.finish(trace19,'cancelled');return false;}
       reconcileBeforeMount(view,scratch,history.deviceId);
       const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;
       const fragment=document.createDocumentFragment();while(scratch.firstChild)fragment.appendChild(scratch.firstChild);
@@ -230,29 +250,46 @@
       if(direction==='older'){history.hasMore=Boolean(data.hasMore);history.nextCursor=Number(data.nextCursor)||cursor;}
       else{history.hasNewer=Boolean(data.hasMore);history.newerCursor=Number(data.nextCursor)||cursor;}
       finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);
-      // A page can contain only canonical tombstones. Advance the API cursor
-      // even when none of those records produced a mounted node.
+      diagnostic19?.step(trace19,'text-ready',unique.length);
       const next=Number(data.nextCursor)||Number(direction==='older'?data.messages[0]?.id:data.messages.at(-1)?.id);
       if(Number.isSafeInteger(next)&&next>0)history[direction==='older'?'nextCursor':'newerCursor']=next;
       scheduleViewStateSave();
+      diagnostic19?.annotate(trace19,{outcome:unique.length?'loaded':'empty-page'});
+      diagnostic19?.finish(trace19);
       return unique.length>0;
-    }catch(error){if(error.name!=='AbortError')console.warn('History window load failed',error);return false;}
+    }catch(error){
+      if(error.name!=='AbortError')console.warn('History window load failed',error);
+      diagnostic19?.annotate(trace19,{outcome:error?.name==='AbortError'?'cancelled':'failed',reason:error?.name==='AbortError'?'abort':'history-load-failed'});
+      diagnostic19?.fail(trace19,'history',error);
+      return false;
+    }
     finally{task.finish();}
   }
-  async function loadPending(history,box,records,direction){
+  async function loadPending(history,box,records,direction,trace19=null){
+    const diagnostic19=window.FPRuntime169?.loading;
+    diagnostic19?.step(trace19,'history-ready',Array.isArray(records)?records.length:0);
     const view=captureRoomView170(),task=transaction(history,view),scratch=document.createElement('div');
     try{
+      diagnostic19?.step(trace19,'render-start');
       await FPWork174.each(records,record=>{
         if(findMessageElement(record.id,record.clientMessageId))return;
         appendMessage(scratch,{...record.raw,id:record.id||record.clientMessageId,status:record.status},record.text,true,false);
       },{current:task.current});
-      if(!task.current())return false;
+      if(!task.current()){diagnostic19?.annotate(trace19,{outcome:'cancelled',reason:'stale-room'});diagnostic19?.finish(trace19,'cancelled');return false;}
       reconcileBeforeMount(view,scratch,history.deviceId);
       const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;
       const fragment=document.createDocumentFragment();while(scratch.firstChild)fragment.appendChild(scratch.firstChild);
       if(direction==='older')box.insertBefore(fragment,nodes(box).find(n=>!Number.isSafeInteger(id(n)))||null);
       else box.appendChild(fragment);
-      finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);return true;
+      finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);
+      diagnostic19?.step(trace19,'text-ready',Array.isArray(records)?records.length:0);
+      diagnostic19?.annotate(trace19,{outcome:'loaded'});
+      diagnostic19?.finish(trace19);
+      return true;
+    }catch(error){
+      diagnostic19?.annotate(trace19,{outcome:error?.name==='AbortError'?'cancelled':'failed',reason:error?.name==='AbortError'?'abort':'ram-history-render-failed'});
+      diagnostic19?.fail(trace19,'history',error);
+      throw error;
     }finally{nodes(scratch).forEach(dispose);task.finish();}
   }
   function jump(anchor=0){
