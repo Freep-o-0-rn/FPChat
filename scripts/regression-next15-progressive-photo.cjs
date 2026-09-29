@@ -178,6 +178,12 @@ run(async({newClient,errors})=>{
   assert.equal(originalState.layout.width,previewState.layout.width,'photo layout width jumped on original swap');
   assert.equal(originalState.layout.height,previewState.layout.height,'photo layout height jumped on original swap');
   assert.ok(Math.abs(originalState.matrix-2)<0.03,'zoom was reset by original swap');
+  const viewerDiagnostic=await page.evaluate(()=>[...FPRuntime169.loading.report().records].reverse().find(row=>
+    row.kind==='viewer'&&row.consumer==='gallery-current'&&row.mediaType==='image'&&
+    row.points['preview-ready']!==undefined&&row.points['original-ready']!==undefined
+  )||null);
+  assert.ok(viewerDiagnostic,'item 19 viewer diagnostics missed preview/original readiness');
+  assert.ok(viewerDiagnostic.stagesMs.previewToOriginal!==null,'preview-to-original duration missing');
 
   const beforePan=await currentPhoto().evaluate(img=>new DOMMatrix(getComputedStyle(img).transform).e);
   await pointer('pointerdown',3,180,430);
