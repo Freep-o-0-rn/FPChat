@@ -702,12 +702,12 @@
               }
             );
             const data = await response.json().catch(() => null);
+            diagnostic?.step(diagnosticToken,'server-ack');
             if (!response.ok || !data?.ok) {
               const error = mutationError(data?.code || `REACTION_HTTP_${response.status}`, data?.error || 'reaction failed');
               error.status = response.status;
               throw error;
             }
-            diagnostic?.step(diagnosticToken,'server-ack');
             applyAuthoritative(room, message, data, { diagnosticId: diagnosticToken?.id });
             stats.mutationsConfirmed += 1;
             diagnostic?.finishWith(diagnosticToken,'ok','accepted','none');
@@ -746,7 +746,7 @@
       const cancelled = error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL');
       if (cancelled) stats.mutationsCancelled += 1;
       else stats.mutationsFailed += 1;
-      diagnostic?.finishWith(diagnosticToken,cancelled?'cancelled':'error',cancelled?'cancelled':'error',cancelled?'aborted':(Number(error?.status)?'rejected':'unknown'));
+      diagnostic?.finishWith(diagnosticToken,cancelled?'cancelled':'error',cancelled?'cancelled':'error',cancelled?'aborted':(Number(error?.status)?'rejected':error?.name==='TypeError'?'network':'unknown'));
       throw error;
     }).finally(() => {
       const removed = removePendingEntry(entry);
