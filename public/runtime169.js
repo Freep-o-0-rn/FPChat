@@ -580,7 +580,8 @@
         const missing = {};
         for (const point of expected) {
           if (item.points[point] !== undefined) continue;
-          if (item.status === 'cancelled') missing[point] = 'cancelled';
+          if (item.result === 'no-op') missing[point] = 'not-applicable-no-op';
+          else if (item.status === 'cancelled') missing[point] = 'cancelled';
           else if (item.status === 'error') missing[point] = item.reason || 'error-before-stage';
           else if (item.result === 'preserved-live-socket' && point === 'reconnect-open') missing[point] = 'no-break-old-socket-preserved';
           else if (item.syncRequired === false && point === 'sync-ready') missing[point] = 'sync-not-required';
