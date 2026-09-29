@@ -54,6 +54,11 @@
     const deviceId = roomStoredDevice(roomId) || String(activeChatDeviceId || '');
     if (!deviceId) return;
 
+    const diagnostic19 = window.FPRuntime169?.loading;
+    const trace19 = diagnostic19?.begin?.('send');
+    diagnostic19?.annotate?.(trace19, { action: 'text', source: 'text-send170' });
+    let queuedForAck19 = false;
+
     const draft = ensureDraftState(roomId);
     const replyToMessageId = draft.replyTo?.messageId || null;
     if (replyToMessageId && contexts.isCurrent(context)) {
@@ -68,6 +73,13 @@
     try {
       const connected = await ensureWsConnected(deviceId);
       if (!connected || !state.ws || state.ws.readyState !== WebSocket.OPEN || state.ws.deviceId !== deviceId) {
+        diagnostic19?.missing?.(trace19,'managerState','owner-unavailable');
+        diagnostic19?.missing?.(trace19,'dom','owner-unavailable');
+        diagnostic19?.missing?.(trace19,'frameOpportunity','owner-unavailable');
+        diagnostic19?.missing?.(trace19,'ack','owner-unavailable');
+        diagnostic19?.missing?.(trace19,'final','owner-unavailable');
+        diagnostic19?.annotate?.(trace19,{outcome:'blocked',reason:'owner-unavailable'});
+        diagnostic19?.finish?.(trace19,'error');
         if (contexts.isCurrent(context)) alert('Нет соединения. Попробуйте обновить чат.');
         finish(operation, 'connection-failed');
         return;
@@ -107,11 +119,30 @@
       try {
         if (box) {
           appendDateSeparatorIfNeeded(box, createdAt);
-          appendMessage(box, tempMessage, text, true, true);
+          const optimisticEl19 = appendMessage(box, tempMessage, text, true, true);
+          if (optimisticEl19) {
+            diagnostic19?.step?.(trace19,'dom-ready');
+            requestAnimationFrame(() => {
+              if (optimisticEl19.isConnected) diagnostic19?.step?.(trace19,'frame-opportunity');
+              else diagnostic19?.missing?.(trace19,'frameOpportunity','element-removed');
+            });
+          } else {
+            diagnostic19?.missing?.(trace19,'dom','element-removed');
+            diagnostic19?.missing?.(trace19,'frameOpportunity','element-removed');
+          }
+        } else {
+          diagnostic19?.missing?.(trace19,'dom','room-switched');
+          diagnostic19?.missing?.(trace19,'frameOpportunity','room-switched');
         }
         upsertRoomMessage(roomId, tempMessage, { text, unread: 0 });
-        if (!queuePendingTextSend(outbound)) throw new Error('queue');
+        diagnostic19?.step?.(trace19,'manager-ready');
+        if (!queuePendingTextSend(outbound, trace19)) throw new Error('queue');
+        queuedForAck19 = true;
       } catch {
+        diagnostic19?.missing?.(trace19,'ack','not-observed');
+        diagnostic19?.missing?.(trace19,'final','not-observed');
+        diagnostic19?.annotate?.(trace19,{outcome:'failed',reason:'owner-unavailable'});
+        diagnostic19?.finish?.(trace19,'error');
         if (stillVisible) alert('Не удалось отправить сообщение. Проверьте соединение.');
         finish(operation, 'queue-failed');
         return;
@@ -143,6 +174,13 @@
       }
       finish(operation, 'queued');
     } catch (error) {
+      if (!queuedForAck19) {
+        const cancelled19 = error?.name === 'AbortError';
+        diagnostic19?.missing?.(trace19,'ack',cancelled19?'aborted':'not-observed');
+        diagnostic19?.missing?.(trace19,'final',cancelled19?'aborted':'not-observed');
+        diagnostic19?.annotate?.(trace19,{outcome:cancelled19?'cancelled':'failed',reason:cancelled19?'aborted':'not-observed'});
+        diagnostic19?.finish?.(trace19,cancelled19?'cancelled':'error');
+      }
       finish(operation, error?.name === 'AbortError' ? 'cancelled' : 'failed');
       if (contexts.isCurrent(context)) alert('Не удалось отправить сообщение. Проверьте соединение.');
     } finally {
