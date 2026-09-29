@@ -17,6 +17,7 @@
   const legacyOpenChatWithJoinData = openChatWithJoinData;
   const legacyLeaveActiveChat = typeof leaveActiveChat === 'function' ? leaveActiveChat : null;
   const legacySetView = typeof setView === 'function' ? setView : null;
+  const diagnosticSeenRooms19 = new Set();
 
   function normalizeRoomId(value) {
     return String(value || '').trim();
@@ -140,6 +141,12 @@
 
     const context = contexts.beginTransition(normalizedRoomId);
     dispatch('started', context);
+    try {
+      const loading = window.FPRuntime169?.loading;
+      const token = loading?.roomToken?.(context);
+      loading?.tag?.(token, 'repeated', diagnosticSeenRooms19.has(normalizedRoomId));
+      diagnosticSeenRooms19.add(normalizedRoomId);
+    } catch {}
 
     const secret = String(persisted.secret || '');
     const deviceId = String(persisted.deviceId || '');
