@@ -13,6 +13,7 @@
   let reconnectAttempt = 0;
   let socketGeneration = 0;
   let manualClose = false;
+  let diagnosticReconnect19 = null;
 
   function socketSnapshot(socket = currentSocket) {
     if (!socket) return { exists: false, readyState: null };
@@ -44,10 +45,21 @@
 
     const onOpen = () => {
       if (socket !== currentSocket) return;
+      if(diagnosticReconnect19&&diagnosticReconnect19.brokenSocket!==socket){
+        window.FPRuntime169?.loading?.step?.(diagnosticReconnect19.token,'reconnect-open');
+      }
       emit('open', socket);
     };
     const onClose = () => {
       if (socket !== currentSocket) return;
+      if(!manualClose){
+        const loading=window.FPRuntime169?.loading;
+        const token=loading?.begin?.('connection');
+        loading?.tag?.(token,'source','owner-event');
+        loading?.tag?.(token,'syncRequired',true);
+        loading?.step?.(token,'break-confirmed');
+        diagnosticReconnect19={token,brokenSocket:socket};
+      }
       emit('close', socket);
     };
     const onError = () => {
@@ -219,7 +231,12 @@
     beginReplacement,
     adoptCurrent,
     releaseCurrent,
-    closeCurrent
+    closeCurrent,
+    diagnosticReconnectToken:()=>diagnosticReconnect19?.token||null,
+    clearDiagnosticReconnect(token){
+      if(!diagnosticReconnect19||Number(diagnosticReconnect19.token?.id)!==Number(token?.id))return false;
+      diagnosticReconnect19=null;return true;
+    }
   });
 
   try {
@@ -229,6 +246,19 @@
       transportWorker: 'app.js stableWs'
     });
   } catch {}
+
+  window.addEventListener('fpchat:lifecycle170',(event)=>{
+    const detail=event?.detail||{};
+    if(detail.lastType!=='online'||diagnosticReconnect19)return;
+    const socket=currentSocket;
+    if(!socket||socket.readyState!==WebSocket.OPEN)return;
+    const loading=window.FPRuntime169?.loading;
+    const token=loading?.begin?.('connection');
+    loading?.tag?.(token,'source','owner-event');
+    loading?.tag?.(token,'syncRequired',false);
+    loading?.result?.(token,'preserved-live-socket','no-break-old-socket-preserved');
+    loading?.finish?.(token,'ok');
+  },{passive:true});
 
   queueMicrotask(() => emit('ready', currentSocket));
 })();
