@@ -422,9 +422,9 @@
   const loading186 = (() => {
     const LIMIT = 240;
     const records = new Map(), contexts = new WeakMap(), watches = new Map();
-    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair']);
+    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair', 'history', 'send', 'reaction', 'connection', 'resume']);
     const consumers = new Set(['chat-thumbnail', 'gallery-current', 'gallery-neighbor', 'other']);
-    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page').split(' '));
+    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page history-load-start history-load-ready ram-ready preview-ready original-ready manager-ready dom-ready frame-opportunity ack-ready final-ready break-confirmed socket-open sync-start sync-ready visible interface-ready').split(' '));
     const cacheStates = new Set(['unknown', 'hit', 'miss', 'expired', 'unavailable', 'error', 'ram-hit', 'ram-pending']);
     let sequence = 0, dropped = 0, enabled = true, sweepQueued = false;
     const round = value => Math.round(Math.max(0, value) * 10) / 10;
@@ -456,6 +456,30 @@
       if (name === 'response-ready' && Number.isInteger(value)) item.httpStatus = value;
     }
     function cache(token, state) { const item = get(token); if (item && cacheStates.has(state)) item.cache = state; }
+    const annotationKeys = new Set(['action','source','messageSource','openKind','outcome','reason','historySource','syncState']);
+    const booleanAnnotationKeys = new Set(['reusedRam','syncRequired','oldSocketPreserved','breakConfirmed','sameRoom']);
+    const missingMetricKeys = new Set(['managerState','dom','frameOpportunity','ack','final','preview','original','reconnect','sync','interfaceReady','scrollRestore']);
+    const missingReasons = new Set(['not-observed','not-required','cancelled','aborted','room-switched','element-removed','old-socket-preserved','no-preview-available','original-failed','server-rejected','timeout','owner-unavailable','process-ended-before-event','unknown']);
+    function annotate(token, patch = {}) {
+      const item = get(token);
+      if (!enabled || !item || !patch || typeof patch !== 'object') return;
+      for (const [key, value] of Object.entries(patch)) {
+        if (annotationKeys.has(key)) {
+          const safe = String(value ?? '').trim().slice(0, 64);
+          if (safe) item[key] = safe;
+        } else if (booleanAnnotationKeys.has(key) && typeof value === 'boolean') {
+          item[key] = value;
+        }
+      }
+    }
+    function missing(token, metric, reason = 'unknown') {
+      const item = get(token);
+      const key = String(metric || '');
+      const why = missingReasons.has(String(reason || '')) ? String(reason) : 'unknown';
+      if (!enabled || !item || !missingMetricKeys.has(key)) return;
+      if (!item.missing) item.missing = {};
+      if (item.missing[key] === undefined) item.missing[key] = why;
+    }
     function finish(token, status = 'ok') {
       const item = get(token);
       if (!item || item.status !== 'pending') return;
@@ -540,13 +564,21 @@
         const group = startupResources[resource.type] || (startupResources[resource.type] = {count:0, transferBytes:0, encodedBodyBytes:0});
         group.count++; group.transferBytes += resource.transferSize; group.encodedBodyBytes += resource.encodedBodySize;
       }
+      const startupVersion = window.FPStartup174?.versionResult || null;
+      const revision = /^[a-f0-9]{40}$/i.test(String(startupVersion?.appRevision || '')) ? String(startupVersion.appRevision) : null;
+      const attemptSummary = {};
+      for (const item of records.values()) {
+        const group = attemptSummary[item.kind] || (attemptSummary[item.kind] = { total:0, ok:0, cancelled:0, error:0, pending:0 });
+        group.total += 1;
+        group[item.status] = (group[item.status] || 0) + 1;
+      }
       return {
-        schema:1, build:loadingBuild, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
-        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'hooks from runtime installation; ordinary-entry; direct-entry-starts-after-join', media:'common readEncryptedMedia174 path including voice/save reads; no independent I/O or voice/save playback readiness', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image load, active video loadeddata, neighbor video loadedmetadata and frame opportunity; not native decode duration or actual paint', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
+        schema:1, diagnosticsRevision:19, build:loadingBuild, buildRevision:revision, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size, attemptSummary,
+        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'owner hooks for join/history/text/composer/scroll plus actual RAM reuse fact when available', history:'manual older-history attempts are recorded only when FPHistory174 actually starts a page/load operation', media:'existing encrypted media/cache/network/decrypt stages plus viewer preview/original readiness when the viewer owner reports them', actions:'send/reaction owner-reported optimistic/DOM/frame-opportunity/ack/final outcome; frame-opportunity is requestAnimationFrame only, not hardware presentation', connection:'confirmed old-socket close and automatic owner recovery only; preserved old socket reports reconnect null through missing.reconnect', resume:'foreground visible/interface/sync completion facts; sync can be explicitly not-required', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image load, active video loadeddata, neighbor video loadedmetadata and requestAnimationFrame opportunity; not native decode duration or actual paint', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
         boot, startupResources,
         viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio},
         runtime:{visibility:document.visibilityState, online:navigator.onLine, longTasks:longTasks.length, longTaskMs:round(longTasks.reduce((sum, x) => sum + x.durationMs, 0))},
-        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}}))
+        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, ...(item.missing ? {missing:{...item.missing}} : {}), ...(item.error ? {error:{...item.error}} : {}), stagesMs:{fromStartToText:item.points['text-ready']===undefined?null:round(item.points['text-ready']), fromStartToComposer:item.points['composer-ready']===undefined?null:round(item.points['composer-ready']), fromStartToScroll:item.points['scroll-ready']===undefined?null:round(item.points['scroll-ready']), historyLoad:duration(item,'history-load-start','history-load-ready'), preview:item.points['preview-ready']===undefined?null:round(item.points['preview-ready']), original:item.points['original-ready']===undefined?null:round(item.points['original-ready']), optimistic:item.points['manager-ready']===undefined?null:round(item.points['manager-ready']), dom:item.points['dom-ready']===undefined?null:round(item.points['dom-ready']), frameOpportunity:item.points['frame-opportunity']===undefined?null:round(item.points['frame-opportunity']), ack:item.points['ack-ready']===undefined?null:round(item.points['ack-ready']), final:item.points['final-ready']===undefined?null:round(item.points['final-ready']), reconnect:item.points['socket-open']===undefined?null:round(item.points['socket-open']), sync:duration(item,'sync-start','sync-ready'), visibleToInterface:duration(item,'visible','interface-ready'), visibleToSync:duration(item,'visible','sync-ready'), queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}}))
       };
     }
     function reset() { for (const id of watches.keys()) cleanup(id); records.clear(); dropped = 0; }
@@ -555,7 +587,7 @@
       const link = document.createElement('a'); link.href = url; link.download = `FPChat-${loadingBuild || 'unknown'}-loading.json`;
       document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
-    return Object.freeze({begin, step, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
+    return Object.freeze({begin, step, annotate, missing, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
       setEnabled(value) { enabled = Boolean(value); if (!enabled) reset(); }});
   })();
 
