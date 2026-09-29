@@ -17,12 +17,17 @@
 
   async function syncAfterResume() {
     window.FPLifecycle170?.noteDiagnosticSyncStart?.();
+    window.FPConnection170?.noteDiagnosticSyncStart?.();
     try {
       const result=await startAppSessionSync();
-      window.FPLifecycle170?.noteDiagnosticSyncReady?.(result!==false,result===undefined?'sync-not-required-or-no-explicit-result':'');
+      const ok=result!==false;
+      const reason=result===undefined?'sync-not-required-or-no-explicit-result':'';
+      window.FPLifecycle170?.noteDiagnosticSyncReady?.(ok,reason);
+      window.FPConnection170?.noteDiagnosticSyncReady?.(ok,reason);
       return result;
     } catch (error) {
       window.FPLifecycle170?.noteDiagnosticSyncReady?.(false,'sync-after-resume-failed');
+      window.FPConnection170?.noteDiagnosticSyncReady?.(false,'sync-after-resume-failed');
       throw error;
     }
   }
