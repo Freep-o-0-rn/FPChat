@@ -384,6 +384,16 @@
     const diagnostic186=window.FPRuntime169?.loading;
     const consumer186=active?'gallery-current':'gallery-neighbor';
     const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob'});
+    diagnostic186?.tag?.(trace186,'source',preview?'existing-preview':'original-load');
+    if(previewImage){
+      const markPreviewReady19=()=>{
+        if(previewImage?.isConnected&&previewImage.parentElement===container&&previewImage.dataset.fpViewerSource==='preview')diagnostic186?.step?.(trace186,'preview-ready');
+      };
+      if(previewImage.complete&&previewImage.naturalWidth>0)markPreviewReady19();
+      else previewImage.addEventListener('load',markPreviewReady19,{once:true});
+    }else{
+      diagnostic186?.tag?.(trace186,'reason','preview-unavailable');
+    }
     diagnostic186?.step(trace186,'asset-start');
     void loadAsset(viewerState.fpRoomId, item, trace186, consumer186).then(async (asset) => {
       diagnostic186?.step(trace186,'asset-ready');
@@ -400,6 +410,8 @@
           return;
         }
         diagnostic186?.step(trace186,'url-ready');
+        const markOriginalReady19=()=>diagnostic186?.step?.(trace186,'original-ready');
+        previewImage.addEventListener('load',markOriginalReady19,{once:true});
         diagnostic186?.watchElement(trace186,previewImage);
         previewImage.dataset.fpViewerSource = 'original';
         previewImage.classList.remove('fp-gallery134-photo-preview');
@@ -446,6 +458,7 @@
       } else {
         const image = document.createElement('img');
         applyPhotoGeometry(image, item);
+        image.addEventListener('load',()=>diagnostic186?.step?.(trace186,'original-ready'),{once:true});
         diagnostic186?.watchElement(trace186,image);
         image.src = asset.url;
         image.alt = 'media';
@@ -455,6 +468,7 @@
         if (active) bindPhoto185(viewerInteraction, image, viewerState, publicId);
       }
     }).catch((error) => {
+      diagnostic186?.result?.(trace186,error?.name==='AbortError'?'cancelled':'error',error?.name==='AbortError'?'aborted':'original-error');
       diagnostic186?.fail(trace186,'fetch',error);
       if (!container.isConnected || container.dataset.publicId !== publicId) return;
       if (
