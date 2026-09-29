@@ -65,7 +65,7 @@ run(async({newClient,errors,temp,root})=>{
 
   // Successful A open, old-history load, send, reaction and repeat open.
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
-  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm')&&window.FPConnection170?.snapshot?.().open===true,A.roomId,null,{timeout:30000});
+  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm')&&window.FPConnection170?.snapshot?.().open===true,A.roomId,{timeout:30000});
 
   await page.evaluate(()=>window.FPHistory174.load('older'));
   await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='history'&&r.status!=='pending'),null,{timeout:15000});
@@ -107,16 +107,16 @@ run(async({newClient,errors,temp,root})=>{
     if(!socket||socket.readyState!==WebSocket.OPEN)throw Error('no open socket');
     if(!FPConnection170.requestClose(socket))throw Error('socket close request rejected');
   });
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined),null,null,{timeout:8000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined),null,{timeout:8000});
   console.log('NEXT19_CONNECTION_BREAK '+JSON.stringify(await page.evaluate(()=>({owner:FPConnection170.snapshot(),records:FPRuntime169.loading.report().records.filter(r=>r.kind==='connection')}))));
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.points['reconnect-open']!==undefined),null,null,{timeout:20000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.points['reconnect-open']!==undefined),null,{timeout:20000});
   console.log('NEXT19_CONNECTION_OPEN '+JSON.stringify(await page.evaluate(()=>({owner:FPConnection170.snapshot(),records:FPRuntime169.loading.report().records.filter(r=>r.kind==='connection')}))));
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.result==='reconnected'),null,null,{timeout:60000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.result==='reconnected'),null,{timeout:60000});
 
   // Reopen the same room once more so repeated/RAM tags are observable.
   await page.evaluate(()=>showChatsList());
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
-  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm'),A.roomId,null,{timeout:20000});
+  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm'),A.roomId,{timeout:20000});
 
   const beforeExport=await page.evaluate(()=>window.FPRuntime169.loading.report());
   assert.equal(beforeExport.schema,2);
