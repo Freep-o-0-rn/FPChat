@@ -383,7 +383,7 @@
 
     const diagnostic186=window.FPRuntime169?.loading;
     const consumer186=active?'gallery-current':'gallery-neighbor';
-    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob'});
+    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob',mediaType:item?.media_kind});
     diagnostic186?.tag?.(trace186,'source',preview?'existing-preview':'original-load');
     if(previewImage){
       const markPreviewReady19=()=>{
