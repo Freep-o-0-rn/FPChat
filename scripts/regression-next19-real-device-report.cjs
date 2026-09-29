@@ -85,6 +85,15 @@ run(async({newClient,errors,temp,root})=>{
   },sendText);
   assert.ok(messageId,'sent message did not receive numeric id');
 
+  const sendText2='NEXT19_PRIVATE_TEXT_2_DO_NOT_EXPORT';
+  await page.evaluate(value=>{
+    const input=document.getElementById('msgInput');
+    input.value=value;
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    document.getElementById('sendForm').requestSubmit();
+  },sendText2);
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.filter(r=>r.kind==='send'&&r.points['ack-ready']!==undefined&&r.status!=='pending').length>=2,null,{timeout:20000});
+
   await page.waitForFunction(()=>window.FPReactionManager188&&window.FPReactionRenderer188,null,{timeout:15000});
   await page.evaluate(async messageId=>{
     await FPReactionManager188.toggleReaction({
@@ -95,8 +104,17 @@ run(async({newClient,errors,temp,root})=>{
     });
   },messageId);
   await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),null,{timeout:15000});
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.points['frame-opportunity']!==undefined),null,{timeout:5000});
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['frame-opportunity']!==undefined),null,{timeout:5000});
+  await page.evaluate(async messageId=>{
+    await FPReactionManager188.toggleReaction({
+      roomId:state.roomId,
+      messageId,
+      reactionId:'heart',
+      reaction:{reactionId:'heart',type:'emoji',value:'❤️',enabled:true}
+    });
+  },messageId);
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.filter(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined&&r.status!=='pending').length>=2,null,{timeout:15000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.filter(r=>r.kind==='send'&&r.points['frame-opportunity']!==undefined).length>=2,null,{timeout:5000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.filter(r=>r.kind==='reaction'&&r.points['frame-opportunity']!==undefined).length>=2,null,{timeout:5000});
 
   // Preserved old socket: real browser offline -> online transition. This
   // must not be manufactured by the diagnostics layer.
@@ -140,18 +158,25 @@ run(async({newClient,errors,temp,root})=>{
   const cancelledRoom=beforeExport.records.find(r=>r.kind==='room'&&r.status==='cancelled');
   assert.ok(cancelledRoom,'interrupted A->B room attempt missing');
   for(const point of ['text-ready','composer-ready','scroll-ready'])assert.equal(cancelledRoom.missing[point],'cancelled','cancelled room '+point+' missing reason');
-  assert.ok(beforeExport.records.some(r=>r.kind==='room'&&r.repeated===true),'repeat room open missing');
-  assert.ok(beforeExport.records.some(r=>r.kind==='room'&&r.source==='ram-reuse'),'RAM reuse tag missing');
-  assert.ok(beforeExport.records.some(r=>r.kind==='room'&&r.restore),'scroll restore outcome missing');
+  const repeatedRoom=beforeExport.records.find(r=>r.kind==='room'&&r.repeated===true&&r.source==='ram-reuse');
+  assert.ok(repeatedRoom,'repeat RAM room open missing');
+  for(const stage of ['text-ready','composer-ready','scroll-ready'])assert.notEqual(repeatedRoom.points[stage],undefined,'repeat room '+stage+' missing');
+  assert.ok(repeatedRoom.restore,'scroll restore outcome missing');
   assert.ok(beforeExport.records.some(r=>r.kind==='history'&&['network-history','ram-reuse'].includes(r.source)),'history attempt missing');
-  const send=beforeExport.records.find(r=>r.kind==='send'&&r.points['ack-ready']!==undefined);
-  assert.ok(send,'send attempt missing');
-  for(const stage of ['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'])assert.notEqual(send.points[stage],undefined,'send '+stage+' missing');
-  assert.equal(send.result,'ok');
-  const reaction=beforeExport.records.find(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined);
-  assert.ok(reaction,'reaction attempt missing');
-  for(const stage of ['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'])assert.notEqual(reaction.points[stage],undefined,'reaction '+stage+' missing');
-  assert.equal(reaction.result,'ok');
+  const sends=beforeExport.records.filter(r=>r.kind==='send'&&r.points['ack-ready']!==undefined);
+  assert.ok(sends.length>=2,'repeated send attempts missing');
+  assert.equal(new Set(sends.map(r=>r.id)).size,sends.length,'send trace ids reused');
+  for(const send of sends.slice(-2)){
+    for(const stage of ['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'])assert.notEqual(send.points[stage],undefined,'send '+stage+' missing');
+    assert.equal(send.result,'ok');
+  }
+  const reactions=beforeExport.records.filter(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined);
+  assert.ok(reactions.length>=2,'repeated reaction attempts missing');
+  assert.equal(new Set(reactions.map(r=>r.id)).size,reactions.length,'reaction trace ids reused');
+  for(const reaction of reactions.slice(-2)){
+    for(const stage of ['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'])assert.notEqual(reaction.points[stage],undefined,'reaction '+stage+' missing');
+    assert.equal(reaction.result,'ok');
+  }
   const preserved=beforeExport.records.find(r=>r.kind==='connection'&&r.result==='preserved-live-socket');
   assert.ok(preserved,'preserved live socket attempt missing');
   assert.equal(preserved.points['reconnect-open'],undefined);
@@ -185,6 +210,7 @@ run(async({newClient,errors,temp,root})=>{
   assert.equal(serialized.includes(B.roomId),false,'room id leaked');
   assert.equal(serialized.includes(A.deviceId),false,'device id leaked');
   assert.equal(serialized.includes(sendText),false,'message text leaked');
+  assert.equal(serialized.includes(sendText2),false,'second message text leaked');
   assert.equal(serialized.includes('/api/rooms/'),false,'URL leaked');
   assert.equal(serialized.includes('"heart"'),false,'reaction id leaked');
 
