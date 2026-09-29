@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "schemaRevision": 19,
+  "task": "real-device manual measurement report",
+  "branch": "optimization/performance-item19-real-device-report-after-scroll",
+  "base": "d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0",
+  "build": "190.3",
+  "appRevision": "5bb585b52b190bf9d80a779a4ffc68842f13214b",
+  "finalVerification": {
+    "workflowRunId": 36522042691,
+    "runtimeHead": "1dcb16a47c2d55699ffe736faf8f6a1c3df2d428",
+    "conclusion": "success"
+  },
+  "journal": {
+    "existingSystem": "FPRuntime169.loading",
+    "limit": 240,
+    "persistent": false,
+    "downloadClears": false,
+    "resetTouchesApplicationData": false,
+    "droppedCounter": true,
+    "activeWatchCounter": true
+  },
+  "coverage": {
+    "startup": "existing",
+    "room": {
+      "ordinaryRepeat": true,
+      "ramVsLoad": true,
+      "textReady": true,
+      "composerReady": true,
+      "positionReady": true
+    },
+    "history": {
+      "networkVsRam": true,
+      "response": true,
+      "render": true,
+      "positionRestore": true
+    },
+    "photo": {
+      "previewReady": true,
+      "originalReady": true,
+      "networkCacheDecryptExisting": true
+    },
+    "send": {
+      "optimistic": true,
+      "dom": true,
+      "frameOpportunity": true,
+      "serverAck": true,
+      "finalDom": true
+    },
+    "reaction": {
+      "optimistic": true,
+      "dom": true,
+      "frameOpportunity": true,
+      "serverAck": true,
+      "finalDom": true,
+      "wsReconciliation": true
+    },
+    "connection": {
+      "confirmedBreak": true,
+      "reconnect": true,
+      "socketPreservedNull": true,
+      "syncReady": true
+    },
+    "resume": {
+      "visible": true,
+      "uiReady": true,
+      "syncReady": true
+    }
+  },
+  "privacy": {
+    "content": false,
+    "keys": false,
+    "userIds": false,
+    "roomIds": false,
+    "messageIds": false,
+    "mediaIds": false,
+    "urls": false,
+    "requestBodies": false,
+    "rawErrors": false,
+    "correlation": "page-local diagnostic attempt numbers"
+  },
+  "limitations": [
+    "journal is RAM-only and is lost on reload/process termination",
+    "maximum 240 records; dropped counts records rejected after the buffer is full",
+    "rAF is a browser frame opportunity, not hardware presentation",
+    "physical background/process kill requires manual iPhone/Android validation",
+    "reconnect remains null when the old socket is preserved",
+    "no automatic proof of absence of visual bugs"
+  ],
+  "productionPublished": false,
+  "nextItemStarted": false
+}
