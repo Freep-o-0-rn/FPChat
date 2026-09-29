@@ -1876,8 +1876,19 @@ async function processStableIncomingMessage(roomId,incomingMessage,deviceId,{not
   const clientMessageId=message.client_message_id||null;
   rememberLastKnownMessageId(roomId,messageId);
   if(messageId!==null&&messageId!==undefined){
+    const pendingOwn19=clientMessageId?pendingTextSends.get(String(clientMessageId)):null;
+    const trace19=pendingOwn19?.diagnosticTrace||null;
+    const diagnostic19=window.FPRuntime169?.loading;
     rememberMessageStatus(roomId,messageId,message.status,clientMessageId);
-    promoteMessageElement(roomId,messageId,clientMessageId,message.status,message.created_at||null);
+    const domPromoted19=promoteMessageElement(roomId,messageId,clientMessageId,message.status,message.created_at||null);
+    if(trace19){
+      const canonical19=window.FPMessageStore172?.get?.(roomId,messageId)||window.FPMessageStore172?.get?.(roomId,clientMessageId);
+      const verified19=Boolean(canonical19&&(String(canonical19.id||'')===String(messageId||'')||String(canonical19.clientMessageId||'')===String(clientMessageId||'')));
+      diagnostic19?.step(trace19,'server-ack');
+      diagnostic19?.annotate(trace19,{sync:'ws-message-confirmation',outcome:verified19?'confirmed':'confirmed-unverified',reason:domPromoted19?'':'dom-not-mounted-at-confirmation',actualResultVerified:verified19});
+      diagnostic19?.step(trace19,'final-state');
+      diagnostic19?.finish(trace19,verified19?'ok':'error');
+    }
     if(clientMessageId&&messageStatusRank(message.status)>=messageStatusRank('delivered'))clearPendingText(clientMessageId);
   }
   const box=document.getElementById('messages');
