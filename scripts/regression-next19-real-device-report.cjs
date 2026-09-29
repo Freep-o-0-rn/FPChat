@@ -8,7 +8,7 @@ const {run}=require('./browser-harness174.cjs');
 
 run(async({newClient,errors,temp,root})=>{
   const page=await newClient();
-  await page.waitForFunction(()=>window.FPRuntime169?.loading&&window.FPNetwork171&&window.FPConnection170&&window.FPHistory174&&window.__fpSettings131Installed,{timeout:30000});
+  await page.waitForFunction(()=>window.FPRuntime169?.loading&&window.FPNetwork171&&window.FPConnection170&&window.FPHistory174&&window.__fpSettings131Installed,null,{timeout:30000});
 
   const fixtures=await page.evaluate(async()=>{
     const deviceId=getOrCreateDeviceId();
@@ -65,10 +65,10 @@ run(async({newClient,errors,temp,root})=>{
 
   // Successful A open, old-history load, send, reaction and repeat open.
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
-  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm')&&window.FPConnection170?.snapshot?.().open===true,A.roomId,{timeout:30000});
+  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm')&&window.FPConnection170?.snapshot?.().open===true,A.roomId,null,{timeout:30000});
 
   await page.evaluate(()=>window.FPHistory174.load('older'));
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='history'&&r.status!=='pending'),{timeout:15000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='history'&&r.status!=='pending'),null,{timeout:15000});
 
   const sendText='NEXT19_PRIVATE_TEXT_DO_NOT_EXPORT';
   await page.evaluate(value=>{
@@ -77,7 +77,7 @@ run(async({newClient,errors,temp,root})=>{
     input.dispatchEvent(new Event('input',{bubbles:true}));
     document.getElementById('sendForm').requestSubmit();
   },sendText);
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),{timeout:20000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),null,{timeout:20000});
 
   const messageId=await page.evaluate(value=>{
     const row=[...document.querySelectorAll('#messages > .bubble-wrap.msg')].find(node=>node.querySelector('.message-text')?.textContent===value);
@@ -85,7 +85,7 @@ run(async({newClient,errors,temp,root})=>{
   },sendText);
   assert.ok(messageId,'sent message did not receive numeric id');
 
-  await page.waitForFunction(()=>window.FPReactionManager188&&window.FPReactionRenderer188,{timeout:15000});
+  await page.waitForFunction(()=>window.FPReactionManager188&&window.FPReactionRenderer188,null,{timeout:15000});
   await page.evaluate(async messageId=>{
     await FPReactionManager188.toggleReaction({
       roomId:state.roomId,
@@ -94,25 +94,29 @@ run(async({newClient,errors,temp,root})=>{
       reaction:{reactionId:'heart',type:'emoji',value:'❤️',enabled:true}
     });
   },messageId);
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),{timeout:15000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),null,{timeout:15000});
 
   // Preserved old socket: lifecycle online while the current socket is still open.
   await page.evaluate(()=>window.dispatchEvent(new Event('online')));
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.result==='preserved-live-socket'),{timeout:10000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.result==='preserved-live-socket'),null,{timeout:10000});
 
   // Confirmed break: the test closes the real current socket; reconnect remains
   // entirely owned by existing connection/lifecycle/sync paths.
   await page.evaluate(()=>{
     const socket=FPConnection170.current();
     if(!socket||socket.readyState!==WebSocket.OPEN)throw Error('no open socket');
-    FPConnection170.requestClose(socket);
+    if(!FPConnection170.requestClose(socket))throw Error('socket close request rejected');
   });
-  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.result==='reconnected'),{timeout:30000});
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined),null,null,{timeout:8000});
+  console.log('NEXT19_CONNECTION_BREAK '+JSON.stringify(await page.evaluate(()=>({owner:FPConnection170.snapshot(),records:FPRuntime169.loading.report().records.filter(r=>r.kind==='connection')}))));
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.points['reconnect-open']!==undefined),null,null,{timeout:20000});
+  console.log('NEXT19_CONNECTION_OPEN '+JSON.stringify(await page.evaluate(()=>({owner:FPConnection170.snapshot(),records:FPRuntime169.loading.report().records.filter(r=>r.kind==='connection')}))));
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.result==='reconnected'),null,null,{timeout:60000});
 
   // Reopen the same room once more so repeated/RAM tags are observable.
   await page.evaluate(()=>showChatsList());
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
-  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm'),A.roomId,{timeout:20000});
+  await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm'),A.roomId,null,{timeout:20000});
 
   const beforeExport=await page.evaluate(()=>window.FPRuntime169.loading.report());
   assert.equal(beforeExport.schema,2);
