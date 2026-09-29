@@ -637,16 +637,17 @@
     const deviceId = deviceIdForRoom(room);
     const contextOwner = window.FPRoomContext170;
     const roomContext = contextOwner?.current?.() || null;
-    if (!room || !message || !id || !op || !participantId || !deviceId) {
-      return Promise.reject(mutationError('REACTION_CONTEXT_INVALID'));
-    }
-    if (contextOwner && (!roomContext || roomContext.signal?.aborted || String(roomContext.roomId || '') !== room)) {
-      return Promise.reject(mutationError('REACTION_ROOM_CONTEXT_STALE'));
-    }
-
     const diagnostic19=window.FPRuntime169?.loading;
     const trace19=diagnostic19?.begin?.('reaction');
     diagnostic19?.tag?.(trace19,'source','owner-event');
+    if (!room || !message || !id || !op || !participantId || !deviceId) {
+      diagnostic19?.result?.(trace19,'error','owner-error');diagnostic19?.finish?.(trace19,'error');
+      return Promise.reject(mutationError('REACTION_CONTEXT_INVALID'));
+    }
+    if (contextOwner && (!roomContext || roomContext.signal?.aborted || String(roomContext.roomId || '') !== room)) {
+      diagnostic19?.result?.(trace19,'cancelled','room-switched');diagnostic19?.finish?.(trace19,'cancelled');
+      return Promise.reject(mutationError('REACTION_ROOM_CONTEXT_STALE'));
+    }
 
     const current = get(room, message);
     const mine = new Set((current?.myReactions || []).map((item) => String(item.reactionId || '')));
