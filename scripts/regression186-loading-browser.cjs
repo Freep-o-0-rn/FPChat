@@ -8,7 +8,9 @@ const {run} = require('./browser-harness174.cjs');
 run(async ({newClient, temp, root, errors}) => {
   let passed = 0;
   const pass = name => { passed++; console.log('PASS 186 ' + name); };
-  const page = await newClient();
+  let page;
+  try { page = await newClient(); }
+  catch (error) { console.error('BOOT_ERRORS_186 '+JSON.stringify(errors)); throw error; }
   await page.waitForFunction(() => window.FPRuntime169?.loading && window.__fpStorage167CacheFixInstalled && window.__fpMediaGallery134Installed);
   const report = () => page.evaluate(() => FPRuntime169.loading.report());
   const initialReport = await report();
