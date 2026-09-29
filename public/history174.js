@@ -208,12 +208,27 @@
     const mountedLocal=nodes(box).map(n=>index.get(n.dataset.clientMessageId||n.dataset.messageId)).filter(i=>i!==undefined);
     const first=mountedLocal.length?Math.min(...mountedLocal):local.length;
     const last=mountedLocal.length?Math.max(...mountedLocal):-1;
-    if(direction==='older'&&mountedLocal.length&&first>0)return loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction);
-    if(direction==='newer'&&!history.hasNewer&&last<local.length-1)return loadPending(history,box,local.slice(last+1,last+1+PAGE),direction);
+    if(direction==='older'&&mountedLocal.length&&first>0){
+      const diag=window.FPRuntime169?.loading,trace=diag?.begin?.('history');
+      diag?.annotate?.(trace,{action:direction,historySource:'ram-pending'});
+      diag?.step?.(trace,'history-load-start');
+      try{const ok=await loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction);diag?.step?.(trace,'ram-ready');diag?.step?.(trace,'history-load-ready');diag?.annotate?.(trace,{outcome:ok?'mounted':'empty'});diag?.finish?.(trace,ok?'ok':'cancelled');return ok;}
+      catch(error){diag?.fail?.(trace,'history',error);throw error;}
+    }
+    if(direction==='newer'&&!history.hasNewer&&last<local.length-1){
+      const diag=window.FPRuntime169?.loading,trace=diag?.begin?.('history');
+      diag?.annotate?.(trace,{action:direction,historySource:'ram-pending'});
+      diag?.step?.(trace,'history-load-start');
+      try{const ok=await loadPending(history,box,local.slice(last+1,last+1+PAGE),direction);diag?.step?.(trace,'ram-ready');diag?.step?.(trace,'history-load-ready');diag?.annotate?.(trace,{outcome:ok?'mounted':'empty'});diag?.finish?.(trace,ok?'ok':'cancelled');return ok;}
+      catch(error){diag?.fail?.(trace,'history',error);throw error;}
+    }
     if(direction==='older'?!history.hasMore:!history.hasNewer)return false;
     const cursor=direction==='older'?history.nextCursor:history.newerCursor;
     if(!Number.isSafeInteger(cursor)||cursor<=0)return false;
     const view=captureRoomView170(),task=transaction(history,view);
+    const diagnostic19=window.FPRuntime169?.loading,trace19=diagnostic19?.begin?.('history');
+    diagnostic19?.annotate?.(trace19,{action:direction,historySource:'network'});
+    diagnostic19?.step?.(trace19,'history-load-start');
     try{
       const data=await page(view,{[direction==='older'?'before':'after']:String(cursor)},task.signal);
       if(!task.current())return false;
@@ -235,8 +250,11 @@
       const next=Number(data.nextCursor)||Number(direction==='older'?data.messages[0]?.id:data.messages.at(-1)?.id);
       if(Number.isSafeInteger(next)&&next>0)history[direction==='older'?'nextCursor':'newerCursor']=next;
       scheduleViewStateSave();
+      diagnostic19?.step?.(trace19,'history-load-ready');
+      diagnostic19?.annotate?.(trace19,{outcome:unique.length>0?'mounted':'empty'});
+      diagnostic19?.finish?.(trace19,unique.length>0?'ok':'cancelled');
       return unique.length>0;
-    }catch(error){if(error.name!=='AbortError')console.warn('History window load failed',error);return false;}
+    }catch(error){if(error.name!=='AbortError')console.warn('History window load failed',error);if(error?.name==='AbortError'){diagnostic19?.missing?.(trace19,'final','aborted');diagnostic19?.finish?.(trace19,'cancelled');}else diagnostic19?.fail?.(trace19,'history',error);return false;}
     finally{task.finish();}
   }
   async function loadPending(history,box,records,direction){
