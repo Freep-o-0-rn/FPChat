@@ -445,7 +445,7 @@
     function step(token, name, value) {
       const item = get(token);
       if (!enabled || !item || !phases.has(name) || item.status === 'cancelled' || item.status === 'error') return;
-      if (item.status !== 'pending' && !['messages-revealed','visible-frame'].includes(name)) return;
+      if (item.status !== 'pending' && !['messages-revealed','visible-frame','frame-opportunity'].includes(name)) return;
       if (item.points[name] === undefined) item.points[name] = round(performance.now() - item.startMs);
       if (name === 'history-page') item.counts.pages = (item.counts.pages || 0) + 1;
       if (['history-ready', 'text-ready'].includes(name) && Number.isFinite(value)) item.counts.messages = Math.max(0, Math.trunc(value));
