@@ -422,7 +422,7 @@
   const loading186 = (() => {
     const LIMIT = 240;
     const records = new Map(), contexts = new WeakMap(), watches = new Map();
-    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair', 'send', 'reaction', 'connection', 'resume']);
+    const kinds = new Set(['room', 'history', 'media', 'viewer', 'gallery-history', 'cache-repair', 'send', 'reaction', 'connection', 'resume']);
     const consumers = new Set(['chat-thumbnail', 'gallery-current', 'gallery-neighbor', 'other']);
     const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page preview-ready original-ready optimistic-state dom-change frame-opportunity server-ack final-state socket-break network-restored socket-open sync-start sync-ready visible ui-ready').split(' '));
     const cacheStates = new Set(['unknown', 'hit', 'miss', 'expired', 'unavailable', 'error', 'ram-hit', 'ram-pending']);
@@ -446,7 +446,7 @@
     function step(token, name, value) {
       const item = get(token);
       if (!enabled || !item || !phases.has(name) || item.status === 'cancelled' || item.status === 'error') return;
-      if (item.status !== 'pending' && !['messages-revealed','visible-frame'].includes(name)) return;
+      if (item.status !== 'pending' && !['messages-revealed','visible-frame','frame-opportunity'].includes(name)) return;
       if (item.points[name] === undefined) item.points[name] = round(performance.now() - item.startMs);
       if (name === 'history-page') item.counts.pages = (item.counts.pages || 0) + 1;
       if (['history-ready', 'text-ready'].includes(name) && Number.isFinite(value)) item.counts.messages = Math.max(0, Math.trunc(value));
@@ -459,7 +459,7 @@
     function annotate(token, metadata = {}) {
       const item = get(token);
       if (!item || !metadata || typeof metadata !== 'object') return;
-      const stringKeys = ['entry','openMode','dataSource','reason','outcome','operation','reconnect','sync','ui','preview','original'];
+      const stringKeys = ['entry','openMode','dataSource','restoreMode','reason','outcome','operation','reconnect','sync','ui','preview','original'];
       for (const key of stringKeys) {
         if (metadata[key] === undefined || metadata[key] === null) continue;
         item[key] = String(metadata[key]).slice(0, 64);
@@ -560,7 +560,8 @@
     const expectedPhases = Object.freeze({
       send:['optimistic-state','dom-change','frame-opportunity','server-ack','final-state'],
       reaction:['optimistic-state','dom-change','frame-opportunity','server-ack','final-state'],
-      connection:['network-restored','sync-ready'],
+      history:['history-start','history-ready','render-start','text-ready'],
+      connection:['socket-break','network-restored','socket-open','sync-ready'],
       resume:['visible','ui-ready','sync-ready']
     });
     function missingFor(item) {
@@ -569,7 +570,7 @@
       for (const phase of expected) {
         if (item.points[phase] !== undefined) continue;
         let reason = item.reason || (item.status === 'pending' ? 'not-observed-yet' : item.status === 'cancelled' ? 'cancelled' : item.status === 'error' ? 'error-before-phase' : 'not-observed');
-        if (item.kind === 'connection' && phase === 'socket-break' && item.oldSocketPreserved === true) reason = 'old-socket-preserved';
+        if (item.kind === 'connection' && ['socket-break','socket-open'].includes(phase) && item.oldSocketPreserved === true) reason = 'old-socket-preserved';
         missing[phase] = reason;
       }
       return missing;
