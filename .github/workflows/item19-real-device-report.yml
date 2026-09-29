@@ -6,6 +6,14 @@ on:
       - optimization/performance-item19-real-device-report-after-scroll
     paths:
       - '.github/workflows/item19-real-device-report.yml'
+      - 'public/runtime169.js'
+      - 'public/app.js'
+      - 'public/history174.js'
+      - 'public/media-gallery134.js'
+      - 'public/reaction-manager188.js'
+      - 'public/reaction-renderer188.js'
+      - 'public/version.json'
+      - 'scripts/regression186-loading-browser.cjs'
 
 jobs:
   verify:
