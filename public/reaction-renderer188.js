@@ -363,7 +363,19 @@
 
   window.addEventListener('fpchat:reaction188-changed', (event) => {
     const detail = event?.detail || {};
-    patchMounted(detail.roomId, detail.messageId);
+    const changed = patchMounted(detail.roomId, detail.messageId);
+    const diagnosticId = Number(detail.diagnosticId);
+    if (!changed || !Number.isSafeInteger(diagnosticId) || diagnosticId <= 0) return;
+    const diagnostic = window.FPRuntime169?.loading;
+    const token = Object.freeze({ id: diagnosticId });
+    diagnostic?.step(token, detail.optimistic === true ? 'dom-change' : 'final-dom');
+    if (detail.optimistic === true && document.visibilityState === 'visible') {
+      requestAnimationFrame(() => {
+        if (String(detail.roomId || '') !== String(state?.roomId || '')) return;
+        if (!findMounted(detail.messageId)) return;
+        diagnostic?.step(token,'frame-opportunity');
+      });
+    }
   }, { passive: true });
 
   ensureStyle();
