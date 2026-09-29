@@ -8,6 +8,7 @@ on:
       - '.github/workflows/item19-real-device-report.yml'
       - 'public/runtime169.js'
       - 'public/app.js'
+      - 'public/text-send170.js'
       - 'public/history174.js'
       - 'public/media-gallery134.js'
       - 'public/reaction-manager188.js'
