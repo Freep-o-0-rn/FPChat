@@ -15,6 +15,7 @@
   let manualClose = false;
   let diagnosticTrace19 = null;
   let diagnosticOfflineSocket19 = null;
+  let diagnosticBreakConfirmed19 = false;
 
   function socketSnapshot(socket = currentSocket) {
     if (!socket) return { exists: false, readyState: null };
@@ -59,6 +60,7 @@
           diagnostic?.annotate?.(diagnosticTrace19,{action:'reconnect',source:'socket-close',syncRequired:true});
         }
         diagnosticOfflineSocket19=socket;
+        diagnosticBreakConfirmed19=true;
         diagnostic?.step?.(diagnosticTrace19,'break-confirmed');
         diagnostic?.annotate?.(diagnosticTrace19,{breakConfirmed:true,oldSocketPreserved:false});
       }
@@ -222,6 +224,7 @@
     if (diagnosticTrace19) return diagnosticTrace19;
     diagnosticTrace19=diagnostic?.begin?.('connection')||null;
     diagnosticOfflineSocket19=currentSocket||null;
+    diagnosticBreakConfirmed19=false;
     diagnostic?.annotate?.(diagnosticTrace19,{action:'network-cycle',source:'offline',syncRequired:true});
     return diagnosticTrace19;
   }
@@ -235,9 +238,8 @@
     if (!trace) return;
     const diagnostic=window.FPRuntime169?.loading;
     diagnostic?.step?.(trace,'sync-ready');
-    const record=diagnostic?.report?.().records?.find?.((item)=>item.id===trace.id)||null;
-    const broke=Boolean(record?.points?.['break-confirmed']!==undefined);
-    const opened=Boolean(record?.points?.['socket-open']!==undefined);
+    const broke=diagnosticBreakConfirmed19;
+    const opened=Boolean(currentSocket?.readyState===WebSocket.OPEN && (!diagnosticOfflineSocket19 || currentSocket!==diagnosticOfflineSocket19 || broke));
     if (!broke && diagnosticOfflineSocket19 && diagnosticOfflineSocket19===currentSocket && currentSocket?.readyState===WebSocket.OPEN) {
       diagnostic?.annotate?.(trace,{oldSocketPreserved:true,breakConfirmed:false,outcome:success?'live-connection-preserved':'live-connection-preserved-sync-incomplete'});
       diagnostic?.missing?.(trace,'reconnect','old-socket-preserved');
@@ -250,6 +252,7 @@
     diagnostic?.finish?.(trace,success?'ok':'error');
     diagnosticTrace19=null;
     diagnosticOfflineSocket19=null;
+    diagnosticBreakConfirmed19=false;
   }
 
   function markSyncNotRequired() {
