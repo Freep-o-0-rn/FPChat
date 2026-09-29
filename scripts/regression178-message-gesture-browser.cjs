@@ -50,10 +50,21 @@ run(async ({newClient,errors})=>{
   let state1=await snapshot();
   assert.equal(state1.context,true,'long press did not open context');
   assert.equal(state1.reply,0,'long press also executed reply');
-  await page.evaluate(()=>{touch17819(messageNode17819,'touchmove',145,360);touch17819(messageNode17819,'touchend',145,360);});
+  // WebKit can terminate the source touch with touchcancel after the long-press
+  // has already mounted the context. That cancellation must release the gesture
+  // lease but must not destroy the context layer.
+  await page.evaluate(()=>touch17819(messageNode17819,'touchcancel',220,360));
   await page.waitForTimeout(60);
   state1=await snapshot();
-  assert.equal(state1.reply,0,'reply revived after long press had already claimed the touch');
+  assert.equal(state1.context,true,'touchcancel closed an already-open long-press context');
+  assert.equal(state1.reply,0,'touchcancel revived reply after long press');
+  assert.equal(state1.action,null,'touchcancel did not release the gesture action');
+
+  // iOS visual viewport settling can also surface as window resize.
+  await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(60);
+  state1=await snapshot();
+  assert.equal(state1.context,true,'resize closed an active context instead of relayout');
 
   await reset();
   await page.evaluate(()=>{touch17819(messageNode17819,'touchstart',220,360);touch17819(messageNode17819,'touchmove',155,360);});
@@ -82,6 +93,7 @@ run(async ({newClient,errors})=>{
   assert.equal(state3.context,false,'context opened after reply claimed then returned below threshold');
 
   assert.deepEqual(errors,[]);
+  console.log('PASS 178.19 long press survives WebKit-style touchcancel and resize');
   console.log('PASS 178.19 long press wins without reply');
   console.log('PASS 178.19 reply swipe wins without context');
   console.log('PASS 178.19 losing recognizer does not revive; old final reply threshold remains');

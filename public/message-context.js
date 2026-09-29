@@ -257,14 +257,16 @@
     cleanupViewerReturn();
   }
 
-  function cancelContextTouch178({ closeTriggered = false } = {}) {
+  function cancelContextTouch178() {
     const session = touchSession;
     if (!session) return;
     clearTimeout(session.timer);
     session.actionLease?.release?.();
     session.actionLease = null;
     touchSession = null;
-    if (closeTriggered && session.triggered && contextState) closeContext();
+    // Once long-press has opened the context, ownership has moved from the
+    // touch recognizer to the context layer. WebKit may emit touchcancel while
+    // completing that handoff; cleanup must not destroy the already-open UI.
   }
 
   function closeContextBoundary178() {
@@ -809,7 +811,7 @@
   }, { capture: true, passive: true });
 
   document.addEventListener('touchcancel', () => {
-    cancelContextTouch178({ closeTriggered: true });
+    cancelContextTouch178();
   }, { capture: true, passive: true });
 
   document.addEventListener('click', (event) => {
@@ -828,7 +830,15 @@
   });
 
   window.addEventListener('resize', () => {
-    if (contextState) closeContext();
+    if (!contextState) return;
+    // FPContextLayout189 already owns context geometry. iOS/WebKit can emit a
+    // window resize while long-press/visualViewport state settles; relayout the
+    // active layer instead of treating that browser event as an explicit close.
+    if (window.FPContextLayout189?.relayout) {
+      window.FPContextLayout189.relayout(contextState.root, 'viewport-resize');
+      return;
+    }
+    closeContext();
   });
 
   window.FPDOM173?.on?.('chat', 'unmounted', () => {

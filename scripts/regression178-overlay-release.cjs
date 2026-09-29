@@ -35,12 +35,18 @@ assert(close.includes("document.body.classList.remove('message-context-open');")
 assert(close.includes('cleanupViewerReturn();'),'closeContext no longer cleans viewer-return resources');
 assert(!close.includes('FPLayer173'),'closeContext started manually mutating layer state');
 
-// Pending/triggered touch cancel is explicit and bounded to this recognizer.
-assert(cancelTouch.includes('clearTimeout(session.timer);'),'touch cancel no longer clears long-press timer');
-assert(cancelTouch.includes('touchSession = null;'),'touch cancel no longer releases its session');
-assert(cancelTouch.includes('if (closeTriggered && session.triggered && contextState) closeContext();'),'triggered touchcancel no longer closes its opened context');
+// Gesture cleanup is bounded to the recognizer. Once context opened, a browser
+// touchcancel only ends the gesture lease; the context layer owns its own close.
+assert(cancelTouch.includes('clearTimeout(session.timer);'),'touch cleanup no longer clears long-press timer');
+assert(cancelTouch.includes('touchSession = null;'),'touch cleanup no longer releases its session');
+assert(!cancelTouch.includes('closeContext('),'gesture cleanup can still destroy an opened context');
 assert(context.includes("document.addEventListener('touchend', () => {\n    cancelContextTouch178();"),'touchend no longer uses shared cleanup');
-assert(context.includes("document.addEventListener('touchcancel', () => {\n    cancelContextTouch178({ closeTriggered: true });"),'touchcancel no longer closes a triggered context');
+assert(context.includes("document.addEventListener('touchcancel', () => {\n    cancelContextTouch178();"),'touchcancel no longer preserves an opened context');
+
+// Viewport geometry belongs to FPContextLayout189. Browser resize must relayout
+// an active context rather than interpret iOS/WebKit viewport settling as close.
+assert(context.includes("window.FPContextLayout189.relayout(contextState.root, 'viewport-resize');"),'window resize no longer delegates active context geometry');
+assert(context.includes('if (!contextState) return;'),'window resize guard missing');
 
 // Navigation: chat DOM unmount cancels pending long press and closes body-level context.
 assert(context.includes("window.FPDOM173?.on?.('chat', 'unmounted', () => {\n    closeContextBoundary178();"),'chat unmount boundary missing');
@@ -63,6 +69,7 @@ assert(!context.includes('FPLayer173.claim('),'message context introduced manual
 assert(!context.includes('FPLayer173.setClaim('),'message context introduced manual setClaim/release');
 
 console.log('PASS 178.17 close removes context DOM and keeps claim release DOM-driven');
-console.log('PASS touchcancel clears pending long press and closes a context opened by that cancelled touch');
+console.log('PASS touchcancel releases the long-press gesture without closing an opened context');
+console.log('PASS resize delegates active context geometry to FPContextLayout189');
 console.log('PASS chat navigation/unmount closes body-level context and cancels pending context gesture');
 console.log('PASS background/pagehide/beforeunload close stale context before later interaction');
