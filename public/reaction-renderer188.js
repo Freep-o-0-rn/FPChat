@@ -374,6 +374,9 @@
         diagnostic?.missing?.(trace,'dom','element-removed');
         diagnostic?.missing?.(trace,'frameOpportunity','element-removed');
       }
+    } else if (trace && !detail.optimistic) {
+      if (patched) diagnostic?.step?.(trace,'final-ready');
+      else diagnostic?.missing?.(trace,'final','room-switched');
     }
   }, { passive: true });
 
