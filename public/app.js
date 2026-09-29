@@ -1009,8 +1009,69 @@ async function allocateViewStateSequence(deviceId){
 }
 function getFirstVisibleMessageAnchor(box){if(!box)return null;const messages=[...box.querySelectorAll('.msg[data-message-id]')];if(!messages.length)return null;const boxTop=box.getBoundingClientRect().top;let fallback=null;for(const el of messages){const rect=el.getBoundingClientRect();const raw=el.dataset.messageId||el.dataset.id;const numeric=Number(raw);const id=Number.isInteger(numeric)&&numeric>0?numeric:raw;if(!id)continue;if(!fallback)fallback={anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};if(rect.bottom>=boxTop){return {anchorMessageId:id,anchorOffsetPx:Math.round(rect.top-boxTop)};}}return fallback;}
 
+// Build 190.7: arbitration is decision-only. FPScroll173 remains the only
+// #messages geometry writer; this object can accept/resolve intent and authorize
+// the manager's opening writes, but it never mutates scrollTop/scrollTo itself.
+const scrollIntentArbiter1907=(()=>{
+  let phase='idle',roomId='',generation=0,explicitIntent=null,userInterrupted=false,serial=0,lastDecision='idle';
+  const metrics={begins:0,explicitOffers:0,userInterrupts:0,resolutions:0,authorizedWrites:0,blockedWrites:0};
+  const safeIntent=(intent)=>{
+    const type=intent?.type;
+    if(type==='bottom')return{type,serial:++serial};
+    if(type==='focus'){
+      const messageId=Number(intent?.messageId);
+      if(!Number.isSafeInteger(messageId)||messageId<=0)return null;
+      return{type,messageId,behavior:intent?.behavior==='smooth'?'smooth':'auto',topGap:Number(intent?.topGap)||0,serial:++serial};
+    }
+    return null;
+  };
+  return Object.freeze({
+    begin(nextRoomId,nextGeneration){
+      roomId=String(nextRoomId||'');generation=Number(nextGeneration)||0;phase='opening';
+      explicitIntent=null;userInterrupted=false;lastDecision='opening';metrics.begins++;
+    },
+    interrupt(reason='user-scroll'){
+      if(phase!=='opening')return false;
+      userInterrupted=true;serial++;lastDecision=String(reason||'user-scroll').slice(0,40);metrics.userInterrupts++;return true;
+    },
+    offer(intent){
+      if(phase!=='opening')return false;
+      const normalized=safeIntent(intent);if(!normalized)return false;
+      explicitIntent=normalized;lastDecision='queued-'+normalized.type;metrics.explicitOffers++;return true;
+    },
+    resolve(nextRoomId,nextGeneration){
+      metrics.resolutions++;
+      if(phase!=='opening'||roomId!==String(nextRoomId||'')||generation!==Number(nextGeneration)){
+        lastDecision='cancelled';return{type:'cancelled'};
+      }
+      if(explicitIntent){lastDecision='explicit-'+explicitIntent.type;return{...explicitIntent};}
+      if(userInterrupted){lastDecision='user-interrupted';return{type:'user-interrupted'};}
+      lastDecision='initial';return{type:'initial'};
+    },
+    authorizeWrite(managerPhase,managerGeneration,authority='normal'){
+      const opening=managerPhase==='opening';
+      const allowed=opening
+        ?authority==='opening'&&phase==='opening'&&generation===Number(managerGeneration)
+        :authority!=='opening';
+      metrics[allowed?'authorizedWrites':'blockedWrites']++;
+      return allowed;
+    },
+    finish(nextGeneration){
+      if(generation!==Number(nextGeneration))return false;
+      phase='ready';explicitIntent=null;userInterrupted=false;return true;
+    },
+    stop(){
+      phase='idle';roomId='';explicitIntent=null;userInterrupted=false;serial++;
+    },
+    snapshot(){
+      return{phase,generation,hasExplicitIntent:Boolean(explicitIntent),explicitType:explicitIntent?.type||null,userInterrupted,lastDecision,metrics:{...metrics}};
+    }
+  });
+})();
+window.FPScrollArbiter1907=Object.freeze({snapshot:()=>scrollIntentArbiter1907.snapshot()});
+
 const scrollCoordinator={
-  phase:'idle',roomId:null,box:null,generation:0,pendingIntent:null,openingInterrupted:false,lastProgrammaticAt:0,lastUserIntentAt:0,
+  phase:'idle',roomId:null,box:null,generation:0,lastProgrammaticAt:0,lastUserIntentAt:0,
   latestSnapshots:new Map(),pendingPersistence:new Map(),localTimers:new Map(),networkTimers:new Map(),lastCaptureAt:new Map(),
   interactionVersions:new Map(),persistedInteractionVersions:new Map(),
   metrics:{captures:0,localWrites:0,networkWrites:0,staleRejects:0,scrollWrites:0,captureCostMs:0},
@@ -1028,7 +1089,7 @@ const scrollCoordinator={
     if(!box||box!==this.box)return;
     this.lastUserIntentAt=performance.now();
     this.markPositionIntent(this.roomId);
-    if(this.phase==='opening')this.openingInterrupted=true;
+    if(this.phase==='opening')scrollIntentArbiter1907.interrupt('native-input');
   },
   bindOpeningIntent(box){
     this.unbindOpeningIntent();
@@ -1046,8 +1107,9 @@ const scrollCoordinator={
     };
   },
   unbindOpeningIntent(){try{this.intentCleanup?.();}catch{}this.intentCleanup=null;},
-  write(box,top,behavior='auto'){
+  write(box,top,behavior='auto',authority='normal'){
     if(!isCurrentMessagesBox(box))return false;
+    if(!scrollIntentArbiter1907.authorizeWrite(this.phase,this.generation,authority))return false;
     const max=Math.max(0,box.scrollHeight-box.clientHeight);
     const next=Math.max(0,Math.min(Number(top)||0,max));
     this.lastProgrammaticAt=performance.now();
@@ -1058,7 +1120,7 @@ const scrollCoordinator={
   begin(box,roomId){
     this.stop();
     this.box=box;this.roomId=roomId;this.phase='opening';this.generation+=1;
-    this.pendingIntent=null;this.openingInterrupted=false;
+    scrollIntentArbiter1907.begin(roomId,this.generation);
     this.interactionVersions.set(String(roomId),0);
     this.persistedInteractionVersions.set(String(roomId),0);
     box.dataset.scrollPhase='opening';
@@ -1066,6 +1128,7 @@ const scrollCoordinator={
   },
   finishOpening(box){
     this.phase='ready';
+    scrollIntentArbiter1907.finish(this.generation);
     if(box)delete box.dataset.scrollPhase;
     initialMessagesScrollPending=false;
     resumeUnreadObservation(box);
@@ -1078,26 +1141,30 @@ const scrollCoordinator={
     await waitForInitialMediaLayout(this.box);
     if(this.phase!=='opening'||generation!==this.generation||!isCurrentMessagesBox(this.box))return 'cancelled';
     const box=this.box;
-    if(this.openingInterrupted){
-      this.finishOpening(box);
-      return 'user-interrupted';
-    }
-    const intent=this.pendingIntent;
-    if(intent?.type==='focus'){
+    const intent=scrollIntentArbiter1907.resolve(this.roomId,generation);
+    // Explicit navigation wins even when its originating click/touch was also
+    // observed as generic user input. This closes the 190.5 race where the
+    // generic interruption returned first and silently discarded bottom/focus.
+    if(intent.type==='cancelled')return 'cancelled';
+    if(intent.type==='focus'){
       const target=getViewStateMessageElement(box,{anchorMessageId:intent.messageId});
       if(target){
         const boxRect=box.getBoundingClientRect(),rect=target.getBoundingClientRect();
-        this.write(box,box.scrollTop+rect.top-boxRect.top-intent.topGap,intent.behavior);
+        this.write(box,box.scrollTop+rect.top-boxRect.top-intent.topGap,intent.behavior,'opening');
       }
       this.finishOpening(box);
       return 'explicit-focus';
     }
-    if(intent?.type==='bottom'){
+    if(intent.type==='bottom'){
       this.finishOpening(box);
       if(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174){
         if(window.FPHistory174)void FPHistory174.jump();
       }else this.write(box,box.scrollHeight,'auto');
       return 'explicit-bottom';
+    }
+    if(intent.type==='user-interrupted'){
+      this.finishOpening(box);
+      return 'user-interrupted';
     }
 
     const savedTarget=!viewState?.atBottom?getViewStateMessageElement(box,viewState):null;
@@ -1115,14 +1182,14 @@ const scrollCoordinator={
     if(savedTarget){
       const rect=savedTarget.getBoundingClientRect(),boxRect=box.getBoundingClientRect();
       const offset=Number(viewState?.anchorOffsetPx)||0;
-      this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');
+      this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto','opening');
       mode='restored';
     }else if(unreadTarget){
       const rect=unreadTarget.getBoundingClientRect(),boxRect=box.getBoundingClientRect();
-      this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');
+      this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto','opening');
       mode='unread-first-bottom';
     }else{
-      this.write(box,box.scrollHeight,'auto');
+      this.write(box,box.scrollHeight,'auto','opening');
       mode='bottom';
     }
     this.finishOpening(box);
@@ -1132,11 +1199,12 @@ const scrollCoordinator={
     this.generation+=1;
     this.unbindOpeningIntent();
     if(this.box)delete this.box.dataset.scrollPhase;
-    this.phase='idle';this.roomId=null;this.box=null;this.pendingIntent=null;this.openingInterrupted=false;
+    this.phase='idle';this.roomId=null;this.box=null;
+    scrollIntentArbiter1907.stop();
   },
   requestBottom(box=this.box){
     if(!isCurrentMessagesBox(box))return;
-    if(this.phase==='opening'){this.pendingIntent={type:'bottom'};return;}
+    if(this.phase==='opening'){scrollIntentArbiter1907.offer({type:'bottom'});return;}
     if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&window.FPHistory174){void FPHistory174.jump();return;}
     this.write(box,box.scrollHeight,'auto');
   },
@@ -1146,7 +1214,7 @@ const scrollCoordinator={
     this.markPositionIntent(this.roomId);
     if(this.isOpening(box)){
       const messageId=Number(target.dataset?.messageId||target.dataset?.id);
-      if(Number.isSafeInteger(messageId)&&messageId>0)this.pendingIntent={type:'focus',messageId,behavior,topGap};
+      if(Number.isSafeInteger(messageId)&&messageId>0)scrollIntentArbiter1907.offer({type:'focus',messageId,behavior,topGap});
       return true;
     }
     const boxRect=box.getBoundingClientRect(),rect=target.getBoundingClientRect();
@@ -1231,7 +1299,7 @@ const scrollCoordinator={
   onScroll(box=this.box){
     if(!box||box!==this.box)return;
     if(this.phase==='opening'){
-      if(!this.isProgrammaticWindow())this.openingInterrupted=true;
+      if(!this.isProgrammaticWindow())scrollIntentArbiter1907.interrupt('native-scroll');
       return;
     }
     if(this.phase!=='ready')return;
@@ -1352,13 +1420,17 @@ const scrollCoordinator={
       phase:this.phase,roomId:this.roomId,generation:this.generation,
       localCaptureIntervalMs:VIEW_STATE_LOCAL_CAPTURE_INTERVAL_MS,
       networkMaxLagMs:VIEW_STATE_SAVE_DEBOUNCE_MS,
+      arbiter:window.FPScrollArbiter1907?.snapshot?.()||null,
       metrics:{...this.metrics,captureAverageMs}
     };
   }
 };
 window.FPScroll173=scrollCoordinator;
 const registerScrollOwner173=()=>{
-  try{window.FPRuntime?.registerOwner?.('scroll173',{role:'message-scroll-owner',mode:'active-owner',publicOwner:'FPScroll173'});}catch{}
+  try{
+    window.FPRuntime?.registerOwner?.('scroll173',{role:'message-scroll-manager',mode:'active-owner',publicOwner:'FPScroll173'});
+    window.FPRuntime?.registerOwner?.('scroll-arbiter1907',{role:'message-scroll-intent-arbiter',mode:'arbitration-only',writer:'FPScroll173'});
+  }catch{}
 };
 registerScrollOwner173();
 window.addEventListener?.('fpchat:boot-ready',registerScrollOwner173,{once:true,passive:true});
