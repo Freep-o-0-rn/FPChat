@@ -15,7 +15,8 @@ assert(submitStart>=0&&submitEnd>submitStart,'FPTextSend170 submit executor miss
 const submitBlock=textSend.slice(submitStart,submitEnd);
 const guardAt=submitBlock.indexOf('if (sendingForms.has(form)) return;');
 const addAt=submitBlock.indexOf('sendingForms.add(form);');
-const queueAt=submitBlock.indexOf('queuePendingTextSend(outbound)');
+const queueMatch=/queuePendingTextSend\(outbound(?:\s*,\s*trace19)?\)/.exec(submitBlock);
+const queueAt=queueMatch?.index??-1;
 const clearAt=submitBlock.indexOf('draftCleanup = clearDraftOnServer(roomId)');
 const releaseAt=submitBlock.indexOf('sendingForms.delete(form);');
 const awaitCleanupAt=submitBlock.indexOf('await draftCleanup');
