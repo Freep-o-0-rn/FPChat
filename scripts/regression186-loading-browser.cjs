@@ -136,6 +136,9 @@ run(async ({newClient, temp, root, errors}) => {
   await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='viewer'&&r.consumer==='gallery-current'&&r.status==='ok'));
   await page.waitForFunction(()=>FPRuntime169.loading.report().records.filter(r=>r.kind==='media'&&r.status==='ok').length===3);
   list=(await report()).records;
+  const currentViewer186=list.find(r=>r.kind==='viewer'&&r.consumer==='gallery-current');
+  assert.ok(currentViewer186?.points['original-ready']!==undefined,'viewer original-ready missing');
+  assert.equal(currentViewer186?.missing?.['preview-ready'],'preview-unavailable','viewer missing preview reason is not explicit');
   assert.ok(list.some(r=>r.kind==='gallery-history'&&r.counts.pages>=1));
   assert.equal(list.filter(r=>r.kind==='media'&&r.consumer==='gallery-current').length,1);
   assert.equal(list.filter(r=>r.kind==='media'&&r.consumer==='gallery-neighbor').length,2);
