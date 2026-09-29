@@ -213,15 +213,18 @@
     if(direction==='older'?!history.hasMore:!history.hasNewer)return false;
     const cursor=direction==='older'?history.nextCursor:history.newerCursor;
     if(!Number.isSafeInteger(cursor)||cursor<=0)return false;
+    const diagnostic19=window.FPRuntime169?.loading,trace19=diagnostic19?.begin('history',{direction,historySource:'network'});
+    diagnostic19?.step(trace19,'request-start');
     const view=captureRoomView170(),task=transaction(history,view);
     try{
       const data=await page(view,{[direction==='older'?'before':'after']:String(cursor)},task.signal);
-      if(!task.current())return false;
+      diagnostic19?.step(trace19,'response-ready');
+      if(!task.current()){diagnostic19?.finishWith(trace19,'cancelled','cancelled','context-stale');return false;}
       const existing=new Set(nodes(box).map(n=>String(n.dataset.messageId)));
       const unique=data.messages.filter(m=>!existing.has(String(m.id)));
       ingestReactionPage188(view,data,unique);
       const scratch=await render(view,unique,history.deviceId,task.current);
-      if(!task.current()){nodes(scratch).forEach(dispose);return false;}
+      if(!task.current()){nodes(scratch).forEach(dispose);diagnostic19?.finishWith(trace19,'cancelled','cancelled','context-stale');return false;}
       reconcileBeforeMount(view,scratch,history.deviceId);
       const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;
       const fragment=document.createDocumentFragment();while(scratch.firstChild)fragment.appendChild(scratch.firstChild);
@@ -229,31 +232,34 @@
       else box.appendChild(fragment);
       if(direction==='older'){history.hasMore=Boolean(data.hasMore);history.nextCursor=Number(data.nextCursor)||cursor;}
       else{history.hasNewer=Boolean(data.hasMore);history.newerCursor=Number(data.nextCursor)||cursor;}
-      finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);
+      finishMount(history,box,total);diagnostic19?.step(trace19,'render-ready');restoreAnchor(box,anchor);diagnostic19?.step(trace19,'position-restored');trim(direction);
+      diagnostic19?.finishWith(trace19,'ok','ok','none');
       // A page can contain only canonical tombstones. Advance the API cursor
       // even when none of those records produced a mounted node.
       const next=Number(data.nextCursor)||Number(direction==='older'?data.messages[0]?.id:data.messages.at(-1)?.id);
       if(Number.isSafeInteger(next)&&next>0)history[direction==='older'?'nextCursor':'newerCursor']=next;
       scheduleViewStateSave();
       return unique.length>0;
-    }catch(error){if(error.name!=='AbortError')console.warn('History window load failed',error);return false;}
+    }catch(error){diagnostic19?.fail(trace19,'history',error);if(error.name!=='AbortError')console.warn('History window load failed',error);return false;}
     finally{task.finish();}
   }
   async function loadPending(history,box,records,direction){
+    const diagnostic19=window.FPRuntime169?.loading,trace19=diagnostic19?.begin('history',{direction,historySource:'ram'});
     const view=captureRoomView170(),task=transaction(history,view),scratch=document.createElement('div');
     try{
       await FPWork174.each(records,record=>{
         if(findMessageElement(record.id,record.clientMessageId))return;
         appendMessage(scratch,{...record.raw,id:record.id||record.clientMessageId,status:record.status},record.text,true,false);
       },{current:task.current});
-      if(!task.current())return false;
+      if(!task.current()){diagnostic19?.finishWith(trace19,'cancelled','cancelled','context-stale');return false;}
       reconcileBeforeMount(view,scratch,history.deviceId);
       const anchor=getFirstVisibleMessageAnchor(box),total=unread(box)+history.unloadedUnreadCount;
       const fragment=document.createDocumentFragment();while(scratch.firstChild)fragment.appendChild(scratch.firstChild);
       if(direction==='older')box.insertBefore(fragment,nodes(box).find(n=>!Number.isSafeInteger(id(n)))||null);
       else box.appendChild(fragment);
-      finishMount(history,box,total);restoreAnchor(box,anchor);trim(direction);return true;
-    }finally{nodes(scratch).forEach(dispose);task.finish();}
+      finishMount(history,box,total);diagnostic19?.step(trace19,'render-ready');restoreAnchor(box,anchor);diagnostic19?.step(trace19,'position-restored');trim(direction);diagnostic19?.finishWith(trace19,'ok','ok','ram-source');return true;
+    }catch(error){diagnostic19?.fail(trace19,'history',error);throw error;}
+    finally{nodes(scratch).forEach(dispose);task.finish();}
   }
   function jump(anchor=0){
     const history=activeChatHistory;
