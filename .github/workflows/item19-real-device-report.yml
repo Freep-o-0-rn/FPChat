@@ -1,0 +1,58 @@
+name: Item 19 Real Device Report Verification
+
+on:
+  push:
+    branches:
+      - optimization/performance-item19-real-device-report-after-scroll
+    paths:
+      - '.github/workflows/item19-real-device-report.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: |
+          node --check public/runtime169.js
+          node --check public/app.js
+          node --check public/history174.js
+          node --check public/media-gallery134.js
+          node --check public/reaction-manager188.js
+          node --check public/reaction-renderer188.js
+          node --check scripts/regression186-loading-browser.cjs
+      - name: Existing loading report and item 19 export
+        run: npm run test:186:browser
+      - name: Room history and scroll contracts
+        run: |
+          npm run check:170
+          npm run test:178:history-saved-anchor
+          npm run test:178:unread-restore-bottom
+          npm run test:next:13
+          node ./scripts/audit1902-scroll-save.cjs
+          node ./scripts/regression1902-scroll-resilience.cjs
+          node ./scripts/regression1902-scroll-offline.cjs
+      - name: Media contracts
+        run: |
+          npm run test:177:media-viewer-lifecycle
+          npm run test:185:browser
+          npm run test:190:browser
+      - name: Send and reaction contracts
+        run: |
+          npm run test:next:2
+          npm run test:177:send-manager
+          npm run test:178:message-store-ack
+          node ./scripts/regression1884-reaction-interaction.cjs
+      - name: Ownership audit
+        run: npm run test:180:single-owner-audit
