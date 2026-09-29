@@ -2389,6 +2389,10 @@ window.FPLifecycle170?.subscribe(event=>{
     if(connectionTrace19)diagnostic?.finishWith(connectionTrace19,'cancelled','cancelled','superseded');
     connectionTrace19=diagnostic?.begin('connection')||null;
     connectionOldSocket19=state.ws||null;
+    if(!connectionOldSocket19){
+      diagnostic?.finishWith(connectionTrace19,'error','error','no-connection');
+      connectionTrace19=null;
+    }
     return;
   }
   if(!window.FPMediaSend170||!event.pageActive||event.visibility!=='visible')return;
