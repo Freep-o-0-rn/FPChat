@@ -3912,3 +3912,157 @@ The additive `client_seq` DB column may remain; no destructive migration is requ
 
 No user identity, message data or media cache clear is required.
 
+## Follow-up item 19 — real-device measurements in existing loading report
+
+Status: **done in code/CI; physical iPhone/Android measurements remain manual**.
+
+Base:
+
+`fix/190.2-scroll-restore-races@d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0`
+
+Branch:
+
+`optimization/performance-item19-device-report`
+
+No production deployment and no next item started.
+
+### Existing diagnostics preserved
+
+The implementation extends the existing `FPRuntime169.loading` bounded buffer and the existing Settings → About → **Скачать отчёт загрузки** button.
+
+Existing boot, room key/join/history/render/text/draft/composer/scroll, media queue/cache/network/body/buffer/decrypt/element/frame-opportunity, resource/long-task and safe-error observations remain intact.
+
+Buffer remains **240 records** with the existing `dropped` counter.
+
+No persistent diagnostics, FPS monitor, automatic upload or extra measurement network request was added.
+
+### Added facts
+
+Room/history:
+
+- ordinary vs repeat open;
+- same-room repeat;
+- actual MessageStore RAM reuse vs decrypt/render;
+- existing text/composer/scroll readiness reused rather than duplicated;
+- manual older/newer history attempts tagged as RAM-pending or network.
+
+Photo:
+
+- preview-ready and original-ready are separate;
+- existing cache/network/body/decrypt stages remain the same.
+
+Text send:
+
+- optimistic canonical state;
+- optimistic DOM;
+- first rAF callback opportunity after DOM;
+- actual server ACK;
+- final mounted DOM application.
+
+Reaction:
+
+- optimistic manager state;
+- target reaction DOM;
+- first rAF callback opportunity;
+- authoritative confirmation;
+- authoritative final DOM application.
+
+Connection:
+
+- confirmed old-socket close;
+- later socket open;
+- required sync start/ready;
+- if the browser preserves the old open socket, reconnect remains null and `missing.reconnect = old-socket-preserved`.
+
+Foreground return:
+
+- visible;
+- interface-ready;
+- sync required/not-required;
+- sync completion/outcome.
+
+### Report semantics
+
+New metadata:
+
+- `diagnosticsRevision: 19`;
+- existing build;
+- app revision reused from the startup version result;
+- per-kind attempt summary;
+- explicit missing reasons.
+
+Unknown/missing values remain null rather than 0.
+
+Overlapping phase durations are not presented as additive totals.
+
+`requestAnimationFrame` is described only as a frame-callback opportunity, never as physical pixel presentation.
+
+Owner-provided trace references are local bounded numbers only. Export still excludes conversation text, room/device/message IDs, URLs, secrets and keys.
+
+### Verification
+
+Workflow `36534721791`: **SUCCESS**.
+
+Acceptance head:
+
+`f38894407d14d9022002edf57718110ea949e5aa`
+
+Passed:
+
+- syntax;
+- existing Build 186 loading diagnostics;
+- progressive photo regression;
+- repeated-send/draft ordering;
+- send-manager/message-render ownership;
+- reaction interaction;
+- scroll-fix resilience/offline;
+- connection Build 170 contract;
+- single-owner audit;
+- item-19 export regression.
+
+The item-19 regression used the existing download button and verified:
+
+- interrupted A -> B plus successful B;
+- repeat open;
+- old-history load;
+- text send;
+- reaction;
+- photo preview -> original;
+- offline/online classification;
+- foreground/resume;
+- downloaded JSON;
+- download does not clear records;
+- diagnostics reset does not clear application state;
+- privacy/bounds;
+- no leftover element watches.
+
+### Manual-device dependency
+
+Physical iPhone/Android remain **NOT EXECUTED** in CI.
+
+Diagnostics records are intentionally RAM-only. A reload/closing/OS process kill loses the current not-yet-downloaded records. Therefore each scenario that crosses a reload/process kill needs a separate downloaded file **before** the transition and a new file after relaunch.
+
+The killed process cannot report a post-kill event after it no longer exists.
+
+### Uncovered by design
+
+- true compositor/hardware screen-present timestamp;
+- persistent cross-process diagnostic sessions;
+- continuous FPS monitoring;
+- automatic proof that no visual glitch occurred;
+- production/Cloudflare network-path acceptance.
+
+Adding those would exceed item 19 scope.
+
+### Documentation
+
+- `docs/performance-next19-device-report.md`;
+- `docs/performance-next19-device-report-summary.json`;
+- this journal.
+
+### Rollback
+
+Return to scroll-fix base `d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0`.
+
+No DB migration, cache clear, identity reset or application-data cleanup is required.
+
