@@ -3912,3 +3912,171 @@ The additive `client_seq` DB column may remain; no destructive migration is requ
 
 No user identity, message data or media cache clear is required.
 
+## Follow-up plan — item 19: real-device loading report
+
+Status: **complete — existing downloadable JSON extended for manual iPhone/Android measurements; physical measurements pending user acceptance**.
+
+Branch:
+
+`optimization/performance-item19-real-device-report-v2`
+
+Base:
+
+`fix/190.2-scroll-restore-races@d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0`
+
+No production deployment. No next item started.
+
+### Existing system retained
+
+The implementation extends the existing `FPRuntime169.loading` bounded journal and the existing Settings/About download button.
+
+No new diagnostics manager, session UI, telemetry endpoint, persistent telemetry store, FPS monitor or automatic upload was added.
+
+`FPRuntime169` remains passive. Existing owners emit facts; diagnostics does not call reconnect/send/sync/history/media actions.
+
+### Export schema
+
+Current loading report:
+
+- schema: 2;
+- build: 190.2;
+- appRevision: full loaded `app.js` Git blob SHA;
+- bounded records: 240;
+- dropped count;
+- active element-watch count;
+- coverage and limitations;
+- local numeric trace IDs only;
+- relative start times, duration, points, independent stage durations, status/result/reason and explicit missing reasons.
+
+Missing time is never represented as 0. Overlapping stages must not be summed.
+
+### Added coverage
+
+Room/history:
+
+- ordinary/repeated open;
+- `ram-reuse` vs `network-window`;
+- text/composer/scroll readiness;
+- Build 190.2 restore outcome;
+- separate lazy-history attempts with RAM/network source and outcome.
+
+Photo:
+
+- separate `preview-ready` and `original-ready`;
+- `previewToOriginal`;
+- existing media queue/cache/network/body/buffer/decrypt stages remain;
+- explicit `preview-unavailable` missing reason when no preview exists.
+
+Send/reaction:
+
+- optimistic state;
+- required DOM mutation;
+- next requestAnimationFrame opportunity;
+- server/mutation ACK;
+- final outcome.
+
+ACK and DOM are separate facts. rAF is not hardware presentation.
+
+Connection:
+
+- confirmed current-socket break;
+- new-socket open;
+- completion of existing reconnect sync;
+- preserved live socket is a separate result with reconnect time null and explicit no-break reason.
+
+Resume:
+
+- lifecycle foreground/pageshow start;
+- UI-present fact;
+- existing resume sync start/ready;
+- final result.
+
+### Privacy and bounded cleanup
+
+The downloaded JSON contains no message text, room/device/message/media/reaction IDs, keys, secrets, URLs, request bodies or raw private error text.
+
+Download does not clear measurements.
+
+Clear measurements clears only bounded diagnostics/watchers/drop count and does not change application room data, identity or caches.
+
+Records are intentionally memory-only and are lost on reload/full close/process termination.
+
+### Verification
+
+Final workflow:
+
+`36537386491` — **SUCCESS**
+
+Acceptance runtime head:
+
+`a3af27b4224cc0db6aec2af2619400a6a9e8587d`
+
+Loaded app revision:
+
+`d37b91a992bec3a2efb3ee7051232113644bbd4e`
+
+Passed:
+
+- syntax;
+- app revision contract;
+- Build 186 loading diagnostics;
+- JSON download through existing Settings/About button;
+- two repeated sends and two repeated reaction attempts with distinct local traces;
+- same-session RAM reuse;
+- interrupted A→B;
+- photo preview/original readiness;
+- media viewer lifecycle/cache;
+- preserved-socket and confirmed reconnect paths;
+- resume trace;
+- connection/single-owner checks;
+- Build 190.2 scroll resilience/offline recovery.
+
+The regression verifies download twice does not clear records, private fixture values are absent, and diagnostic reset leaves room application state untouched.
+
+### Manual device plan
+
+Run separately on iPhone and Android:
+
+1. fresh launch;
+2. open the same chat 3× with list returns;
+3. load older history 3× and test saved non-bottom reopen;
+4. open the same normal phone photo 3× and wait for original;
+5. send 3 unique short messages;
+6. add/remove a reaction 3×;
+7. offline about 10 s → online → wait for stable state;
+8. real background/Home about 30 s → return → wait for sync;
+9. download the report via Settings → About.
+
+Recommended filenames:
+
+- `FPChat-190.2-iPhone-main.json`;
+- `FPChat-190.2-Android-main.json`.
+
+Reload/process-kill requires a file **before** the destructive action and a separate file after relaunch, e.g. `before-reload`, `after-reload`, `before-kill`, `after-kill`.
+
+If `dropped > 0`, split the run into smaller files because older diagnostic records were evicted.
+
+### Limits
+
+- physical iPhone/Android background/process-kill semantics are not CI-verified;
+- physical pixel presentation and visual smoothness cannot be proven by JSON;
+- an undownloaded report cannot survive reload/tab close/browser/PWA process kill;
+- item 19 adds no persistent diagnostics by design.
+
+### Documentation
+
+- `docs/Build186_LoadingDiagnostics.md`;
+- `docs/performance-next19-real-device-report.md`;
+- `docs/performance-next19-real-device-report-summary.json`;
+- this journal.
+
+### Rollback
+
+Item-19 runtime rollback target:
+
+`fix/190.2-scroll-restore-races@d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0`.
+
+No DB migration, cache reset, identity reset or user-data cleanup is required.
+
+Production remains unchanged.
+
