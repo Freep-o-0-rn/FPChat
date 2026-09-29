@@ -363,7 +363,18 @@
 
   window.addEventListener('fpchat:reaction188-changed', (event) => {
     const detail = event?.detail || {};
-    patchMounted(detail.roomId, detail.messageId);
+    const patched = patchMounted(detail.roomId, detail.messageId);
+    const diagnostic = window.FPRuntime169?.loading;
+    const trace = Number.isSafeInteger(Number(detail.diagnosticId)) ? { id: Number(detail.diagnosticId) } : null;
+    if (!trace) return;
+    if (!patched) {
+      diagnostic?.annotate(trace,{reason:'reaction-target-dom-not-mounted'});
+      return;
+    }
+    diagnostic?.step(trace,'dom-change');
+    if (document.visibilityState === 'visible') {
+      requestAnimationFrame(() => diagnostic?.step(trace,'frame-opportunity'));
+    }
   }, { passive: true });
 
   ensureStyle();
