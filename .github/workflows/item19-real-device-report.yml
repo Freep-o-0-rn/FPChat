@@ -19,6 +19,7 @@ on:
       - 'public/version.json'
       - 'scripts/regression-next19-real-device-report.cjs'
       - 'scripts/regression-next2-send-draft-release.cjs'
+      - 'scripts/regression177-media-viewer-lifecycle.cjs'
       - 'package.json'
 
 jobs:
