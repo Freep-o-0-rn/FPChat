@@ -15,7 +15,7 @@ assert(submitStart>=0&&submitEnd>submitStart,'FPTextSend170 submit executor miss
 const submitBlock=textSend.slice(submitStart,submitEnd);
 const guardAt=submitBlock.indexOf('if (sendingForms.has(form)) return;');
 const addAt=submitBlock.indexOf('sendingForms.add(form);');
-const queueAt=submitBlock.indexOf('queuePendingTextSend(outbound)');
+const queueAt=submitBlock.indexOf('queuePendingTextSend(outbound');
 const clearAt=submitBlock.indexOf('draftCleanup = clearDraftOnServer(roomId)');
 const releaseAt=submitBlock.indexOf('sendingForms.delete(form);');
 const awaitCleanupAt=submitBlock.indexOf('await draftCleanup');
@@ -128,13 +128,13 @@ run(async({browser,origin,errors})=>{
 
   await page.evaluate(()=>{
     window.__fpNext2={queued:[],originalQueue:window.queuePendingTextSend};
-    window.queuePendingTextSend=function(payload){
+    window.queuePendingTextSend=function(payload,...rest){
       window.__fpNext2.queued.push({
         roomId:String(payload?.roomId||''),
         clientMessageId:String(payload?.clientMessageId||''),
         at:performance.now()
       });
-      return window.__fpNext2.originalQueue(payload);
+      return window.__fpNext2.originalQueue(payload,...rest);
     };
   });
 
