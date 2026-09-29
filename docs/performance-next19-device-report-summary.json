@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "item": 19,
+  "status": "complete_ci_manual_physical_device_measurement_pending",
+  "baseBranch": "fix/190.2-scroll-restore-races",
+  "baseSha": "d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0",
+  "branch": "optimization/performance-item19-device-report",
+  "acceptance": {
+    "workflowRunId": 36534721791,
+    "head": "f38894407d14d9022002edf57718110ea949e5aa",
+    "conclusion": "success"
+  },
+  "report": {
+    "existingExport": true,
+    "diagnosticsRevision": 19,
+    "limit": 240,
+    "droppedCounter": true,
+    "downloadClearsMeasurements": false,
+    "resetClearsAppData": false,
+    "persistentDiagnostics": false,
+    "build": "190.2",
+    "buildRevisionSource": "version.json.appRevision reused from startup loader"
+  },
+  "coverage": {
+    "room": [
+      "ordinary/repeat",
+      "ram reuse/decrypt-render",
+      "text-ready",
+      "composer-ready",
+      "scroll-ready"
+    ],
+    "history": [
+      "ram-pending/network manual load attempt"
+    ],
+    "photo": [
+      "preview-ready",
+      "original-ready",
+      "existing cache/network/body/decrypt"
+    ],
+    "send": [
+      "manager-ready",
+      "dom-ready",
+      "frame-opportunity",
+      "ack-ready",
+      "final-ready"
+    ],
+    "reaction": [
+      "manager-ready",
+      "dom-ready",
+      "frame-opportunity",
+      "ack-ready",
+      "final-ready"
+    ],
+    "connection": [
+      "confirmed break",
+      "socket open",
+      "sync ready",
+      "old socket preserved => reconnect null"
+    ],
+    "resume": [
+      "visible",
+      "interface-ready",
+      "sync required",
+      "sync-ready"
+    ]
+  },
+  "privacy": {
+    "messageContent": false,
+    "roomIds": false,
+    "deviceIds": false,
+    "keysOrSecrets": false,
+    "urls": false,
+    "correlation": "local bounded trace ids"
+  },
+  "limitations": [
+    "requestAnimationFrame is not hardware presentation",
+    "diagnostic action records are RAM-only and are lost on reload/process termination unless downloaded first",
+    "repeat-open classification resets after reload",
+    "no physical iPhone/Android acceptance in CI",
+    "no production/Cloudflare path measurement",
+    "JSON event readiness does not prove absence of visual glitches",
+    "no persistent session diagnostics or continuous FPS tracing"
+  ],
+  "productionPublished": false,
+  "nextItemStarted": false
+}
