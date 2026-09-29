@@ -363,7 +363,13 @@
 
   window.addEventListener('fpchat:reaction188-changed', (event) => {
     const detail = event?.detail || {};
-    patchMounted(detail.roomId, detail.messageId);
+    const patched=patchMounted(detail.roomId, detail.messageId);
+    const traceId=Number(detail.diagnosticTraceId);
+    if(patched&&Number.isSafeInteger(traceId)&&traceId>0){
+      const loading=window.FPRuntime169?.loading,token={id:traceId};
+      loading?.step?.(token,'dom-ready');
+      if(document.visibilityState==='visible')requestAnimationFrame(()=>loading?.step?.(token,'frame-opportunity'));
+    }
   }, { passive: true });
 
   ensureStyle();
