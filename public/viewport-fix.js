@@ -194,12 +194,10 @@
           window.FPScroll173.requestBottom(box);
           return;
         }
-        if (typeof scrollCoordinator !== 'undefined' && scrollCoordinator?.requestBottom) {
-          scrollCoordinator.requestBottom(box);
-          return;
-        }
       } catch {}
-      box.scrollTop = box.scrollHeight;
+      // Build 190.7: no compatibility writer is allowed to mutate #messages.
+      // If the canonical manager is unavailable, skip the pin instead of
+      // creating a second scroll authority.
     });
   }
 
