@@ -3912,3 +3912,143 @@ The additive `client_seq` DB column may remain; no destructive migration is requ
 
 No user identity, message data or media cache clear is required.
 
+## Follow-up item 19 — real-device manual measurement report
+
+Status: **done in branch; physical measurements remain manual**.
+
+Branch:
+
+`optimization/performance-item19-real-device-report-after-scroll`
+
+Base:
+
+`fix/190.2-scroll-restore-races@d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0`
+
+Build: **190.3**.
+
+No production publication and no next item were performed.
+
+### Existing system retained
+
+The work extends the existing `FPRuntime169.loading` bounded journal and the
+existing About-page download button. LIMIT remains 240. Download does not clear
+records; reset affects diagnostics only.
+
+Existing boot, room, network/cache/decrypt and media measurements were retained.
+
+### Added facts
+
+Room/history:
+
+- ordinary vs repeat room open;
+- full MessageStore RAM reuse vs load/fallback;
+- text/composer/position readiness;
+- FPHistory174 older/newer RAM/network attempts with response/render/position
+  restore.
+
+Photo:
+
+- separate viewer preview and original readiness;
+- existing network/cache/body/decrypt child stages unchanged.
+
+Send:
+
+- actual owner is FPTextSend170;
+- optimistic canonical state;
+- matching DOM;
+- next rAF opportunity;
+- message ACK;
+- final promoted DOM/outcome.
+
+Reaction:
+
+- FPReactionManager188 optimistic state/server result;
+- FPReactionRenderer188 target DOM/rAF/final DOM;
+- WS reconciliation has ACK null + `ack-not-observed`, not a fabricated server
+  ACK.
+
+Connection:
+
+- offline attempt remembers the old socket object only transiently;
+- real reconnect requires observed close + different open socket;
+- preserved socket exports reconnect null / `socket-preserved`;
+- sync readiness is reported separately.
+
+Resume:
+
+- real background/pagehide arms the attempt;
+- foreground/pageshow records visible;
+- UI readiness and completion of existing resume sync are separate.
+
+### Report semantics
+
+`schema:1` is retained; `schemaRevision:19` identifies the extension.
+
+Each record has a page-local numeric attempt number. No message text, keys,
+room/device/user/message/media identifiers, URLs or request bodies are exported.
+
+Missing times are null and safe missing reasons are provided when known.
+
+rAF metrics are browser frame opportunities, not physical presentation.
+
+Top-level report includes build, validated loaded-app revision, coverage,
+limitations, `dropped`, `pendingRecords`, and active element watch count.
+
+### Verification
+
+Final workflow:
+
+`36522042691` — **SUCCESS**.
+
+Verified runtime head before documentation:
+
+`1dcb16a47c2d55699ffe736faf8f6a1c3df2d428`.
+
+Build identity:
+
+`5bb585b52b190bf9d80a779a4ffc68842f13214b`.
+
+Passed:
+
+- app revision/immutable-cache contracts;
+- existing loading diagnostics;
+- JSON through the existing About button;
+- repeated download without clear;
+- bounded/privacy/reset/watch cleanup;
+- first/repeat room + RAM/load classification;
+- history;
+- preview/original;
+- send/reaction;
+- A→B cancellation;
+- offline connection classification;
+- resume hook;
+- Build 190.2 scroll/history/offline;
+- media 185/190;
+- repeated-send ordering;
+- MessageStore ACK;
+- reaction interaction;
+- single-owner audit.
+
+### Manual-data boundary
+
+The diagnostic journal is RAM-only. Reload or browser/PWA process termination
+discards it. A pre-reload/pre-kill file must therefore be downloaded before the
+action. This does not affect the separate durable scroll-position mechanism.
+
+Physical iPhone/Android background/process kill and actual display pixels are not
+claimed as automated results.
+
+### Documentation
+
+- `docs/performance-next19-real-device-report.md`;
+- `docs/performance-next19-real-device-report-summary.json`;
+- `docs/Build186_LoadingDiagnostics.md`.
+
+### Rollback
+
+Rollback target is the scroll-fix base:
+
+`d23ae1ef0a3bdfdce99780ebafe8d9416ea340c0`.
+
+No database migration, cache cleanup or identity reset is required.
+
