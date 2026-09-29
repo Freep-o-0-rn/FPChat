@@ -576,7 +576,7 @@
         history:['history-start','text-ready','outcome-ready']
       };
       const missingFor = item => {
-        const expected = expectedByKind[item.kind] || [];
+        const expected = item.kind === 'viewer' && item.mediaType !== 'image' ? [] : (expectedByKind[item.kind] || []);
         const missing = {};
         for (const point of expected) {
           if (item.points[point] !== undefined) continue;
