@@ -13,6 +13,8 @@
   let reconnectAttempt = 0;
   let socketGeneration = 0;
   let manualClose = false;
+  let diagnosticTrace19 = null;
+  let diagnosticOfflineSocket19 = null;
 
   function socketSnapshot(socket = currentSocket) {
     if (!socket) return { exists: false, readyState: null };
@@ -45,10 +47,21 @@
     const onOpen = () => {
       if (socket !== currentSocket) return;
       emit('open', socket);
+      if (diagnosticTrace19) window.FPRuntime169?.loading?.step?.(diagnosticTrace19,'socket-open');
     };
     const onClose = () => {
       if (socket !== currentSocket) return;
       emit('close', socket);
+      if (!manualClose) {
+        const diagnostic=window.FPRuntime169?.loading;
+        if (!diagnosticTrace19) {
+          diagnosticTrace19=diagnostic?.begin?.('connection')||null;
+          diagnostic?.annotate?.(diagnosticTrace19,{action:'reconnect',source:'socket-close',syncRequired:true});
+        }
+        diagnosticOfflineSocket19=socket;
+        diagnostic?.step?.(diagnosticTrace19,'break-confirmed');
+        diagnostic?.annotate?.(diagnosticTrace19,{breakConfirmed:true,oldSocketPreserved:false});
+      }
     };
     const onError = () => {
       if (socket !== currentSocket) return;
@@ -204,6 +217,50 @@
     watchSocket(currentSocket);
   }
 
+  function noteNetworkOffline() {
+    const diagnostic=window.FPRuntime169?.loading;
+    if (diagnosticTrace19) return diagnosticTrace19;
+    diagnosticTrace19=diagnostic?.begin?.('connection')||null;
+    diagnosticOfflineSocket19=currentSocket||null;
+    diagnostic?.annotate?.(diagnosticTrace19,{action:'network-cycle',source:'offline',syncRequired:true});
+    return diagnosticTrace19;
+  }
+
+  function markSyncStart() {
+    if (diagnosticTrace19) window.FPRuntime169?.loading?.step?.(diagnosticTrace19,'sync-start');
+  }
+
+  function markSyncReady(success = true) {
+    const trace=diagnosticTrace19;
+    if (!trace) return;
+    const diagnostic=window.FPRuntime169?.loading;
+    diagnostic?.step?.(trace,'sync-ready');
+    const record=diagnostic?.report?.().records?.find?.((item)=>item.id===trace.id)||null;
+    const broke=Boolean(record?.points?.['break-confirmed']!==undefined);
+    const opened=Boolean(record?.points?.['socket-open']!==undefined);
+    if (!broke && diagnosticOfflineSocket19 && diagnosticOfflineSocket19===currentSocket && currentSocket?.readyState===WebSocket.OPEN) {
+      diagnostic?.annotate?.(trace,{oldSocketPreserved:true,breakConfirmed:false,outcome:success?'live-connection-preserved':'live-connection-preserved-sync-incomplete'});
+      diagnostic?.missing?.(trace,'reconnect','old-socket-preserved');
+    } else if (broke && opened) {
+      diagnostic?.annotate?.(trace,{outcome:success?'reconnected-ready':'reconnected-sync-incomplete'});
+    } else if (broke) {
+      diagnostic?.annotate?.(trace,{outcome:'break-without-open',reason:'not-observed'});
+      diagnostic?.missing?.(trace,'reconnect','not-observed');
+    }
+    diagnostic?.finish?.(trace,success?'ok':'error');
+    diagnosticTrace19=null;
+    diagnosticOfflineSocket19=null;
+  }
+
+  function markSyncNotRequired() {
+    const trace=diagnosticTrace19;
+    if (!trace) return;
+    const diagnostic=window.FPRuntime169?.loading;
+    diagnostic?.annotate?.(trace,{syncRequired:false});
+    diagnostic?.missing?.(trace,'sync','not-required');
+    markSyncReady(true);
+  }
+
   window.FPConnection170 = Object.freeze({
     current: () => currentSocket,
     snapshot,
@@ -219,7 +276,11 @@
     beginReplacement,
     adoptCurrent,
     releaseCurrent,
-    closeCurrent
+    closeCurrent,
+    noteNetworkOffline,
+    markSyncStart,
+    markSyncReady,
+    markSyncNotRequired
   });
 
   try {
