@@ -705,7 +705,6 @@
             }
             diagnostic19?.step?.(trace19,'ack-ready');
             applyAuthoritative(room, message, data,{diagnosticTrace:trace19});
-            diagnostic19?.step?.(trace19,'final-ready');
             diagnostic19?.annotate?.(trace19,{outcome:'confirmed'});
             diagnostic19?.finish?.(trace19,'ok');
             stats.mutationsConfirmed += 1;
@@ -720,7 +719,7 @@
               const fulfilled = op === 'add' ? authoritativeMine.has(id) : !authoritativeMine.has(id);
               if (fulfilled) {
                 diagnostic19?.step?.(trace19,'ack-ready');
-                diagnostic19?.step?.(trace19,'final-ready');
+                diagnostic19?.missing?.(trace19,'final','not-observed');
                 diagnostic19?.annotate?.(trace19,{outcome:'confirmed-by-ws'});
                 diagnostic19?.finish?.(trace19,'ok');
                 stats.mutationsConfirmed += 1;
