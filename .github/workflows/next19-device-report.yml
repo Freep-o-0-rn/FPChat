@@ -18,6 +18,7 @@ on:
       - 'public/connection170.js'
       - 'public/version.json'
       - 'scripts/regression-next19-device-report.cjs'
+      - 'scripts/regression-next2-send-draft-release.cjs'
       - 'package.json'
 
 jobs:
