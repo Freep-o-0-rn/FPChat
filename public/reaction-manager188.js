@@ -46,14 +46,15 @@
     return room && message ? `${room}:${message}` : '';
   }
 
-  function emitChanged(roomId, messageId, revision = null, optimistic = false) {
+  function emitChanged(roomId, messageId, revision = null, optimistic = false, diagnosticTraceId = null) {
     try {
       window.dispatchEvent(new CustomEvent('fpchat:reaction188-changed', {
         detail: {
           roomId: normalizeRoomId(roomId),
           messageId: normalizeMessageId(messageId),
           reactionRevision: revision == null ? null : Math.max(0, Number(revision || 0) || 0),
-          optimistic: Boolean(optimistic)
+          optimistic: Boolean(optimistic),
+          diagnosticTraceId: Number.isSafeInteger(Number(diagnosticTraceId)) ? Number(diagnosticTraceId) : null
         }
       }));
     } catch {}
@@ -154,7 +155,7 @@
     }
     room.set(id, next);
     stats.ingested += 1;
-    emitChanged(roomId, id, next.reactionRevision, false);
+    emitChanged(roomId, id, next.reactionRevision, false, options.diagnosticTraceId);
     return next;
   }
 
@@ -643,14 +644,20 @@
       return Promise.reject(mutationError('REACTION_ROOM_CONTEXT_STALE'));
     }
 
+    const diagnostic19=window.FPRuntime169?.loading;
+    const trace19=diagnostic19?.begin?.('reaction');
+    diagnostic19?.tag?.(trace19,'source','owner-event');
+
     const current = get(room, message);
     const mine = new Set((current?.myReactions || []).map((item) => String(item.reactionId || '')));
     if ((op === 'add' && mine.has(id)) || (op === 'remove' && !mine.has(id))) {
+      diagnostic19?.result?.(trace19,'no-op','none'); diagnostic19?.finish?.(trace19,'ok');
       return Promise.resolve({ ok: true, changed: false, localNoop: true });
     }
 
     const descriptor = descriptorFor(id, reaction || (current?.reactions || []).find((item) => item.reactionId === id));
     if (op === 'add' && descriptor.enabled === false) {
+      diagnostic19?.result?.(trace19,'error','owner-error'); diagnostic19?.finish?.(trace19,'error');
       return Promise.reject(mutationError('REACTION_DISABLED'));
     }
 
@@ -665,12 +672,14 @@
       operation: op,
       createdAt: new Date().toISOString(),
       roomContext,
-      controller: null
+      controller: null,
+      diagnosticTrace19: trace19
     };
     const pending = pendingFor(room, message, true);
     pending.push(entry);
     stats.optimisticApplied += 1;
-    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true);
+    diagnostic19?.step?.(trace19,'optimistic-ready');
+    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true, trace19?.id);
 
     const queued = window.FPReactionArbiter188?.enqueue?.({
       roomId: room,
@@ -698,7 +707,7 @@
               error.status = response.status;
               throw error;
             }
-            applyAuthoritative(room, message, data);
+            applyAuthoritative(room, message, data, { diagnosticTraceId: trace19?.id });
             stats.mutationsConfirmed += 1;
             return data;
           } catch (error) {
@@ -729,9 +738,17 @@
       }
     }) || Promise.reject(mutationError('REACTION_ARBITER_UNAVAILABLE'));
 
-    return queued.catch((error) => {
-      if (error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL')) stats.mutationsCancelled += 1;
+    return queued.then((data) => {
+      diagnostic19?.step?.(trace19,'ack-ready');
+      diagnostic19?.result?.(trace19,'ok','none');
+      diagnostic19?.finish?.(trace19,'ok');
+      return data;
+    }).catch((error) => {
+      const cancelled=error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL');
+      if (cancelled) stats.mutationsCancelled += 1;
       else stats.mutationsFailed += 1;
+      diagnostic19?.result?.(trace19,cancelled?'cancelled':'error',cancelled?'aborted':Number(error?.status)?'server-error':'network-error');
+      diagnostic19?.finish?.(trace19,cancelled?'cancelled':'error');
       throw error;
     }).finally(() => {
       const removed = removePendingEntry(entry);
