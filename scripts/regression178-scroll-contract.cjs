@@ -42,7 +42,7 @@ const bottomStart = owner.indexOf('requestBottom(box=this.box)');
 const bottomEnd = owner.indexOf('focus(target', bottomStart);
 assert(bottomStart >= 0 && bottomEnd > bottomStart, 'requestBottom flow missing');
 const bottom = owner.slice(bottomStart, bottomEnd);
-const openingIndex = bottom.indexOf("if(this.phase==='opening'){scrollIntentArbiter1907.offer({type:'bottom'});return;}");
+const openingIndex = bottom.indexOf("if(this.phase==='opening')return scrollIntentArbiter1907.offer({type:'bottom'});");
 const jumpIndex = bottom.indexOf('return FPHistory174.jump();');
 const writeIndex = bottom.indexOf("this.write(box,box.scrollHeight,'auto');");
 assert(openingIndex >= 0 && jumpIndex > openingIndex && writeIndex > jumpIndex, 'explicit bottom intent no longer wins opening restore while real-tail loading remains owned by FPHistory174');
