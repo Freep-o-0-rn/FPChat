@@ -422,13 +422,37 @@
   const loading186 = (() => {
     const LIMIT = 240;
     const records = new Map(), contexts = new WeakMap(), watches = new Map();
-    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair']);
+    const kinds = new Set(['room', 'history', 'media', 'viewer', 'gallery-history', 'cache-repair', 'send', 'reaction', 'connection', 'resume']);
     const consumers = new Set(['chat-thumbnail', 'gallery-current', 'gallery-neighbor', 'other']);
-    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page').split(' '));
+    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page preview-ready original-ready optimistic-ready dom-ready frame-opportunity ack-ready outcome-ready break-confirmed reconnect-open sync-start sync-ready visible-start ui-ready').split(' '));
     const cacheStates = new Set(['unknown', 'hit', 'miss', 'expired', 'unavailable', 'error', 'ram-hit', 'ram-pending']);
+    const tagValues = Object.freeze({
+      source: new Set(['network-window','ram-reuse','network-history','existing-preview','original-load','owner-event','unknown']),
+      restore: new Set(['saved-anchor','first-unread','tail','explicit-focus','explicit-bottom','user-interrupted','cancelled','unknown']),
+      reason: new Set(['none','cancelled','aborted','room-switched','no-break-old-socket-preserved','sync-not-required','sync-unavailable','owner-error','dom-missing','not-visible','original-error','network-error','server-error','unknown']),
+      result: new Set(['ok','cancelled','error','preserved-live-socket','reconnected','no-op','unknown'])
+    });
+
     let sequence = 0, dropped = 0, enabled = true, sweepQueued = false;
     const round = value => Math.round(Math.max(0, value) * 10) / 10;
     const get = token => token && records.get(token.id);
+    function tag(token, name, value) {
+      const item = get(token);
+      if (!enabled || !item) return false;
+      if (name === 'repeated' || name === 'syncRequired') { item[name] = Boolean(value); return true; }
+      const allowed = tagValues[name];
+      const normalized = String(value ?? '');
+      if (!allowed || !allowed.has(normalized)) return false;
+      item[name] = normalized;
+      return true;
+    }
+    function result(token, outcome = 'unknown', reason = 'none') {
+      tag(token, 'result', outcome);
+      tag(token, 'reason', reason);
+      step(token, 'outcome-ready');
+      return true;
+    }
+
     function cleanup(id) { const watch = watches.get(id); if (watch) { watches.delete(id); watch.cleanup(); } }
     function begin(kind, metadata = {}) {
       if (!enabled || !kinds.has(kind)) return null;
@@ -532,6 +556,38 @@
     }, {passive:true});
     function report() {
       const duration = (item, from, to) => item.points[from] === undefined || item.points[to] === undefined ? null : round(item.points[to] - item.points[from]);
+      const appRevision = (() => {
+        try {
+          const script = [...document.scripts].find(node => {
+            const url = new URL(node.src || '', location.href);
+            return url.origin === location.origin && url.pathname === '/app.js';
+          });
+          if (!script) return null;
+          const value = new URL(script.src, location.href).searchParams.get('v');
+          return /^[a-f0-9]{7,64}$/i.test(String(value || '')) ? String(value) : null;
+        } catch { return null; }
+      })();
+      const expectedByKind = {
+        send:['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'],
+        reaction:['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'],
+        connection:['break-confirmed','reconnect-open','sync-ready','outcome-ready'],
+        resume:['visible-start','ui-ready','sync-ready','outcome-ready'],
+        viewer:['preview-ready','original-ready'],
+        history:['history-start','text-ready','outcome-ready']
+      };
+      const missingFor = item => {
+        const expected = expectedByKind[item.kind] || [];
+        const missing = {};
+        for (const point of expected) {
+          if (item.points[point] !== undefined) continue;
+          if (item.status === 'cancelled') missing[point] = 'cancelled';
+          else if (item.status === 'error') missing[point] = item.reason || 'error-before-stage';
+          else if (item.result === 'preserved-live-socket' && point === 'reconnect-open') missing[point] = 'no-break-old-socket-preserved';
+          else if (item.syncRequired === false && point === 'sync-ready') missing[point] = 'sync-not-required';
+          else missing[point] = 'not-observed';
+        }
+        return missing;
+      };
       const boot = window.FPBoot152?.timings186?.() || null;
       const bootEnd = boot?.points['boot-ready'] ?? boot?.points['safety-release'] ?? performance.now();
       const startupResources = {};
@@ -541,12 +597,12 @@
         group.count++; group.transferBytes += resource.transferSize; group.encodedBodyBytes += resource.encodedBodySize;
       }
       return {
-        schema:1, build:loadingBuild, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
-        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'hooks from runtime installation; ordinary-entry; direct-entry-starts-after-join', media:'common readEncryptedMedia174 path including voice/save reads; no independent I/O or voice/save playback readiness', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image load, active video loadeddata, neighbor video loadedmetadata and frame opportunity; not native decode duration or actual paint', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
+        schema:2, build:loadingBuild, appRevision, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
+        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'owner hooks include same-session RAM reuse tag, text/composer/scroll readiness and bounded history attempts', media:'common readEncryptedMedia174 stages retained; viewer adds separate preview/original readiness when owners can prove them', actions:'send/reaction owner facts separate optimistic state, target DOM, next rAF opportunity, acknowledgement and final outcome', connection:'only owner-observed socket break/open and existing sync completion; diagnostics never calls ensureConnected', resume:'lifecycle visible to UI-ready and existing resume-sync completion when observed', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'requestAnimationFrame is only a browser frame callback opportunity, never hardware pixel presentation', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
         boot, startupResources,
         viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio},
         runtime:{visibility:document.visibilityState, online:navigator.onLine, longTasks:longTasks.length, longTaskMs:round(longTasks.reduce((sum, x) => sum + x.durationMs, 0))},
-        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}}))
+        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, missing:missingFor(item), ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}}))
       };
     }
     function reset() { for (const id of watches.keys()) cleanup(id); records.clear(); dropped = 0; }
@@ -555,7 +611,7 @@
       const link = document.createElement('a'); link.href = url; link.download = `FPChat-${loadingBuild || 'unknown'}-loading.json`;
       document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
-    return Object.freeze({begin, step, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
+    return Object.freeze({begin, step, tag, result, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
       setEnabled(value) { enabled = Boolean(value); if (!enabled) reset(); }});
   })();
 
