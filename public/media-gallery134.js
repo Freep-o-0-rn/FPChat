@@ -379,8 +379,19 @@
       previewImage.draggable = false;
       previewImage.dataset.fpViewerSource = 'preview';
       previewImage.classList.add('fp-gallery134-photo-preview');
+      const notePreviewReady186=()=>{
+        if(
+          previewImage.isConnected
+          && previewImage.parentElement===container
+          && previewImage.complete
+          && previewImage.naturalWidth>0
+          && container.dataset.publicId===publicId
+        ) diagnostic186?.step(trace186,'preview-ready');
+      };
+      previewImage.addEventListener('load',notePreviewReady186,{once:true});
+      previewImage.addEventListener('error',()=>diagnostic186?.annotate(trace186,{reason:'preview-element-error'}),{once:true});
       container.replaceChildren(previewImage);
-      diagnostic186?.step(trace186,'preview-ready');
+      if(previewImage.complete&&previewImage.naturalWidth>0)queueMicrotask(notePreviewReady186);
       bindPhoto185(viewerInteraction, previewImage, viewerState, publicId);
     } else {
       diagnostic186?.annotate(trace186,{preview:'not-available'});
