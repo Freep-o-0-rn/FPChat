@@ -422,9 +422,9 @@
   const loading186 = (() => {
     const LIMIT = 240;
     const records = new Map(), contexts = new WeakMap(), watches = new Map();
-    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair']);
+    const kinds = new Set(['room', 'media', 'viewer', 'gallery-history', 'cache-repair', 'send', 'reaction', 'connection', 'resume']);
     const consumers = new Set(['chat-thumbnail', 'gallery-current', 'gallery-neighbor', 'other']);
-    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page').split(' '));
+    const phases = new Set(('key-start key-ready join-start join-headers join-ready committed history-start history-ready render-start first-message-mounted text-ready draft-start draft-ready composer-ready scroll-start scroll-ready layout-wait-start layout-thumbs-wait-end layout-wait-end messages-revealed visible-frame ready queue-start slot-ready cache-start cache-ready cache-open-start cache-open-ready cache-meta-start cache-meta-ready cache-match-start cache-match-ready cache-delete-start cache-delete-ready cache-keys-start cache-keys-ready cache-repair-start cache-repair-ready maintenance-wait-start maintenance-wait-end cache-keys-wait-start cache-keys-wait-end network-start response-ready body-start body-ready buffer-start buffer-ready decrypt-start decrypt-ready url-ready asset-start asset-ready element-ready paint-opportunity history-page preview-ready original-ready optimistic-state dom-change frame-opportunity server-ack final-state socket-break network-restored socket-open sync-start sync-ready visible ui-ready').split(' '));
     const cacheStates = new Set(['unknown', 'hit', 'miss', 'expired', 'unavailable', 'error', 'ram-hit', 'ram-pending']);
     let sequence = 0, dropped = 0, enabled = true, sweepQueued = false;
     const round = value => Math.round(Math.max(0, value) * 10) / 10;
@@ -433,11 +433,12 @@
     function begin(kind, metadata = {}) {
       if (!enabled || !kinds.has(kind)) return null;
       const id = ++sequence;
-      const item = {id, kind, startMs:performance.now(), durationMs:null, status:'pending', points:{}, counts:{}, cache:'unknown'};
+      const item = {id, kind, startMs:performance.now(), durationMs:null, endedMs:null, status:'pending', outcome:null, reason:null, points:{}, counts:{}, cache:'unknown'};
       if (consumers.has(metadata.consumer)) item.consumer = metadata.consumer;
       if (metadata.endpoint === 'thumb' || metadata.endpoint === 'blob') item.endpoint = metadata.endpoint;
       if (['image','video','audio','file'].includes(metadata.mediaType)) item.mediaType = metadata.mediaType;
       if (Number.isSafeInteger(metadata.parent)) item.parent = metadata.parent;
+      annotate({id}, metadata);
       records.set(id, item);
       while (records.size > LIMIT) { const oldest = records.keys().next().value; cleanup(oldest); records.delete(oldest); dropped++; }
       return Object.freeze({id});
@@ -455,12 +456,24 @@
       if (name === 'cache-repair-ready' && Number.isFinite(value)) item.counts.updatedEntries = Math.max(0, Math.trunc(value));
       if (name === 'response-ready' && Number.isInteger(value)) item.httpStatus = value;
     }
+    function annotate(token, metadata = {}) {
+      const item = get(token);
+      if (!item || !metadata || typeof metadata !== 'object') return;
+      const stringKeys = ['entry','openMode','dataSource','reason','outcome','operation','reconnect','sync','ui','preview','original'];
+      for (const key of stringKeys) {
+        if (metadata[key] === undefined || metadata[key] === null) continue;
+        item[key] = String(metadata[key]).slice(0, 64);
+      }
+      const boolKeys = ['reusedRam','previewAvailable','syncRequired','oldSocketPreserved','actualResultVerified'];
+      for (const key of boolKeys) if (typeof metadata[key] === 'boolean') item[key] = metadata[key];
+    }
     function cache(token, state) { const item = get(token); if (item && cacheStates.has(state)) item.cache = state; }
     function finish(token, status = 'ok') {
       const item = get(token);
       if (!item || item.status !== 'pending') return;
       item.status = ['ok', 'cancelled', 'error'].includes(status) ? status : 'error';
-      item.durationMs = round(performance.now() - item.startMs);
+      item.endedMs = round(performance.now());
+      item.durationMs = round(item.endedMs - item.startMs);
       cleanup(item.id);
     }
     function fail(token, stage, error, httpStatus) {
@@ -530,6 +543,37 @@
         for (const [id, watch] of watches) if (!watch.element.isConnected) finish({id}, 'cancelled');
       });
     }, {passive:true});
+    function buildIdentity() {
+      try {
+        const script = [...document.scripts].find((node) => {
+          try { return new URL(node.src, location.href).pathname === '/app.js'; } catch { return false; }
+        });
+        if (!script?.src) return { build: loadingBuild, appRevision: null, source: 'runtime-script-only' };
+        const url = new URL(script.src, location.href);
+        const build = /^\d+(?:\.\d+)*$/.test(String(url.searchParams.get('v') || '')) ? url.searchParams.get('v') : loadingBuild;
+        const revision = String(url.searchParams.get('r') || '');
+        return { build: build || null, appRevision: /^[a-f0-9]{40}$/i.test(revision) ? revision : null, source: 'loaded-app-script-url' };
+      } catch {
+        return { build: loadingBuild, appRevision: null, source: 'unknown' };
+      }
+    }
+    const expectedPhases = Object.freeze({
+      send:['optimistic-state','dom-change','frame-opportunity','server-ack','final-state'],
+      reaction:['optimistic-state','dom-change','frame-opportunity','server-ack','final-state'],
+      connection:['network-restored','sync-ready'],
+      resume:['visible','ui-ready','sync-ready']
+    });
+    function missingFor(item) {
+      const expected = expectedPhases[item.kind] || [];
+      const missing = {};
+      for (const phase of expected) {
+        if (item.points[phase] !== undefined) continue;
+        let reason = item.reason || (item.status === 'pending' ? 'not-observed-yet' : item.status === 'cancelled' ? 'cancelled' : item.status === 'error' ? 'error-before-phase' : 'not-observed');
+        if (item.kind === 'connection' && phase === 'socket-break' && item.oldSocketPreserved === true) reason = 'old-socket-preserved';
+        missing[phase] = reason;
+      }
+      return missing;
+    }
     function report() {
       const duration = (item, from, to) => item.points[from] === undefined || item.points[to] === undefined ? null : round(item.points[to] - item.points[from]);
       const boot = window.FPBoot152?.timings186?.() || null;
@@ -541,12 +585,12 @@
         group.count++; group.transferBytes += resource.transferSize; group.encodedBodyBytes += resource.encodedBodySize;
       }
       return {
-        schema:1, build:loadingBuild, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
-        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'hooks from runtime installation; ordinary-entry; direct-entry-starts-after-join', media:'common readEncryptedMedia174 path including voice/save reads; no independent I/O or voice/save playback readiness', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image load, active video loadeddata, neighbor video loadedmetadata and frame opportunity; not native decode duration or actual paint', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
+        schema:2, build:loadingBuild, buildIdentity:buildIdentity(), capturedAt:new Date().toISOString(), timeOriginMs:Number(performance.timeOrigin)||null, mode:'passive-owner-hooks', installedAtMs:round(startedAt), enabled, limit:LIMIT, dropped, activeElementWatches:watches.size,
+        coverage:{boot:'explicit-gate-marks-since-inline-loader; assets are bounded observed DOM load/error times, not native network/execute durations; only allowlisted static filenames; pending frozen at release; end marks can be timeout, see completed', room:'owner hooks include text/composer/scroll readiness and RAM-vs-window source when known; old-history page loading remains represented by existing history stages/counters only', media:'common readEncryptedMedia174 path keeps network/cache/decrypt stages; active image viewer adds preview-ready and original-ready when actually observed', sendReaction:'owner hooks separate optimistic state, target DOM change, requestAnimationFrame opportunity, server confirmation and final state; frame opportunity is not physical display presentation', connection:'confirmed socket close/open plus sync completion when observed; preserved old socket is reported with reconnect=null semantics/reason', resume:'foreground visibility, next UI frame opportunity and sync completion; not OS scheduler wake latency before JS executes', cache:'CacheStorage open/meta/match/expired-delete; repair scans separate; HTTP cache not inferred', display:'image/video load and requestAnimationFrame opportunities; never a claim of hardware pixel presentation', resources:'partial browser buffer; bounded runtime history; zero bytes do not prove a cache hit', privacy:'local trace numbers only; no text, room/media/device/message IDs, URLs, keys, error messages or request bodies'},
         boot, startupResources,
         viewport:{width:window.innerWidth,height:window.innerHeight,pixelRatio:window.devicePixelRatio},
         runtime:{visibility:document.visibilityState, online:navigator.onLine, longTasks:longTasks.length, longTaskMs:round(longTasks.reduce((sum, x) => sum + x.durationMs, 0))},
-        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), points:{...item.points}, counts:{...item.counts}, ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready')}}))
+        records:[...records.values()].map(item => ({...item, startMs:round(item.startMs), endedMs:item.endedMs==null?null:round(item.endedMs), points:{...item.points}, counts:{...item.counts}, missing:missingFor(item), ...(item.error ? {error:{...item.error}} : {}), stagesMs:{queue:duration(item,'queue-start','slot-ready'), cache:duration(item,'cache-start','cache-ready'), cacheOpen:duration(item,'cache-open-start','cache-open-ready'), cacheMeta:duration(item,'cache-meta-start','cache-meta-ready'), cacheMatch:duration(item,'cache-match-start','cache-match-ready'), cacheDelete:duration(item,'cache-delete-start','cache-delete-ready'), cacheKeys:duration(item,'cache-keys-start','cache-keys-ready'), cacheRepair:duration(item,'cache-repair-start','cache-repair-ready'), maintenanceWait:duration(item,'maintenance-wait-start','maintenance-wait-end'), cacheKeysWait:duration(item,'cache-keys-wait-start','cache-keys-wait-end'), responseAfterAdmission:duration(item,'slot-ready','response-ready'), body:duration(item,'body-start','body-ready'), buffer:duration(item,'buffer-start','buffer-ready'), decrypt:duration(item,'decrypt-start','decrypt-ready'), element:duration(item,'url-ready','element-ready'), key:duration(item,'key-start','key-ready'), join:duration(item,'join-start','join-ready'), history:duration(item,'history-start','history-ready'), render:duration(item,'render-start','text-ready'), draft:duration(item,'draft-start','draft-ready'), scroll:duration(item,'scroll-start','scroll-ready'), optimisticToDom:duration(item,'optimistic-state','dom-change'), domToFrameOpportunity:duration(item,'dom-change','frame-opportunity'), optimisticToAck:duration(item,'optimistic-state','server-ack'), ackToFinal:duration(item,'server-ack','final-state'), previewToOriginal:duration(item,'preview-ready','original-ready'), breakToOpen:duration(item,'socket-break','socket-open'), visibleToUi:duration(item,'visible','ui-ready'), sync:duration(item,'sync-start','sync-ready')}}))
       };
     }
     function reset() { for (const id of watches.keys()) cleanup(id); records.clear(); dropped = 0; }
@@ -555,7 +599,7 @@
       const link = document.createElement('a'); link.href = url; link.download = `FPChat-${loadingBuild || 'unknown'}-loading.json`;
       document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
-    return Object.freeze({begin, step, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
+    return Object.freeze({begin, step, annotate, cache, finish, fail, roomToken, roomEvent, watchElement, report, reset, download,
       setEnabled(value) { enabled = Boolean(value); if (!enabled) reset(); }});
   })();
 
