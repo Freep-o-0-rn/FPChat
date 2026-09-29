@@ -18,6 +18,7 @@ on:
       - 'public/sync-coordinator176.js'
       - 'public/version.json'
       - 'scripts/regression-next19-real-device-report.cjs'
+      - 'scripts/regression-next2-send-draft-release.cjs'
       - 'package.json'
 
 jobs:
