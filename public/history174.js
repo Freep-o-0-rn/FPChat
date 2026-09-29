@@ -208,12 +208,45 @@
     const mountedLocal=nodes(box).map(n=>index.get(n.dataset.clientMessageId||n.dataset.messageId)).filter(i=>i!==undefined);
     const first=mountedLocal.length?Math.min(...mountedLocal):local.length;
     const last=mountedLocal.length?Math.max(...mountedLocal):-1;
-    if(direction==='older'&&mountedLocal.length&&first>0)return loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction);
-    if(direction==='newer'&&!history.hasNewer&&last<local.length-1)return loadPending(history,box,local.slice(last+1,last+1+PAGE),direction);
+    if(direction==='older'&&mountedLocal.length&&first>0){
+      const trace=window.FPRuntime169?.loading?.begin?.('history');
+      window.FPRuntime169?.loading?.tag?.(trace,'source','ram-reuse');
+      window.FPRuntime169?.loading?.step?.(trace,'history-start');
+      try{
+        const ok=await loadPending(history,box,local.slice(Math.max(0,first-PAGE),first),direction);
+        window.FPRuntime169?.loading?.step?.(trace,'text-ready');
+        window.FPRuntime169?.loading?.result?.(trace,ok?'ok':'no-op','none');
+        window.FPRuntime169?.loading?.finish?.(trace,'ok');
+        return ok;
+      }catch(error){
+        window.FPRuntime169?.loading?.result?.(trace,error?.name==='AbortError'?'cancelled':'error',error?.name==='AbortError'?'aborted':'owner-error');
+        window.FPRuntime169?.loading?.finish?.(trace,error?.name==='AbortError'?'cancelled':'error');
+        throw error;
+      }
+    }
+    if(direction==='newer'&&!history.hasNewer&&last<local.length-1){
+      const trace=window.FPRuntime169?.loading?.begin?.('history');
+      window.FPRuntime169?.loading?.tag?.(trace,'source','ram-reuse');
+      window.FPRuntime169?.loading?.step?.(trace,'history-start');
+      try{
+        const ok=await loadPending(history,box,local.slice(last+1,last+1+PAGE),direction);
+        window.FPRuntime169?.loading?.step?.(trace,'text-ready');
+        window.FPRuntime169?.loading?.result?.(trace,ok?'ok':'no-op','none');
+        window.FPRuntime169?.loading?.finish?.(trace,'ok');
+        return ok;
+      }catch(error){
+        window.FPRuntime169?.loading?.result?.(trace,error?.name==='AbortError'?'cancelled':'error',error?.name==='AbortError'?'aborted':'owner-error');
+        window.FPRuntime169?.loading?.finish?.(trace,error?.name==='AbortError'?'cancelled':'error');
+        throw error;
+      }
+    }
     if(direction==='older'?!history.hasMore:!history.hasNewer)return false;
     const cursor=direction==='older'?history.nextCursor:history.newerCursor;
     if(!Number.isSafeInteger(cursor)||cursor<=0)return false;
     const view=captureRoomView170(),task=transaction(history,view);
+    const trace=window.FPRuntime169?.loading?.begin?.('history');
+    window.FPRuntime169?.loading?.tag?.(trace,'source','network-history');
+    window.FPRuntime169?.loading?.step?.(trace,'history-start');
     try{
       const data=await page(view,{[direction==='older'?'before':'after']:String(cursor)},task.signal);
       if(!task.current())return false;
@@ -235,9 +268,21 @@
       const next=Number(data.nextCursor)||Number(direction==='older'?data.messages[0]?.id:data.messages.at(-1)?.id);
       if(Number.isSafeInteger(next)&&next>0)history[direction==='older'?'nextCursor':'newerCursor']=next;
       scheduleViewStateSave();
+      window.FPRuntime169?.loading?.step?.(trace,'text-ready',unique.length);
+      window.FPRuntime169?.loading?.result?.(trace,unique.length>0?'ok':'no-op','none');
+      window.FPRuntime169?.loading?.finish?.(trace,'ok');
       return unique.length>0;
-    }catch(error){if(error.name!=='AbortError')console.warn('History window load failed',error);return false;}
-    finally{task.finish();}
+    }catch(error){
+      const aborted=error?.name==='AbortError';
+      window.FPRuntime169?.loading?.result?.(trace,aborted?'cancelled':'error',aborted?'aborted':'network-error');
+      window.FPRuntime169?.loading?.finish?.(trace,aborted?'cancelled':'error');
+      if(!aborted)console.warn('History window load failed',error);
+      return false;
+    }
+    finally{
+      window.FPRuntime169?.loading?.finish?.(trace,'cancelled');
+      task.finish();
+    }
   }
   async function loadPending(history,box,records,direction){
     const view=captureRoomView170(),task=transaction(history,view),scratch=document.createElement('div');
