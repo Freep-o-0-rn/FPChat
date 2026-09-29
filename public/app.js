@@ -2328,17 +2328,44 @@ document.addEventListener('touchmove',(e)=>{
 },{passive:true});
 document.addEventListener('touchend',()=>{edgeSwipe.tracking=false;},{passive:true});
 document.addEventListener('touchcancel',()=>{edgeSwipe.tracking=false;},{passive:true});
-let appResumeTimer174=null,appResumeWork174=null;
+let appResumeTimer174=null,appResumeWork174=null,appResumeTrace19=null;
 const handleAppResume=()=>{
   if(appResumeWork174)return appResumeWork174;
   if(document.visibilityState!=='visible')return;
+  const loading19=window.FPRuntime169?.loading,trace19=appResumeTrace19;
+  const syncRequired19=hasKnownSessionRooms();
+  loading19?.tag?.(trace19,'syncRequired',syncRequired19);
+  loading19?.step?.(trace19,'sync-start');
   checkAppVersionOnEntry();flushPendingReads(state.roomId,activeChatDeviceId);updateAppSyncWatchdog();
-  const work=Promise.resolve(window.FPSyncCoordinator176.syncAfterResume()).finally(()=>{if(appResumeWork174===work)appResumeWork174=null;});
+  let resumeWork19;
+  try{resumeWork19=window.FPSyncCoordinator176.syncAfterResume();}
+  catch(error){
+    loading19?.result?.(trace19,'error','owner-error');loading19?.finish?.(trace19,'error');appResumeTrace19=null;throw error;
+  }
+  const work=Promise.resolve(resumeWork19).then((value)=>{
+    loading19?.step?.(trace19,'sync-ready');
+    loading19?.result?.(trace19,'ok',syncRequired19?'none':'sync-not-required');
+    loading19?.finish?.(trace19,'ok');
+    if(appResumeTrace19===trace19)appResumeTrace19=null;
+    return value;
+  },(error)=>{
+    loading19?.result?.(trace19,'error','owner-error');loading19?.finish?.(trace19,'error');
+    if(appResumeTrace19===trace19)appResumeTrace19=null;
+    throw error;
+  }).finally(()=>{if(appResumeWork174===work)appResumeWork174=null;});
   appResumeWork174=work;return work;
 };
 window.FPLifecycle170?.subscribe(event=>{
+  const loading19=window.FPRuntime169?.loading;
+  if((event.lastType==='foreground'||event.lastType==='pageshow')&&event.pageActive&&event.visibility==='visible'&&!appResumeTrace19){
+    appResumeTrace19=loading19?.begin?.('resume')||null;
+    loading19?.tag?.(appResumeTrace19,'source','owner-event');
+    loading19?.step?.(appResumeTrace19,'visible-start');
+    if(els.appRoot?.isConnected)loading19?.step?.(appResumeTrace19,'ui-ready');
+  }
   if(['background','pagehide','beforeunload'].includes(event.lastType)){
     clearTimeout(appResumeTimer174);appResumeTimer174=null;
+    if(appResumeTrace19){loading19?.result?.(appResumeTrace19,'cancelled','cancelled');loading19?.finish?.(appResumeTrace19,'cancelled');appResumeTrace19=null;}
     stopAppSyncWatchdog();saveViewStateForLifecycle();sendClientState(false);return;
   }
   if(event.lastType==='offline'){if(hasKnownSessionRooms())setLocalConnectionState('disconnected');return;}
