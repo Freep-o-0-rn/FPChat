@@ -188,3 +188,115 @@ FPRuntime169.loading.setEnabled(true)
 
 Отключение относится к новым операциям комнат/медиа. Фиксированные boot marks
 и прежняя диагностика Build 169 продолжают существовать.
+
+## Follow-up item 19 — ручные замеры на реальных устройствах
+
+Текущий экспорт `FPRuntime169.loading` расширен **в той же системе диагностики**.
+Нового менеджера, интерфейса сеансов, сервера телеметрии или постоянного
+хранилища не добавлено. Кнопка остаётся прежней:
+
+**Настройки → О приложении → Скачать отчёт загрузки**.
+
+### Текущий формат
+
+- `schema: 2`;
+- `build` — текущий Build;
+- `appRevision` — полный Git blob SHA реально загруженного `app.js`,
+  извлечённый из уже используемого revisioned URL `?r=...`; отдельного
+  сетевого запроса ради диагностики нет;
+- `limit: 240` — прежний ограниченный буфер;
+- `dropped` — число вытесненных записей;
+- `records[].id/parent` — только локальные номера диагностических операций;
+- `missing` — причина отсутствующей отметки. Отсутствующее время остаётся
+  `null`/отсутствующей точкой, а не превращается в `0`;
+- `limitations` и `coverage` описывают реальные границы измерений.
+
+Скачивание не очищает records. Кнопка **«Очистить замеры»** очищает только
+ограниченный диагностический буфер/временные element-watchers и не очищает
+комнаты, сообщения, ключи, кэш приложения или идентичность устройства.
+
+### Дополнительные записи item 19
+
+| kind | Что фиксируется |
+| --- | --- |
+| `room` | первое/повторное открытие, `ram-reuse` или обычное окно, существующие text/draft/composer этапы, итог нового scroll-restore (`saved-anchor`, `first-unread`, `tail`, interruption/explicit action) |
+| `history` | отдельная попытка lazy-history: RAM или network, начало, готовность добавленного текста, результат/отмена |
+| `viewer` | для фото: фактическая готовность уже доступного preview и затем original; прежние cache/network/body/decrypt/element этапы сохранены |
+| `send` | optimistic state → нужная строка DOM → ближайший rAF opportunity → server ACK → конечный исход |
+| `reaction` | optimistic state → reaction DOM patch → ближайший rAF opportunity → mutation ACK → конечный исход |
+| `connection` | подтверждённый close старого current socket → open нового socket → завершение существующего reconnect-sync |
+| `resume` | lifecycle visible/pageshow → UI-ready → завершение уже существующей resume-sync |
+
+Для `send` и `reaction` server acknowledgement и DOM являются разными
+точками. ACK не означает позднейшее DOM-изменение.
+
+`frame-opportunity`, `paint-opportunity` и `visible-frame` означают
+только ближайший callback `requestAnimationFrame` после наблюдаемого
+состояния. Это **не аппаратный момент показа пикселей**.
+
+Если browser offline/online не закрыл старый WebSocket, отдельная connection
+attempt завершается как:
+
+- `result: "preserved-live-socket"`;
+- `reconnect-open` отсутствует;
+- `missing.reconnect-open: "no-break-old-socket-preserved"`.
+
+Диагностика не вызывает `ensureConnected()`, повторную отправку, sync,
+history/media load или иной управляющий action.
+
+### Продолжительности
+
+`stagesMs` содержит независимые интервалы, в том числе:
+
+- `historyToText`;
+- `optimisticToDom`;
+- `domToFrameOpportunity`;
+- `optimisticToAck`;
+- `ackToOutcome`;
+- `previewToOriginal`;
+- `breakToReconnect`;
+- `reconnectToSyncReady`;
+- `visibleToUi`;
+- `visibleToSyncReady`.
+
+Эти интервалы могут перекрываться и **не должны суммироваться** как части
+одного общего времени.
+
+### Приватность
+
+Item 19 не добавляет в экспорт:
+
+- текст сообщений;
+- room/device/message/media IDs;
+- reaction ID;
+- ключи, roomSecret/recovery-коды;
+- URL и тела запросов;
+- исходные тексты ошибок.
+
+Связь manager → renderer/ACK выполняется только локальным числовым trace ID
+текущей страницы.
+
+### Ограничение процесса
+
+Буфер остаётся только в памяти текущего document/process.
+
+**Reload, полное закрытие вкладки/PWA и убийство процесса браузером удаляют
+нескачанные диагностические records.** Поэтому отчёт для действий до reload
+или process-kill нужно скачать **до** этого действия. После нового запуска
+нужно сохранить отдельный файл.
+
+Это не относится к данным приложения: например, scroll snapshot из Build
+190.2 имеет собственный контракт хранения и не является частью
+`FPRuntime169.loading`.
+
+### Что остаётся непокрытым автоматически
+
+- физический момент появления пикселей на iPhone/Android;
+- реальная iOS/Android suspension/process-kill семантика;
+- успешность системного сохранения файла в Safari/PWA;
+- визуальное отсутствие рывка само по себе.
+
+Эти пункты проверяются пользователем на реальном устройстве; JSON даёт
+события и длительности доступных owner-facts, но не заменяет визуальную
+приёмку.
+
