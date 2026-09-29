@@ -19,7 +19,7 @@ const ownerExport = app.indexOf('window.FPScroll173=scrollCoordinator;', ownerSt
 assert(ownerStart >= 0 && ownerExport > ownerStart, 'FPScroll173 owner/export missing');
 const owner = app.slice(ownerStart, ownerExport);
 
-assert(owner.includes("write(box,top,behavior='auto')"), 'central scroll writer changed');
+assert(owner.includes("write(box,top,behavior='auto',authority='normal')"), 'central scroll writer changed');
 assert(owner.includes("if(behavior==='smooth')box.scrollTo({top:next,behavior:'smooth'});else box.scrollTop=next;"), 'scroll write executor changed');
 
 const initialStart = owner.indexOf('async applyInitial(viewState)');
@@ -30,15 +30,19 @@ const restoreBranch = initial.indexOf('if(savedTarget){');
 const unreadBranch = initial.indexOf('}else if(unreadTarget){');
 assert(restoreBranch >= 0, 'initial saved old-history branch missing');
 assert(unreadBranch > restoreBranch, 'new unread can yank a saved non-bottom reading position');
-assert(initial.includes("this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto');"), 'first-unread target/offset changed');
-assert(initial.includes("this.write(box,box.scrollHeight,'auto');"), 'initial bottom fallback changed');
-assert(initial.includes("this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto');"), 'saved-anchor offset formula changed');
+assert(initial.includes("this.write(box,box.scrollTop+rect.bottom-boxRect.top-box.clientHeight+8,'auto','opening');"), 'first-unread target/offset changed');
+assert(initial.includes("this.write(box,box.scrollHeight,'auto','opening');"), 'initial bottom fallback changed');
+assert(initial.includes("this.write(box,box.scrollTop+rect.top-boxRect.top-offset,'auto','opening');"), 'saved-anchor offset formula changed');
+const explicitFocus=initial.indexOf("if(intent.type==='focus'){");
+const explicitBottom=initial.indexOf("if(intent.type==='bottom'){");
+const userInterrupted=initial.indexOf("if(intent.type==='user-interrupted'){");
+assert(explicitFocus>=0&&explicitBottom>explicitFocus&&userInterrupted>explicitBottom,'190.7 explicit focus/bottom must beat generic user-interrupted state');
 
 const bottomStart = owner.indexOf('requestBottom(box=this.box)');
 const bottomEnd = owner.indexOf('focus(target', bottomStart);
 assert(bottomStart >= 0 && bottomEnd > bottomStart, 'requestBottom flow missing');
 const bottom = owner.slice(bottomStart, bottomEnd);
-const openingIndex = bottom.indexOf("if(this.phase==='opening'){this.pendingIntent={type:'bottom'};return;}");
+const openingIndex = bottom.indexOf("if(this.phase==='opening'){scrollIntentArbiter1907.offer({type:'bottom'});return;}");
 const jumpIndex = bottom.indexOf('void FPHistory174.jump();return;');
 const writeIndex = bottom.indexOf("this.write(box,box.scrollHeight,'auto');");
 assert(openingIndex >= 0 && jumpIndex > openingIndex && writeIndex > jumpIndex, 'explicit bottom intent no longer wins opening restore while real-tail loading remains owned by FPHistory174');
@@ -47,7 +51,7 @@ const focusStart = owner.indexOf('focus(target');
 const prependStart = owner.indexOf('preservePrepend(', focusStart);
 const focus = owner.slice(focusStart, prependStart);
 assert(focus.includes("if(this.isOpening(box)){"), 'focus no longer arbitrates against opening restore');
-assert(focus.includes("this.pendingIntent={type:'focus'"), 'explicit focus is not preserved as the opening intent');
+assert(focus.includes("scrollIntentArbiter1907.offer({type:'focus'"), 'explicit focus is not preserved by the opening arbiter');
 const prepend = owner.slice(prependStart);
 assert(prepend.includes("if(!isCurrentMessagesBox(box)||this.phase==='opening')return;"), 'prepend can now override opening');
 
@@ -81,11 +85,12 @@ assert(history.includes("else if(box.scrollHeight-box.clientHeight-box.scrollTop
 assert(viewport.includes('pinBottom = Boolean(chatIsOpen() && box && messagesAtBottom(box));'), 'keyboard bottom pin no longer requires the user to already be at bottom');
 assert(viewport.includes('window.FPScroll173.requestBottom(box);'), 'keyboard bottom pin bypasses FPScroll173 normal path');
 assert(viewport.includes("if (event.target?.closest?.('#messages')) stopBottomPin();"), 'deliberate history interaction no longer cancels keyboard bottom pin');
-assert(viewport.includes('box.scrollTop = box.scrollHeight;'), 'known viewport compatibility fallback disappeared without its dedicated migration step');
+assert(!viewport.includes('box.scrollTop = box.scrollHeight;'), 'viewport reintroduced a direct #messages scroll writer');
+assert(!viewport.includes("typeof scrollCoordinator !== 'undefined'"), 'viewport still reaches the lexical scroll owner instead of public FPScroll173');
 
 console.log('PASS 178.22 FPScroll173 remains the existing message-scroll owner');
 console.log('PASS 178.22 saved old-history, unread, explicit focus and bottom conflicts stay inside FPScroll173');
 console.log('PASS 178.22 history load/trim/jump preserve the existing anchor/focus/bottom rules');
 console.log('PASS 178.22 deletion compensation keeps the existing target/offset/auto behavior');
 console.log('PASS 178.22 user scroll stays native/observational and keyboard pin remains conditional');
-console.log('PASS 178.22 remaining direct fallback stays explicit for one-at-a-time migration');
+console.log('PASS 190.7 viewport compatibility path no longer contains a second #messages writer');
