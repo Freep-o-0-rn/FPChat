@@ -46,14 +46,15 @@
     return room && message ? `${room}:${message}` : '';
   }
 
-  function emitChanged(roomId, messageId, revision = null, optimistic = false) {
+  function emitChanged(roomId, messageId, revision = null, optimistic = false, diagnosticId = null) {
     try {
       window.dispatchEvent(new CustomEvent('fpchat:reaction188-changed', {
         detail: {
           roomId: normalizeRoomId(roomId),
           messageId: normalizeMessageId(messageId),
           reactionRevision: revision == null ? null : Math.max(0, Number(revision || 0) || 0),
-          optimistic: Boolean(optimistic)
+          optimistic: Boolean(optimistic),
+          diagnosticId: Number.isSafeInteger(Number(diagnosticId)) ? Number(diagnosticId) : null
         }
       }));
     } catch {}
@@ -154,7 +155,7 @@
     }
     room.set(id, next);
     stats.ingested += 1;
-    emitChanged(roomId, id, next.reactionRevision, false);
+    emitChanged(roomId, id, next.reactionRevision, false, options.diagnosticId);
     return next;
   }
 
@@ -632,25 +633,31 @@
     const message = normalizeMessageId(messageId);
     const id = String(reactionId || '').trim();
     const op = operation === 'remove' ? 'remove' : operation === 'add' ? 'add' : '';
+    const diagnostic = window.FPRuntime169?.loading;
+    const diagnosticToken = op ? diagnostic?.begin('reaction',{operation:op}) : null;
     const participantId = activeParticipantId(room);
     const deviceId = deviceIdForRoom(room);
     const contextOwner = window.FPRoomContext170;
     const roomContext = contextOwner?.current?.() || null;
     if (!room || !message || !id || !op || !participantId || !deviceId) {
+      diagnostic?.finishWith(diagnosticToken,'error','error','context-stale');
       return Promise.reject(mutationError('REACTION_CONTEXT_INVALID'));
     }
     if (contextOwner && (!roomContext || roomContext.signal?.aborted || String(roomContext.roomId || '') !== room)) {
+      diagnostic?.finishWith(diagnosticToken,'error','error','context-stale');
       return Promise.reject(mutationError('REACTION_ROOM_CONTEXT_STALE'));
     }
 
     const current = get(room, message);
     const mine = new Set((current?.myReactions || []).map((item) => String(item.reactionId || '')));
     if ((op === 'add' && mine.has(id)) || (op === 'remove' && !mine.has(id))) {
+      diagnostic?.finishWith(diagnosticToken,'ok','local-noop','none');
       return Promise.resolve({ ok: true, changed: false, localNoop: true });
     }
 
     const descriptor = descriptorFor(id, reaction || (current?.reactions || []).find((item) => item.reactionId === id));
     if (op === 'add' && descriptor.enabled === false) {
+      diagnostic?.finishWith(diagnosticToken,'error','rejected','rejected');
       return Promise.reject(mutationError('REACTION_DISABLED'));
     }
 
@@ -665,12 +672,14 @@
       operation: op,
       createdAt: new Date().toISOString(),
       roomContext,
-      controller: null
+      controller: null,
+      diagnosticToken
     };
     const pending = pendingFor(room, message, true);
     pending.push(entry);
     stats.optimisticApplied += 1;
-    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true);
+    diagnostic?.step(diagnosticToken,'optimistic-state');
+    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true, diagnosticToken?.id);
 
     const queued = window.FPReactionArbiter188?.enqueue?.({
       roomId: room,
@@ -698,8 +707,10 @@
               error.status = response.status;
               throw error;
             }
-            applyAuthoritative(room, message, data);
+            diagnostic?.step(diagnosticToken,'server-ack');
+            applyAuthoritative(room, message, data, { diagnosticId: diagnosticToken?.id });
             stats.mutationsConfirmed += 1;
+            diagnostic?.finishWith(diagnosticToken,'ok','accepted','none');
             return data;
           } catch (error) {
             // The server broadcasts reaction:update before finishing the HTTP response.
@@ -712,6 +723,8 @@
               if (fulfilled) {
                 stats.mutationsConfirmed += 1;
                 stats.mutationsReconciledByWs += 1;
+                emitChanged(room, message, authoritative?.reactionRevision ?? 0, false, diagnosticToken?.id);
+                diagnostic?.finishWith(diagnosticToken,'ok','reconciled-ws','ack-not-observed');
                 return {
                   ok: true,
                   changed: true,
@@ -730,8 +743,10 @@
     }) || Promise.reject(mutationError('REACTION_ARBITER_UNAVAILABLE'));
 
     return queued.catch((error) => {
-      if (error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL')) stats.mutationsCancelled += 1;
+      const cancelled = error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL');
+      if (cancelled) stats.mutationsCancelled += 1;
       else stats.mutationsFailed += 1;
+      diagnostic?.finishWith(diagnosticToken,cancelled?'cancelled':'error',cancelled?'cancelled':'error',cancelled?'aborted':(Number(error?.status)?'rejected':'unknown'));
       throw error;
     }).finally(() => {
       const removed = removePendingEntry(entry);
