@@ -118,12 +118,18 @@ run(async({newClient,errors,temp,root})=>{
   console.log('NEXT19_CONNECTION_OPEN '+JSON.stringify(await page.evaluate(()=>({owner:FPConnection170.snapshot(),records:FPRuntime169.loading.report().records.filter(r=>r.kind==='connection')}))));
   await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.points['break-confirmed']!==undefined&&r.result==='reconnected'),null,{timeout:60000});
 
+  // Exercise the existing lifecycle owner path. This proves report wiring only;
+  // it is not a substitute for physical OS background suspension.
+  await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+  await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='resume'&&r.result==='ok'),null,{timeout:30000});
+
   // Reopen the same room once more so repeated/RAM tags are observable.
   await page.evaluate(()=>showChatsList());
   await page.evaluate(roomId=>openChat(roomId),A.roomId);
   await page.waitForFunction(roomId=>state.roomId===roomId&&document.getElementById('sendForm'),A.roomId,{timeout:20000});
 
   const beforeExport=await page.evaluate(()=>window.FPRuntime169.loading.report());
+  assert.equal(beforeExport.activeElementWatches,0,'diagnostic element subscriptions leaked');
   assert.equal(beforeExport.schema,2);
   assert.equal(beforeExport.build,'190.2');
   assert.match(String(beforeExport.appRevision||''),/^[a-f0-9]{40}$/i);
@@ -148,6 +154,9 @@ run(async({newClient,errors,temp,root})=>{
   const reconnected=beforeExport.records.find(r=>r.kind==='connection'&&r.result==='reconnected');
   assert.ok(reconnected,'confirmed reconnect attempt missing');
   for(const stage of ['break-confirmed','reconnect-open','sync-ready'])assert.notEqual(reconnected.points[stage],undefined,'connection '+stage+' missing');
+  const resume=beforeExport.records.find(r=>r.kind==='resume'&&r.result==='ok');
+  assert.ok(resume,'resume attempt missing');
+  for(const stage of ['visible-start','ui-ready','sync-ready'])assert.notEqual(resume.points[stage],undefined,'resume '+stage+' missing');
 
   // Existing Settings -> About -> Download button, not a test-only export path.
   await page.evaluate(()=>renderSettings());
