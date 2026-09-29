@@ -13,6 +13,44 @@
   let reconnectAttempt = 0;
   let socketGeneration = 0;
   let manualClose = false;
+  let connectionDiagnostic = null;
+
+  function diagnostic() { return window.FPRuntime169?.loading || null; }
+  function beginConnectionDiagnostic(source = 'connection') {
+    if (connectionDiagnostic) return connectionDiagnostic.token;
+    const token = diagnostic()?.begin('connection',{syncRequired:true});
+    if (!token) return null;
+    connectionDiagnostic = {
+      token,
+      source:String(source||'connection').slice(0,40),
+      oldSocket:currentSocket || null,
+      breakConfirmed:false,
+      restored:false
+    };
+    return token;
+  }
+  function finishConnectionDiagnostic(status='ok', outcome='ready', reason='') {
+    const current=connectionDiagnostic;
+    if(!current)return false;
+    diagnostic()?.annotate(current.token,{outcome,reason,actualResultVerified:status==='ok'});
+    diagnostic()?.finish(current.token,status);
+    connectionDiagnostic=null;
+    return true;
+  }
+  function noteDiagnosticSyncStart() {
+    const token=connectionDiagnostic?.token||null;
+    diagnostic()?.step(token,'sync-start');
+    return token;
+  }
+  function noteDiagnosticSyncReady(ok=true,reason='') {
+    const current=connectionDiagnostic;
+    if(!current)return false;
+    diagnostic()?.step(current.token,'sync-ready');
+    diagnostic()?.annotate(current.token,{sync:ok===false?'failed':'complete',reason:String(reason||'').slice(0,64)});
+    const preserved=current.breakConfirmed===false&&current.oldSocketPreserved===true;
+    const outcome=preserved?'socket-preserved':(current.breakConfirmed?'reconnected':'sync-complete');
+    return finishConnectionDiagnostic(ok===false?'error':'ok',outcome,reason||(preserved?'old-socket-preserved':''));
+  }
 
   function socketSnapshot(socket = currentSocket) {
     if (!socket) return { exists: false, readyState: null };
@@ -44,10 +82,21 @@
 
     const onOpen = () => {
       if (socket !== currentSocket) return;
+      const current=connectionDiagnostic;
+      if(current){
+        diagnostic()?.step(current.token,'socket-open');
+        diagnostic()?.annotate(current.token,{reconnect:current.breakConfirmed?'confirmed':'unknown'});
+      }
       emit('open', socket);
     };
     const onClose = () => {
       if (socket !== currentSocket) return;
+      if(!manualClose){
+        const token=beginConnectionDiagnostic('socket-close');
+        if(connectionDiagnostic){connectionDiagnostic.breakConfirmed=true;connectionDiagnostic.oldSocket=socket;}
+        diagnostic()?.step(token,'socket-break');
+        diagnostic()?.annotate(token,{reconnect:'pending'});
+      }
       emit('close', socket);
     };
     const onError = () => {
@@ -127,6 +176,7 @@
 
   function closeCurrent({ manual = true, code, reason } = {}) {
     manualClose = Boolean(manual);
+    if(manualClose&&connectionDiagnostic)finishConnectionDiagnostic('cancelled','cancelled','manual-close');
     socketGeneration += 1;
     const previous = currentSocket;
     if (previous) {
@@ -219,8 +269,33 @@
     beginReplacement,
     adoptCurrent,
     releaseCurrent,
-    closeCurrent
+    closeCurrent,
+    diagnosticConnectionToken: () => connectionDiagnostic?.token || null,
+    noteDiagnosticSyncStart,
+    noteDiagnosticSyncReady
   });
+
+  window.addEventListener('fpchat:lifecycle170',(event)=>{
+    const type=String(event?.detail?.lastType||'');
+    if(type==='offline'){
+      if(connectionDiagnostic)finishConnectionDiagnostic('cancelled','superseded','new-offline-cycle');
+      const token=beginConnectionDiagnostic('offline');
+      if(connectionDiagnostic)connectionDiagnostic.oldSocket=currentSocket||null;
+      diagnostic()?.annotate(token,{reconnect:'unknown'});
+      return;
+    }
+    if(type!=='online')return;
+    const current=connectionDiagnostic;
+    if(!current)return;
+    diagnostic()?.step(current.token,'network-restored');
+    const old=current.oldSocket;
+    if(old&&old===currentSocket&&old.readyState===WebSocket.OPEN&&!current.breakConfirmed){
+      current.oldSocketPreserved=true;
+      diagnostic()?.annotate(current.token,{oldSocketPreserved:true,reconnect:'none',reason:'old-socket-preserved'});
+    }else if(!current.breakConfirmed){
+      diagnostic()?.annotate(current.token,{reconnect:'unknown',reason:old?'socket-state-changed-without-close-event':'no-active-socket-at-offline'});
+    }
+  },{passive:true});
 
   try {
     window.FPRuntime?.registerOwner?.('connection170', {
