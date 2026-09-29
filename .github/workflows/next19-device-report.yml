@@ -9,6 +9,7 @@ on:
       - 'public/runtime169.js'
       - 'public/index.html'
       - 'public/app.js'
+      - 'public/text-send170.js'
       - 'public/room-open170.js'
       - 'public/history174.js'
       - 'public/media-gallery134.js'
@@ -39,6 +40,7 @@ jobs:
         run: |
           node --check public/runtime169.js
           node --check public/app.js
+          node --check public/text-send170.js
           node --check public/room-open170.js
           node --check public/history174.js
           node --check public/media-gallery134.js
