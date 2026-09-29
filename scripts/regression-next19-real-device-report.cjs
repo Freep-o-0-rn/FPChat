@@ -96,8 +96,13 @@ run(async({newClient,errors,temp,root})=>{
   },messageId);
   await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.points['ack-ready']!==undefined&&r.status!=='pending'),null,{timeout:15000});
 
-  // Preserved old socket: lifecycle online while the current socket is still open.
-  await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  // Preserved old socket: real browser offline -> online transition. This
+  // must not be manufactured by the diagnostics layer.
+  await page.context().setOffline(true);
+  await page.waitForFunction(()=>window.FPLifecycle170?.snapshot?.().online===false,null,{timeout:5000});
+  await page.waitForTimeout(500);
+  await page.context().setOffline(false);
+  await page.waitForFunction(()=>window.FPLifecycle170?.snapshot?.().online===true,null,{timeout:5000});
   await page.waitForFunction(()=>window.FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.result==='preserved-live-socket'),null,{timeout:10000});
 
   // Confirmed break: the test closes the real current socket; reconnect remains
