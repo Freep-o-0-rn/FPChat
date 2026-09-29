@@ -194,6 +194,14 @@ run(async ({newClient, temp, root, errors}) => {
   pass('gallery current/neighbor, history scan and RAM reuse are separate observations');
 
   await page.evaluate(()=>FPRuntime169.loading.reset());
+  await append('audit186-item19-photo');
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.consumer==='chat-thumbnail'&&r.status==='ok'));
+  await page.locator('#messages .media-tile').last().click();
+  await page.waitForFunction(()=>{
+    const rows=FPRuntime169.loading.report().records.filter(r=>r.kind==='viewer'&&r.consumer==='gallery-current');
+    return rows.some(r=>r.variant==='preview'&&r.status==='ok')&&rows.some(r=>r.variant==='original'&&r.status==='ok');
+  });
+  await page.locator('.media-viewer-close').click();
   await page.waitForFunction(()=>window.FPReactionManager188&&window.FPReactionRenderer188&&document.getElementById('sendForm'));
   await page.locator('#msgInput').fill('private-test-send-186');
   await page.locator('#sendForm').evaluate(form=>form.requestSubmit());
@@ -234,7 +242,6 @@ run(async ({newClient, temp, root, errors}) => {
         return next(input,init);
       }
     });
-    FPRuntime169.loading.reset();
   },fixture.roomId);
   const aPromise=page.evaluate(roomId=>openChat(roomId),fixture.roomId);
   await page.waitForTimeout(25);
@@ -245,9 +252,12 @@ run(async ({newClient, temp, root, errors}) => {
   const switchReport=await report();
   assert.ok(switchReport.records.some(r=>r.kind==='room'&&r.status==='cancelled'));
   assert.ok(switchReport.records.some(r=>r.kind==='room'&&r.status==='ok'));
+  const item19OlderLoaded=await page.evaluate(()=>FPHistory174.load('older'));
+  assert.equal(item19OlderLoaded,true);
+  assert.ok((await report()).records.some(r=>r.kind==='history'&&r.status==='ok'));
   pass('A to B interruption keeps separate cancelled/successful room attempts without stale completion');
 
-  await page.evaluate(async roomId=>{showChatsList();await openChat(roomId);FPRuntime169.loading.reset();},fixture.roomId);
+  await page.evaluate(async roomId=>{showChatsList();await openChat(roomId);},fixture.roomId);
   await page.context().setOffline(true);
   await page.waitForFunction(()=>navigator.onLine===false&&FPRuntime169.loading.report().records.some(r=>r.kind==='connection'));
   await page.waitForTimeout(100);
@@ -265,7 +275,6 @@ run(async ({newClient, temp, root, errors}) => {
   pass('offline/online exports confirmed reconnect only after close, otherwise reconnect is null with socket-preserved reason');
 
   await page.evaluate(()=>{
-    FPRuntime169.loading.reset();
     const own=Object.getOwnPropertyDescriptor(Document.prototype,'visibilityState')||Object.getOwnPropertyDescriptor(document,'visibilityState');
     window.__item19VisibilityRestore=()=>{try{delete document.visibilityState;}catch{} if(own&&own.configurable)Object.defineProperty(document,'visibilityState',own);};
     window.__item19Visibility='hidden';
@@ -287,8 +296,10 @@ run(async ({newClient, temp, root, errors}) => {
   const item19Download=await item19DownloadPromise;
   const item19Json=JSON.parse(fs.readFileSync(await item19Download.path(),'utf8'));
   assert.equal(item19Json.schemaRevision,19);
-  assert.ok(item19Json.buildIdentity&&Object.prototype.hasOwnProperty.call(item19Json.buildIdentity,'appRevision'));
-  assert.ok(item19Json.records.some(r=>r.kind==='resume'));
+  assert.ok(item19Json.buildIdentity&&/^[a-f0-9]{40}$/i.test(String(item19Json.buildIdentity.appRevision||'')));
+  for(const kind of ['room','history','send','reaction','connection','resume'])assert.ok(item19Json.records.some(r=>r.kind===kind),'download missing '+kind);
+  assert.ok(item19Json.records.some(r=>r.kind==='viewer'&&r.variant==='preview'));
+  assert.ok(item19Json.records.some(r=>r.kind==='viewer'&&r.variant==='original'));
   assert.equal(item19Json.records.some(r=>JSON.stringify(r).includes('private-test-send-186')),false);
   const recordsBeforeSecondDownload=(await report()).records.length;
   const secondDownloadPromise=page.waitForEvent('download');
