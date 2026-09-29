@@ -121,7 +121,7 @@
     state.pageActive = true;
     state.visibility = document.visibilityState;
     state.online = navigator.onLine !== false;
-    if (state.visibility === 'visible') beginResumeDiagnostic(event?.persisted ? 'pageshow-bfcache' : 'pageshow');
+    if (event?.persisted && state.visibility === 'visible') beginResumeDiagnostic('pageshow-bfcache');
     emit('pageshow', { persisted: Boolean(event?.persisted) });
   }
 
