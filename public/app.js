@@ -1157,9 +1157,9 @@ const scrollCoordinator={
     }
     if(intent.type==='bottom'){
       this.finishOpening(box);
-      if(activeChatHistory?.hasNewer||activeChatHistory?.localNewer174){
-        if(window.FPHistory174)void FPHistory174.jump();
-      }else this.write(box,box.scrollHeight,'auto');
+      const bottomWork=this.requestBottom(box);
+      if(bottomWork&&typeof bottomWork.then==='function')await bottomWork;
+      if(generation!==this.generation||!isCurrentMessagesBox(box))return 'cancelled';
       return 'explicit-bottom';
     }
     if(intent.type==='user-interrupted'){
@@ -1203,10 +1203,10 @@ const scrollCoordinator={
     scrollIntentArbiter1907.stop();
   },
   requestBottom(box=this.box){
-    if(!isCurrentMessagesBox(box))return;
-    if(this.phase==='opening'){scrollIntentArbiter1907.offer({type:'bottom'});return;}
-    if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&window.FPHistory174){void FPHistory174.jump();return;}
-    this.write(box,box.scrollHeight,'auto');
+    if(!isCurrentMessagesBox(box))return false;
+    if(this.phase==='opening')return scrollIntentArbiter1907.offer({type:'bottom'});
+    if((activeChatHistory?.hasNewer||activeChatHistory?.localNewer174)&&window.FPHistory174)return FPHistory174.jump();
+    return this.write(box,box.scrollHeight,'auto');
   },
   focus(target,behavior='smooth',topGap=8){
     const box=this.box||target?.closest?.('#messages');
