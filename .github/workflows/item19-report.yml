@@ -1,0 +1,62 @@
+name: Item 19 Real Device Report Acceptance
+
+on:
+  push:
+    branches:
+      - optimization/item19-real-device-report-after-scroll
+    paths:
+      - '.github/workflows/item19-report.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install production dependencies
+        run: npm ci --omit=dev --no-audit --no-fund
+      - name: Install Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Syntax
+        run: |
+          node --check public/runtime169.js
+          node --check public/app.js
+          node --check public/history174.js
+          node --check public/media-gallery134.js
+          node --check public/reaction-manager188.js
+          node --check public/reaction-renderer188.js
+          node --check public/connection170.js
+          node --check public/lifecycle170.js
+          node --check public/sync-coordinator176.js
+          node --check scripts/regression186-loading-browser.cjs
+      - name: Existing loading report and download button
+        run: npm run test:186:browser
+      - name: Progressive photo
+        run: npm run test:next:15
+      - name: Send ownership
+        run: |
+          npm run test:177:send-manager
+          npm run test:177:send-entry-contract
+      - name: Reaction interaction
+        run: node ./scripts/regression1884-reaction-interaction.cjs
+      - name: Connection and single owner
+        run: |
+          npm run check:170
+          npm run test:180:single-owner-audit
+      - name: Room/history reuse
+        run: |
+          npm run test:next:12
+          npm run test:next:13
+      - name: Scroll fix acceptance
+        run: |
+          npm run audit:1902:scroll-save
+          npm run test:190.2:scroll-resilience
+          npm run test:190.2:scroll-offline
+      - name: Media 190 browser
+        run: npm run test:190:browser
