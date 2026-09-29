@@ -591,10 +591,20 @@
           ackMs:point(item,'server-ack'), finalDomMs:point(item,'final-dom'),
           missing:{optimisticMs:missingReason(item,'optimistic-state'),domChangeMs:missingReason(item,'dom-change'),frameOpportunityMs:missingReason(item,'frame-opportunity'),ackMs:missingReason(item,'server-ack'),finalDomMs:missingReason(item,'final-dom')}
         };
-        if (item.kind === 'connection') return {
-          breakMs:point(item,'break-confirmed'), reconnectMs:duration(item,'break-confirmed','socket-open'), syncReadyMs:duration(item,'socket-open','sync-ready'),
-          missing:{breakMs:missingReason(item,'break-confirmed'),reconnectMs:item.points['break-confirmed']===undefined?missingReason(item,'break-confirmed'):(item.points['socket-open']===undefined?missingReason(item,'socket-open'):null),syncReadyMs:missingReason(item,'sync-ready')}
-        };
+        if (item.kind === 'connection') {
+          const syncBase = item.points['socket-open'] !== undefined ? 'socket-open' : 'online';
+          return {
+            breakMs:point(item,'break-confirmed'),
+            reconnectMs:duration(item,'break-confirmed','socket-open'),
+            syncReadyMs:duration(item,syncBase,'sync-ready'),
+            syncReadyFrom:syncBase,
+            missing:{
+              breakMs:missingReason(item,'break-confirmed'),
+              reconnectMs:item.points['break-confirmed']===undefined?missingReason(item,'break-confirmed'):(item.points['socket-open']===undefined?missingReason(item,'socket-open'):null),
+              syncReadyMs:item.points[syncBase]===undefined?missingReason(item,syncBase):missingReason(item,'sync-ready')
+            }
+          };
+        }
         if (item.kind === 'resume') return {
           uiReadyMs:duration(item,'visible','ui-ready'), syncReadyMs:duration(item,'visible','sync-ready'),
           missing:{uiReadyMs:missingReason(item,'ui-ready'),syncReadyMs:missingReason(item,'sync-ready')}
