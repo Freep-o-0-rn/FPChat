@@ -20,16 +20,21 @@ run(async ({newClient, temp, root, errors}) => {
   assert.ok((await report()).startupResources.js.count>0);
   pass('boot stages retain their real order and readiness outcomes');
 
-  const fixture = await page.evaluate(async () => {
-    const deviceId = getOrCreateDeviceId(), secret = 'private-test-secret-186';
-    const key = await deriveKey(secret), recovery = await buildRecoveryPayload(generateRecoveryCode(), secret);
-    const response = await fetch('/api/rooms', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId,roomSecret:secret,...recovery})});
-    if (!response.ok) throw Error('Fixture room creation failed');
-    const data = await response.json();
-    STORAGE.set(STORAGE.roomState(data.publicId), {secret,deviceId}); upsertChat(data.publicId, {});
-    return {roomId:data.publicId,deviceId,secret,count:3,incoming:false,encrypted:[await encryptText('private-test-message-186',key)]};
+  const fixtures = await page.evaluate(async () => {
+    const deviceId = getOrCreateDeviceId();
+    const make = async (suffix,count) => {
+      const secret = 'private-test-secret-186-'+suffix;
+      const key = await deriveKey(secret), recovery = await buildRecoveryPayload(generateRecoveryCode(), secret);
+      const response = await fetch('/api/rooms', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName:state.nick,deviceId,roomSecret:secret,...recovery})});
+      if (!response.ok) throw Error('Fixture room creation failed');
+      const data = await response.json();
+      STORAGE.set(STORAGE.roomState(data.publicId), {secret,deviceId}); upsertChat(data.publicId, {});
+      return {roomId:data.publicId,deviceId,secret,count,incoming:false,encrypted:[await encryptText('private-test-message-186-'+suffix,key)]};
+    };
+    return [await make('primary',3),await make('history',230)];
   });
-  execFileSync(process.execPath,[path.join(root,'scripts/seed-history174.cjs')],{input:JSON.stringify({database:path.join(temp,'test.sqlite'),fixtures:[fixture]}),encoding:'utf8'});
+  const [fixture,historyFixture]=fixtures;
+  execFileSync(process.execPath,[path.join(root,'scripts/seed-history174.cjs')],{input:JSON.stringify({database:path.join(temp,'test.sqlite'),fixtures}),encoding:'utf8'});
   await page.evaluate(async roomId => { FPRuntime169.loading.reset(); await openChat(roomId); },fixture.roomId);
   await page.waitForFunction(() => FPRuntime169.loading.report().records.some(r => r.kind === 'room' && r.points['visible-frame'] !== undefined));
   let room = (await report()).records.find(r => r.kind === 'room');
@@ -40,7 +45,31 @@ run(async ({newClient, temp, root, errors}) => {
   assert.ok(room.points['text-ready'] <= room.points['messages-revealed']);
   assert.ok(room.points['layout-wait-end']>=room.points['layout-thumbs-wait-end']);
   assert.equal(room.counts.pendingThumbnailsAtLayoutWaitEnd,0);
-  pass('real room entry measures key, join, history, text, draft, composer and reveal');
+  assert.equal(room.openType,'ordinary'); assert.equal(room.messageSource,'load');
+  assert.ok(room.metrics.textReadyMs!==null&&room.metrics.composerReadyMs!==null&&room.metrics.positionReadyMs!==null);
+  pass('real room entry measures key, join, history, text, draft, composer, restore and source');
+
+  await page.evaluate(()=>showChatsList());
+  await page.evaluate(async roomId=>{FPRuntime169.loading.reset();await openChat(roomId);},fixture.roomId);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='room'&&r.status==='ok'));
+  room=(await report()).records.find(r=>r.kind==='room');
+  assert.equal(room.openType,'repeat'); assert.equal(room.messageSource,'ram');
+  assert.ok(room.metrics.textReadyMs!==null&&room.metrics.composerReadyMs!==null&&room.metrics.positionReadyMs!==null);
+  pass('repeat room open is distinguished from ordinary open and full MessageStore RAM reuse is explicit');
+
+  await page.evaluate(()=>showChatsList());
+  await page.evaluate(async roomId=>{FPRuntime169.loading.reset();await openChat(roomId);},historyFixture.roomId);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='room'&&r.status==='ok'));
+  await page.evaluate(()=>FPRuntime169.loading.reset());
+  const olderLoaded=await page.evaluate(()=>FPHistory174.load('older'));
+  assert.equal(olderLoaded,true);
+  const historyRecord=(await report()).records.find(r=>r.kind==='history');
+  assert.ok(historyRecord); assert.equal(historyRecord.direction,'older'); assert.equal(historyRecord.historySource,'network'); assert.equal(historyRecord.status,'ok');
+  assert.ok(historyRecord.metrics.responseMs!==null&&historyRecord.metrics.renderMs!==null&&historyRecord.metrics.positionRestoreMs!==null);
+  pass('older-history network attempt records response, render and anchor restoration separately');
+
+  await page.evaluate(()=>showChatsList());
+  await page.evaluate(async roomId=>{FPRuntime169.loading.reset();await openChat(roomId);},fixture.roomId);
 
   const bytes = await page.evaluate(async () => {
     const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=96;
@@ -118,7 +147,8 @@ run(async ({newClient, temp, root, errors}) => {
 
   const append = id => page.evaluate(id=>{
     const media={public_id:id,media_kind:'image',mime_type:'image/webp',width:128,height:96};
-    appendMessage(document.getElementById('messages'),{id:900186,created_at:new Date().toISOString(),type:'media',status:'read',sender_device_id:getOrCreateDeviceId(),sender_name:'fixture',media:[media]},'',true,false);
+    window.audit186MessageSeq=(window.audit186MessageSeq||900186)+1;
+    appendMessage(document.getElementById('messages'),{id:window.audit186MessageSeq,created_at:new Date().toISOString(),type:'media',status:'read',sender_device_id:getOrCreateDeviceId(),sender_name:'fixture',media:[media]},'',true,false);
   },id);
   await page.evaluate(()=>FPRuntime169.loading.reset());
   await append('audit186-render');
@@ -128,6 +158,22 @@ run(async ({newClient, temp, root, errors}) => {
   await append('audit186-element-error');
   await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.error?.stage==='element'));
   pass('real chat thumbnails record element readiness and invalid-image errors');
+
+  await page.evaluate(()=>FPRuntime169.loading.reset());
+  await append('audit186-progressive');
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.consumer==='chat-thumbnail'&&r.status==='ok'));
+  await page.locator('#messages .media-tile').last().click();
+  await page.waitForFunction(()=>{
+    const rows=FPRuntime169.loading.report().records.filter(r=>r.kind==='viewer'&&r.consumer==='gallery-current');
+    return rows.some(r=>r.variant==='preview'&&r.status==='ok')&&rows.some(r=>r.variant==='original'&&r.status==='ok');
+  });
+  let progressiveRows=(await report()).records.filter(r=>r.kind==='viewer'&&r.consumer==='gallery-current');
+  const previewRecord=progressiveRows.find(r=>r.variant==='preview'),originalRecord=progressiveRows.find(r=>r.variant==='original');
+  assert.ok(previewRecord.metrics.previewReadyMs!==null); assert.equal(previewRecord.metrics.originalReadyMs,undefined);
+  assert.ok(originalRecord.metrics.originalReadyMs!==null);
+  assert.ok(previewRecord.metrics.frameOpportunityMs!==null);
+  await page.locator('.media-viewer-close').click();
+  pass('progressive photo exports separate preview and original readiness without duplicating media I/O stages');
 
   await page.evaluate(()=>{
     FPRuntime169.loading.reset();
@@ -147,7 +193,113 @@ run(async ({newClient, temp, root, errors}) => {
   await page.locator('.media-viewer-close').click();
   pass('gallery current/neighbor, history scan and RAM reuse are separate observations');
 
-  const unmountedTrace=await page.evaluate(async()=>{
+  await page.evaluate(()=>FPRuntime169.loading.reset());
+  await page.waitForFunction(()=>window.FPReactionManager188&&window.FPReactionRenderer188&&document.getElementById('sendForm'));
+  await page.locator('#msgInput').fill('private-test-send-186');
+  await page.locator('#sendForm').evaluate(form=>form.requestSubmit());
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='send'&&r.status==='ok'));
+  let sendRecord=(await report()).records.find(r=>r.kind==='send');
+  assert.ok(sendRecord.metrics.optimisticMs!==null&&sendRecord.metrics.domChangeMs!==null&&sendRecord.metrics.ackMs!==null&&sendRecord.metrics.finalDomMs!==null);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.find(r=>r.kind==='send')?.metrics?.frameOpportunityMs!==null);
+  sendRecord=(await report()).records.find(r=>r.kind==='send');
+  assert.ok(sendRecord.metrics.frameOpportunityMs!==null);
+  const sentMessageId=await page.evaluate(()=>{
+    const row=[...document.querySelectorAll('#messages > .bubble-wrap.msg.mine')].reverse().find(node=>Number(node.dataset.messageId)>0);
+    return Number(row?.dataset.messageId)||null;
+  });
+  assert.ok(Number.isSafeInteger(sentMessageId)&&sentMessageId>0);
+  await page.evaluate(async messageId=>{
+    await FPReactionManager188.getQuickReactions();
+    await FPReactionManager188.toggleReaction({roomId:state.roomId,messageId,reactionId:'heart',reaction:{reactionId:'heart',type:'emoji',value:'❤️',enabled:true}});
+  },sentMessageId);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='reaction'&&r.status==='ok'));
+  let reactionRecord=(await report()).records.find(r=>r.kind==='reaction');
+  assert.ok(reactionRecord.metrics.optimisticMs!==null&&reactionRecord.metrics.domChangeMs!==null&&reactionRecord.metrics.ackMs!==null&&reactionRecord.metrics.finalDomMs!==null);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.find(r=>r.kind==='reaction')?.metrics?.frameOpportunityMs!==null);
+  reactionRecord=(await report()).records.find(r=>r.kind==='reaction');
+  assert.ok(reactionRecord.metrics.frameOpportunityMs!==null);
+  await page.evaluate(async messageId=>{
+    await FPReactionManager188.toggleReaction({roomId:state.roomId,messageId,reactionId:'heart',reaction:{reactionId:'heart',type:'emoji',value:'❤️',enabled:true}});
+  },sentMessageId);
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.filter(r=>r.kind==='reaction'&&r.status==='ok').length>=2);
+  pass('send and repeated reaction attempts keep manager, DOM, rAF opportunity, ACK and final outcome separate');
+
+  await page.evaluate(()=>showChatsList());
+  await page.evaluate(roomId=>{
+    window.__item19DelayDispose=FPNetwork171.use({
+      id:'item19-room-delay',priority:50,source:'test',
+      handler:async({input,init,next})=>{
+        const url=new URL(typeof input==='string'?input:input?.url,location.href);
+        if(url.pathname===('/api/rooms/'+roomId+'/join'))await new Promise(resolve=>setTimeout(resolve,180));
+        return next(input,init);
+      }
+    });
+    FPRuntime169.loading.reset();
+  },fixture.roomId);
+  const aPromise=page.evaluate(roomId=>openChat(roomId),fixture.roomId);
+  await page.waitForTimeout(25);
+  await page.evaluate(roomId=>openChat(roomId),historyFixture.roomId);
+  await aPromise;
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='room'&&r.status==='cancelled')&&FPRuntime169.loading.report().records.some(r=>r.kind==='room'&&r.status==='ok'));
+  await page.evaluate(()=>{try{window.__item19DelayDispose?.();}catch{}delete window.__item19DelayDispose;});
+  const switchReport=await report();
+  assert.ok(switchReport.records.some(r=>r.kind==='room'&&r.status==='cancelled'));
+  assert.ok(switchReport.records.some(r=>r.kind==='room'&&r.status==='ok'));
+  pass('A to B interruption keeps separate cancelled/successful room attempts without stale completion');
+
+  await page.evaluate(async roomId=>{showChatsList();await openChat(roomId);FPRuntime169.loading.reset();},fixture.roomId);
+  await page.context().setOffline(true);
+  await page.waitForFunction(()=>navigator.onLine===false&&FPRuntime169.loading.report().records.some(r=>r.kind==='connection'));
+  await page.waitForTimeout(100);
+  await page.context().setOffline(false);
+  await page.waitForFunction(()=>navigator.onLine!==false&&FPRuntime169.loading.report().records.some(r=>r.kind==='connection'&&r.status!=='pending'),null,{timeout:20000});
+  const connectionRecord=(await report()).records.find(r=>r.kind==='connection');
+  assert.ok(['socket-preserved','reconnected'].includes(connectionRecord.outcome),JSON.stringify(connectionRecord));
+  if(connectionRecord.outcome==='socket-preserved'){
+    assert.equal(connectionRecord.metrics.reconnectMs,null);
+    assert.equal(connectionRecord.metrics.missing.reconnectMs,'socket-preserved');
+  }else{
+    assert.ok(connectionRecord.metrics.reconnectMs!==null);
+    assert.ok(connectionRecord.metrics.syncReadyMs!==null);
+  }
+  pass('offline/online exports confirmed reconnect only after close, otherwise reconnect is null with socket-preserved reason');
+
+  await page.evaluate(()=>{
+    FPRuntime169.loading.reset();
+    const own=Object.getOwnPropertyDescriptor(Document.prototype,'visibilityState')||Object.getOwnPropertyDescriptor(document,'visibilityState');
+    window.__item19VisibilityRestore=()=>{try{delete document.visibilityState;}catch{} if(own&&own.configurable)Object.defineProperty(document,'visibilityState',own);};
+    window.__item19Visibility='hidden';
+    Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.__item19Visibility});
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(30);
+  await page.evaluate(()=>{window.__item19Visibility='visible';document.dispatchEvent(new Event('visibilitychange'));});
+  await page.waitForFunction(()=>FPRuntime169.loading.report().records.some(r=>r.kind==='resume'&&r.status!=='pending'),null,{timeout:15000});
+  const resumeRecord=(await report()).records.find(r=>r.kind==='resume');
+  assert.ok(resumeRecord.metrics.uiReadyMs!==null&&resumeRecord.metrics.syncReadyMs!==null);
+  await page.evaluate(()=>{try{window.__item19VisibilityRestore?.();}catch{}delete window.__item19VisibilityRestore;delete window.__item19Visibility;});
+  pass('background-return hook separates visible UI readiness from existing sync completion; CI simulation is not physical mobile acceptance');
+
+  await page.evaluate(()=>{showChatsList();setView('settings');});
+  await page.locator('[data-open="about"]').click();
+  const item19DownloadPromise=page.waitForEvent('download');
+  await page.locator('#fpLoadingExport186').click();
+  const item19Download=await item19DownloadPromise;
+  const item19Json=JSON.parse(fs.readFileSync(await item19Download.path(),'utf8'));
+  assert.equal(item19Json.schemaRevision,19);
+  assert.ok(item19Json.buildIdentity&&Object.prototype.hasOwnProperty.call(item19Json.buildIdentity,'appRevision'));
+  assert.ok(item19Json.records.some(r=>r.kind==='resume'));
+  assert.equal(item19Json.records.some(r=>JSON.stringify(r).includes('private-test-send-186')),false);
+  const recordsBeforeSecondDownload=(await report()).records.length;
+  const secondDownloadPromise=page.waitForEvent('download');
+  await page.locator('#fpLoadingExport186').click();
+  await secondDownloadPromise;
+  assert.equal((await report()).records.length,recordsBeforeSecondDownload);
+  pass('existing About download button exports item19 schema and repeated download does not clear measurements');
+
+  await page.evaluate(async roomId=>{setView('chats');await openChat(roomId);},fixture.roomId);
+
+    const unmountedTrace=await page.evaluate(async()=>{
     const node=document.createElement('div');node.className='bubble-wrap msg';
     const img=document.createElement('img');node.appendChild(img);document.getElementById('messages').appendChild(node);
     await new Promise(requestAnimationFrame);
@@ -160,7 +312,7 @@ run(async ({newClient, temp, root, errors}) => {
   pass('existing DOM lifecycle cancels unmounted element observations and releases listeners');
 
   const privateReport=JSON.stringify(await report());
-  for(const value of [fixture.roomId,fixture.deviceId,fixture.secret,'private-test-message-186','audit186-gallery','/api/','blob:http','private-test-body-error'])assert.equal(privateReport.includes(value),false,'report leaked '+value);
+  for(const value of [fixture.roomId,historyFixture.roomId,fixture.deviceId,fixture.secret,historyFixture.secret,'private-test-message-186','private-test-send-186','audit186-gallery','/api/','blob:http','private-test-body-error'])assert.equal(privateReport.includes(value),false,'report leaked '+value);
   const beforeDisabled=await page.evaluate(()=>({fetch:window.fetch===FPNetwork171.fetch,scroll:document.getElementById('messages').scrollTop}));
   await page.evaluate(()=>FPRuntime169.loading.setEnabled(false));
   assert.ok(await read('audit186-disabled')>0); assert.equal((await report()).records.length,0);
