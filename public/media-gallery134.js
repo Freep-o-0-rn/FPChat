@@ -365,6 +365,9 @@
     }
     const publicId = String(item.public_id || '');
     container.dataset.publicId = publicId;
+    const diagnostic186=window.FPRuntime169?.loading;
+    const consumer186=active?'gallery-current':'gallery-neighbor';
+    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob',mediaType:item?.media_kind,variant:'original'});
     const preview = active ? viewerPhotoPreview(viewerState, item) : null;
     let previewImage = null;
     if (preview) {
@@ -377,13 +380,13 @@
       previewImage.classList.add('fp-gallery134-photo-preview');
       container.replaceChildren(previewImage);
       bindPhoto185(viewerInteraction, previewImage, viewerState, publicId);
+      const previewTrace186=diagnostic186?.begin('viewer',{consumer:'gallery-current',endpoint:'thumb',mediaType:'image',variant:'preview',parent:trace186?.id});
+      diagnostic186?.step(previewTrace186,'url-ready');
+      diagnostic186?.watchElement(previewTrace186,previewImage);
     } else {
       container.innerHTML = '<div class="media-progress-ring">Загрузка...</div>';
     }
 
-    const diagnostic186=window.FPRuntime169?.loading;
-    const consumer186=active?'gallery-current':'gallery-neighbor';
-    const trace186=diagnostic186?.begin('viewer',{consumer:consumer186,endpoint:'blob'});
     diagnostic186?.step(trace186,'asset-start');
     void loadAsset(viewerState.fpRoomId, item, trace186, consumer186).then(async (asset) => {
       diagnostic186?.step(trace186,'asset-ready');
@@ -400,10 +403,10 @@
           return;
         }
         diagnostic186?.step(trace186,'url-ready');
-        diagnostic186?.watchElement(trace186,previewImage);
         previewImage.dataset.fpViewerSource = 'original';
         previewImage.classList.remove('fp-gallery134-photo-preview');
         previewImage.src = asset.url;
+        diagnostic186?.watchElement(trace186,previewImage);
         container.querySelector('.fp-gallery134-original-error')?.remove();
         return;
       }
