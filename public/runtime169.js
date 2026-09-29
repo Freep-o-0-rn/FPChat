@@ -429,7 +429,7 @@
     const tagValues = Object.freeze({
       source: new Set(['network-window','ram-reuse','network-history','existing-preview','original-load','owner-event','unknown']),
       restore: new Set(['saved-anchor','first-unread','tail','explicit-focus','explicit-bottom','user-interrupted','cancelled','unknown']),
-      reason: new Set(['none','cancelled','aborted','room-switched','no-break-old-socket-preserved','sync-not-required','sync-unavailable','owner-error','dom-missing','not-visible','original-error','network-error','server-error','unknown']),
+      reason: new Set(['none','cancelled','aborted','room-switched','no-break-old-socket-preserved','sync-not-required','sync-unavailable','owner-error','dom-missing','not-visible','original-error','preview-unavailable','network-error','server-error','unknown']),
       result: new Set(['ok','cancelled','error','preserved-live-socket','reconnected','no-op','unknown'])
     });
 
@@ -563,8 +563,8 @@
             return url.origin === location.origin && url.pathname === '/app.js';
           });
           if (!script) return null;
-          const value = new URL(script.src, location.href).searchParams.get('v');
-          return /^[a-f0-9]{7,64}$/i.test(String(value || '')) ? String(value) : null;
+          const value = new URL(script.src, location.href).searchParams.get('r');
+          return /^[a-f0-9]{40}$/i.test(String(value || '')) ? String(value) : null;
         } catch { return null; }
       })();
       const expectedByKind = {
@@ -583,7 +583,7 @@
           if (item.result === 'no-op') missing[point] = 'not-applicable-no-op';
           else if (item.status === 'cancelled') missing[point] = 'cancelled';
           else if (item.status === 'error') missing[point] = item.reason || 'error-before-stage';
-          else if (item.result === 'preserved-live-socket' && point === 'reconnect-open') missing[point] = 'no-break-old-socket-preserved';
+          else if (item.result === 'preserved-live-socket' && (point === 'break-confirmed' || point === 'reconnect-open')) missing[point] = 'no-break-old-socket-preserved';
           else if (item.syncRequired === false && point === 'sync-ready') missing[point] = 'sync-not-required';
           else missing[point] = 'not-observed';
         }
