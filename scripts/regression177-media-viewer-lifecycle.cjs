@@ -89,12 +89,13 @@ assert(!functionSource(context, 'closeViewerBackToContext').includes('mediaViewe
 // observations to mountSlot/loadAsset. Build 190 is an explicitly approved
 // viewer-media fix: mountSlot adds the active-video picture gesture surface and
 // item 15 adds the selected-photo preview -> original presentation inside the same
-// existing loadAsset path. loadAsset, transport/cache order, cleanup and
+// existing loadAsset path. Item 19 adds passive preview/original timing marks only.
+// loadAsset, transport/cache order, cleanup and
 // save/download paths remain frozen. Browser suites cover both additions together
 // with the unchanged photo-zoom owner/arbitration contract.
 const FROZEN = Object.freeze({
   gallery: {
-    mountSlot: 'fd3f520719ce2b7a',
+    mountSlot: 'c61bf00416e96caf',
     loadAsset: '5d4db0f6e8f07849',
     dropAsset: '73c987110d973502',
     pruneAssetCache: 'd22f05b91e20c181',
