@@ -146,6 +146,7 @@
       const token = loading?.roomToken?.(context);
       loading?.tag?.(token, 'repeated', diagnosticSeenRooms19.has(normalizedRoomId));
       diagnosticSeenRooms19.add(normalizedRoomId);
+      if (diagnosticSeenRooms19.size > 64) diagnosticSeenRooms19.delete(diagnosticSeenRooms19.values().next().value);
     } catch {}
 
     const secret = String(persisted.secret || '');
