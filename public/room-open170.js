@@ -17,6 +17,7 @@
   const legacyOpenChatWithJoinData = openChatWithJoinData;
   const legacyLeaveActiveChat = typeof leaveActiveChat === 'function' ? leaveActiveChat : null;
   const legacySetView = typeof setView === 'function' ? setView : null;
+  let lastReadyRoomId19 = '';
 
   function normalizeRoomId(value) {
     return String(value || '').trim();
@@ -81,6 +82,7 @@
       // Every entry path (ordinary join and invite) completes here. Emit once,
       // after the renderer, so event-driven pins/actions/voice also see invites.
       dispatch('ready', activeContext, { source: committedContext ? 'transition' : 'direct' });
+      lastReadyRoomId19 = normalizedRoomId;
       return result;
     } catch (error) {
       if (contexts.isCurrent(activeContext)) {
@@ -146,6 +148,8 @@
     let key;
     let response;
     const diagnostic186=window.FPRuntime169?.loading,trace186=diagnostic186?.roomToken(context);
+    const repeatOpen19 = Boolean(lastReadyRoomId19 && lastReadyRoomId19 === normalizedRoomId);
+    diagnostic186?.annotate?.(trace186,{ openKind: repeatOpen19 ? 'repeat' : 'ordinary', sameRoom: repeatOpen19 });
     let phase186='key';
 
     try {
