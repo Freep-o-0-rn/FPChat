@@ -51,8 +51,13 @@
     if (!text) return;
 
     const roomId = context.roomId;
+    const diagnostic = window.FPRuntime169?.loading;
+    const diagnosticToken = diagnostic?.begin('send');
     const deviceId = roomStoredDevice(roomId) || String(activeChatDeviceId || '');
-    if (!deviceId) return;
+    if (!deviceId) {
+      diagnostic?.finishWith(diagnosticToken,'error','error','no-connection');
+      return;
+    }
 
     const draft = ensureDraftState(roomId);
     const replyToMessageId = draft.replyTo?.messageId || null;
@@ -68,6 +73,7 @@
     try {
       const connected = await ensureWsConnected(deviceId);
       if (!connected || !state.ws || state.ws.readyState !== WebSocket.OPEN || state.ws.deviceId !== deviceId) {
+        diagnostic?.finishWith(diagnosticToken,'error','error','no-connection');
         if (contexts.isCurrent(context)) alert('Нет соединения. Попробуйте обновить чат.');
         finish(operation, 'connection-failed');
         return;
@@ -107,11 +113,15 @@
       try {
         if (box) {
           appendDateSeparatorIfNeeded(box, createdAt);
-          appendMessage(box, tempMessage, text, true, true);
+          activeSendDiagnostic19 = diagnosticToken;
+          try { appendMessage(box, tempMessage, text, true, true); }
+          finally { activeSendDiagnostic19 = null; }
         }
         upsertRoomMessage(roomId, tempMessage, { text, unread: 0 });
-        if (!queuePendingTextSend(outbound)) throw new Error('queue');
+        if (!queuePendingTextSend(outbound, diagnosticToken)) throw new Error('queue');
       } catch {
+        activeSendDiagnostic19 = null;
+        diagnostic?.finishWith(diagnosticToken,'error','error','unknown');
         if (stillVisible) alert('Не удалось отправить сообщение. Проверьте соединение.');
         finish(operation, 'queue-failed');
         return;
@@ -143,6 +153,7 @@
       }
       finish(operation, 'queued');
     } catch (error) {
+      diagnostic?.finishWith(diagnosticToken,error?.name === 'AbortError'?'cancelled':'error',error?.name === 'AbortError'?'cancelled':'error',error?.name === 'AbortError'?'aborted':'unknown');
       finish(operation, error?.name === 'AbortError' ? 'cancelled' : 'failed');
       if (contexts.isCurrent(context)) alert('Не удалось отправить сообщение. Проверьте соединение.');
     } finally {
