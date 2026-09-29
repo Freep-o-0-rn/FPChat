@@ -46,14 +46,15 @@
     return room && message ? `${room}:${message}` : '';
   }
 
-  function emitChanged(roomId, messageId, revision = null, optimistic = false) {
+  function emitChanged(roomId, messageId, revision = null, optimistic = false, diagnosticTrace = null) {
     try {
       window.dispatchEvent(new CustomEvent('fpchat:reaction188-changed', {
         detail: {
           roomId: normalizeRoomId(roomId),
           messageId: normalizeMessageId(messageId),
           reactionRevision: revision == null ? null : Math.max(0, Number(revision || 0) || 0),
-          optimistic: Boolean(optimistic)
+          optimistic: Boolean(optimistic),
+          diagnosticTrace: diagnosticTrace && Number.isSafeInteger(diagnosticTrace.id) ? diagnosticTrace : null
         }
       }));
     } catch {}
@@ -154,7 +155,7 @@
     }
     room.set(id, next);
     stats.ingested += 1;
-    emitChanged(roomId, id, next.reactionRevision, false);
+    emitChanged(roomId, id, next.reactionRevision, false, options.diagnosticTrace || null);
     return next;
   }
 
@@ -667,10 +668,14 @@
       roomContext,
       controller: null
     };
+    const diagnostic19=window.FPRuntime169?.loading;
+    const trace19=diagnostic19?.begin?.('reaction');
+    diagnostic19?.annotate?.(trace19,{action:op,source:'reaction-manager188'});
     const pending = pendingFor(room, message, true);
     pending.push(entry);
     stats.optimisticApplied += 1;
-    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true);
+    diagnostic19?.step?.(trace19,'manager-ready');
+    emitChanged(room, message, current?.reactionRevision ?? getBase(room, message)?.reactionRevision ?? 0, true, trace19);
 
     const queued = window.FPReactionArbiter188?.enqueue?.({
       roomId: room,
@@ -698,7 +703,11 @@
               error.status = response.status;
               throw error;
             }
-            applyAuthoritative(room, message, data);
+            diagnostic19?.step?.(trace19,'ack-ready');
+            applyAuthoritative(room, message, data,{diagnosticTrace:trace19});
+            diagnostic19?.step?.(trace19,'final-ready');
+            diagnostic19?.annotate?.(trace19,{outcome:'confirmed'});
+            diagnostic19?.finish?.(trace19,'ok');
             stats.mutationsConfirmed += 1;
             return data;
           } catch (error) {
@@ -710,6 +719,10 @@
               const authoritativeMine = new Set((authoritative?.myReactions || []).map((item) => String(item.reactionId || '')));
               const fulfilled = op === 'add' ? authoritativeMine.has(id) : !authoritativeMine.has(id);
               if (fulfilled) {
+                diagnostic19?.step?.(trace19,'ack-ready');
+                diagnostic19?.step?.(trace19,'final-ready');
+                diagnostic19?.annotate?.(trace19,{outcome:'confirmed-by-ws'});
+                diagnostic19?.finish?.(trace19,'ok');
                 stats.mutationsConfirmed += 1;
                 stats.mutationsReconciledByWs += 1;
                 return {
@@ -730,7 +743,12 @@
     }) || Promise.reject(mutationError('REACTION_ARBITER_UNAVAILABLE'));
 
     return queued.catch((error) => {
-      if (error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL')) stats.mutationsCancelled += 1;
+      const cancelled19=error?.name === 'AbortError' || String(error?.code || '').includes('CANCEL');
+      diagnostic19?.missing?.(trace19,'ack',cancelled19?'aborted':'server-rejected');
+      diagnostic19?.missing?.(trace19,'final',cancelled19?'aborted':'server-rejected');
+      diagnostic19?.annotate?.(trace19,{outcome:cancelled19?'cancelled':'failed',reason:cancelled19?'aborted':'server-rejected'});
+      diagnostic19?.finish?.(trace19,cancelled19?'cancelled':'error');
+      if (cancelled19) stats.mutationsCancelled += 1;
       else stats.mutationsFailed += 1;
       throw error;
     }).finally(() => {
