@@ -300,6 +300,9 @@
             appBuildSuffix190 = buildSuffix
               ? `${buildSuffix}&r=${encodeURIComponent(appRevision)}`
               : `?r=${encodeURIComponent(appRevision)}`;
+            if (loaderVersionResult174) {
+              loaderVersionResult174 = Object.freeze({ ...loaderVersionResult174, appRevision });
+            }
           }
           const reactionRevision = String(data?.updatedAt ?? '').trim();
           if (reactionRevision) {
