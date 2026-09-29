@@ -568,6 +568,7 @@
         } catch { return null; }
       })();
       const expectedByKind = {
+        room:['text-ready','composer-ready','scroll-ready'],
         send:['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'],
         reaction:['optimistic-ready','dom-ready','frame-opportunity','ack-ready','outcome-ready'],
         connection:['break-confirmed','reconnect-open','sync-ready','outcome-ready'],
@@ -584,6 +585,7 @@
           else if (item.status === 'cancelled') missing[point] = 'cancelled';
           else if (item.status === 'error') missing[point] = item.reason || 'error-before-stage';
           else if (item.result === 'preserved-live-socket' && (point === 'break-confirmed' || point === 'reconnect-open')) missing[point] = 'no-break-old-socket-preserved';
+          else if (item.kind === 'viewer' && point === 'preview-ready' && item.reason === 'preview-unavailable') missing[point] = 'preview-unavailable';
           else if (item.syncRequired === false && point === 'sync-ready') missing[point] = 'sync-not-required';
           else missing[point] = 'not-observed';
         }
