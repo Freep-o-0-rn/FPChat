@@ -40,6 +40,10 @@ jobs:
           node --check public/reaction-manager188.js
           node --check public/reaction-renderer188.js
           node --check scripts/regression186-loading-browser.cjs
+      - name: App revision contract
+        run: |
+          npm run test:next:7
+          npm run test:next:8
       - name: Existing loading report and item 19 export
         run: npm run test:186:browser
       - name: Room history and scroll contracts
