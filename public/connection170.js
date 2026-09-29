@@ -233,6 +233,16 @@
     releaseCurrent,
     closeCurrent,
     diagnosticReconnectToken:()=>diagnosticReconnect19?.token||null,
+    reportPreservedIfOpen(){
+      if(diagnosticReconnect19||!currentSocket||currentSocket.readyState!==WebSocket.OPEN)return false;
+      const loading=window.FPRuntime169?.loading;
+      const token=loading?.begin?.('connection');
+      loading?.tag?.(token,'source','owner-event');
+      loading?.tag?.(token,'syncRequired',false);
+      loading?.result?.(token,'preserved-live-socket','no-break-old-socket-preserved');
+      loading?.finish?.(token,'ok');
+      return true;
+    },
     clearDiagnosticReconnect(token){
       if(!diagnosticReconnect19||Number(diagnosticReconnect19.token?.id)!==Number(token?.id))return false;
       diagnosticReconnect19=null;return true;
@@ -246,19 +256,6 @@
       transportWorker: 'app.js stableWs'
     });
   } catch {}
-
-  window.addEventListener('fpchat:lifecycle170',(event)=>{
-    const detail=event?.detail||{};
-    if(detail.lastType!=='online'||diagnosticReconnect19)return;
-    const socket=currentSocket;
-    if(!socket||socket.readyState!==WebSocket.OPEN)return;
-    const loading=window.FPRuntime169?.loading;
-    const token=loading?.begin?.('connection');
-    loading?.tag?.(token,'source','owner-event');
-    loading?.tag?.(token,'syncRequired',false);
-    loading?.result?.(token,'preserved-live-socket','no-break-old-socket-preserved');
-    loading?.finish?.(token,'ok');
-  },{passive:true});
 
   queueMicrotask(() => emit('ready', currentSocket));
 })();
